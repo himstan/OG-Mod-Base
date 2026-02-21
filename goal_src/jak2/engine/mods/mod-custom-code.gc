@@ -91,8 +91,12 @@
       (none)
       )
 
+    (define-extern *multi-sync-enabled?* symbol)
+
     (defun runs-on-jak-spawn ()
       ;; Code here runs every time jak spawns (loading a file new game or death)   
+      (set! *multi-sync-enabled?* #t)
+      (format 0 "[GOAL] Jak spawned! Enabling multiplayer sync.~%")
 
       (none)
       )

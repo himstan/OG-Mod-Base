@@ -5,8 +5,7 @@ const PORT = 8080;
 const clients = new Map(); // Map of remoteAddress:port -> clientInfo
 
 server.on('error', (err) => {
-  console.error(`Server error:
-${err.stack}`);
+  console.error(`[Server Error] ${err.stack}`);
   server.close();
 });
 
@@ -15,35 +14,43 @@ server.on('message', (msg, rinfo) => {
   
   // Register/Update client
   if (!clients.has(clientKey)) {
-    console.log(`New client connected: ${clientKey}`);
+    console.log(`[Server] New connection from ${clientKey}`);
   }
+  
+  // LOG EVERY PACKET FOR DEBUGGING
+  // console.log(`[Server] Packet from ${clientKey} (len: ${msg.length})`);
+
   clients.set(clientKey, { 
     rinfo, 
     lastSeen: Date.now() 
   });
 
   // Simple broadcast to all OTHER clients
-  // The payload is expected to be [PlayerID, X, Y, Z, Angle] as floats (20 bytes)
   for (const [key, client] of clients) {
     if (key !== clientKey) {
       server.send(msg, client.rinfo.port, client.rinfo.address, (err) => {
         if (err) {
-          console.error(`Error sending to ${key}:`, err);
+          console.error(`[Server] Error sending to ${key}:`, err);
           clients.delete(key);
         }
       });
     }
   }
-
-  // Cleanup stale clients (inactive for > 10 seconds)
-  const now = Date.now();
-  for (const [key, client] of clients) {
-    if (now - client.lastSeen > 10000) {
-      clients.delete(key);
-      console.log(`Client ${key} timed out.`);
-    }
-  }
 });
+
+// Periodic cleanup and status
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, client] of clients) {
+        if (now - client.lastSeen > 10000) {
+            console.log(`[Server] Client timed out: ${key}`);
+            clients.delete(key);
+        }
+    }
+    if (clients.size > 0) {
+        console.log(`[Server] Active Clients: ${clients.size}`);
+    }
+}, 5000);
 
 server.on('listening', () => {
   const address = server.address();

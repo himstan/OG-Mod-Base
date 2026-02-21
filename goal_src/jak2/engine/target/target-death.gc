@@ -8,6 +8,7 @@
 (define-extern intro-play (function none))
 (define-extern find-nearest-entity (function vector type entity))
 (define-extern warp-gate type)
+(define-extern runs-on-jak-spawn (function none))
 
 ;; DECOMP BEGINS
 
@@ -409,6 +410,7 @@
         )
       (set! (-> self mode-cache) #f)
       )
+    (runs-on-jak-spawn)
     (go target-stance)
     )
   :post target-no-move-post
