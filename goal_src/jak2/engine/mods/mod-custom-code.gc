@@ -1,4 +1,4 @@
-    ;;-*-Lisp-*-
+;;-*-Lisp-*-
     (in-package goal)
 
     ;; name: mod-custom-code.gc
@@ -41,6 +41,8 @@
         (orb-placer-maintenance)
         )
       
+      (multiplayer-sync-tick)
+
       (none)
       )
 

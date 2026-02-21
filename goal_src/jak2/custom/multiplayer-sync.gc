@@ -1,0 +1,81 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Make sure the compiler knows this exists in C++
+(define-extern pc-multi-sync-data (function vector vector vector none))
+
+;; Use define-perm for maximum stability
+(define-perm *multi-local-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-rot* vector (new 'static 'vector))
+(define-perm *multi-last-sync-frame* time-frame (seconds 0))
+(define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-interp-angle* float 0.0)
+
+;; This function is called every frame by the mod-base hook
+(defun multiplayer-sync-tick ()
+  ;; 1. Global Safety Checks: Only run if the game engine is fully up
+  (if (or (not *display*) 
+          (not *target*) 
+          (not (-> *target* control))
+          (< (-> *display* game-clock frame-counter) (seconds 30))) ;; 30s safety
+      (return #f)
+      )
+
+  (let ((now (current-time)))
+    ;; 2. Throttle to once per frame
+    (if (= *multi-last-sync-frame* now)
+        (return #f)
+        )
+    (set! *multi-last-sync-frame* now)
+
+    ;; 3. Update local player data
+    (vector-copy! *multi-local-pos* (-> *target* control trans))
+    (set! (-> *multi-local-pos* w) (quaternion-y-angle (-> *target* control quat)))
+    
+    ;; 4. Safe Animation Extraction
+    (let ((local-anim -1))
+      ;; Check if skeleton and channels are actually ready/allocated
+      (if (and (-> *target* skel) 
+               (> (-> *target* skel active-channels) 0))
+          (let ((chan (-> *target* skel root-channel 0)))
+            (if (and chan (-> chan frame-group))
+                (set! local-anim (-> chan frame-group master-art-group-index))
+                )
+            )
+          )
+      (set! (-> *multi-remote-rot* x) (the float local-anim))
+      )
+
+    ;; 5. Sync with C++ bridge
+    (pc-multi-sync-data *multi-local-pos* *multi-remote-pos* *multi-remote-rot*)
+
+    ;; 6. Process Remote Presence
+    (if (!= (-> *multi-remote-pos* w) 0.0)
+        (begin
+          (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* *multi-remote-pos* 0.15)
+          (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-remote-rot* y) (* 500.0 (seconds-per-frame))))
+
+          ;; Draw sphere
+          (let ((draw-pos (new 'stack-no-clear 'vector)))
+            (vector-copy! draw-pos *multi-remote-interp-pos*)
+            (set! (-> draw-pos w) 1.0)
+            (add-debug-sphere #t (bucket-id debug-no-zbuf1) draw-pos (meters 2) (new 'static 'rgba :g #xff :a #x80))
+            
+            (let ((heading (new 'stack-no-clear 'vector)))
+              (set-vector! heading (sin *multi-remote-interp-angle*) 0.0 (cos *multi-remote-interp-angle*) 1.0)
+              (vector-float*! heading heading (meters 3))
+              (vector+! heading heading draw-pos)
+              (add-debug-line #t (bucket-id debug-no-zbuf1) draw-pos heading (new 'static 'rgba :r #xff :g #xff :b #xff :a #x80) #f (the-as rgba -1))
+              )
+            )
+          )
+        (begin
+          (vector-copy! *multi-remote-interp-pos* *multi-remote-pos*)
+          )
+        )
+    )
+  (none)
+  )
+
+(format #t "[Multiplayer] Script loaded. tick-function is ready.~%")

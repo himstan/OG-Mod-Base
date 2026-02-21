@@ -38,6 +38,7 @@
 #include "game/kernel/jak2/kscheme.h"
 #include "game/kernel/jak2/ksound.h"
 #include "game/overlord/jak2/iso.h"
+#include "game/system/multiplayer.h"
 #include "game/sce/deci2.h"
 #include "game/sce/libdma.h"
 #include "game/sce/libgraph.h"
@@ -645,6 +646,7 @@ u32 sceGsSyncPath(u32 mode, u32 timeout) {
 void aybabtu() {}
 
 void InitMachineScheme() {
+  lg::info("[Multiplayer] Entering InitMachineScheme");
   make_function_symbol_from_c("put-display-env", (void*)PutDisplayEnv);
   make_function_symbol_from_c("syncv", (void*)sceGsSyncV);
   make_function_symbol_from_c("sync-path", (void*)sceGsSyncPath);
@@ -717,6 +719,7 @@ void InitMachineScheme() {
     auto p = scoped_prof("play-boot-func");
     call_goal_function_by_name("play-boot");  // new function for jak2!
   }
+  init_multiplayer_pc_port();
 }
 
 sqlite::SQLiteDatabase sql_db;
