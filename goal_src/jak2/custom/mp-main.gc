@@ -1,0 +1,134 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(require "custom/mp-types.gc")
+(require "custom/mp-helpers.gc")
+(require "custom/mp-actor.gc")
+
+;; --- Externs ---
+(define-extern *multi-remote-spawn-time* time-frame)
+(define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
+
+;; --- String Hashing Helper ---
+(defun string-crc32 ((str string))
+  "Simple hash function for level name verification"
+  (if (or (not str) (zero? str))
+      (return (the-as uint 0))
+      )
+  (let ((hash (the-as uint 0))
+        (ptr (-> str data)))
+    (while (nonzero? (-> ptr 0))
+      (set! hash (+ (-> ptr 0) (* hash 31)))
+      (set! ptr (&-> ptr 1))
+      )
+    hash
+    )
+  )
+
+;; --- Tick Logic ---
+
+(defun multiplayer-sync-tick ()
+  ;; 1. Global Guards
+  (if (or (not *multi-sync-enabled?*)
+          (not *display*)
+          (not *target*)
+          (not (-> *target* control))
+          (!= (-> *level* loading-level) (-> *level* default-level)))
+      (return #f)
+      )
+
+  (let ((now (current-time)))
+    (if (= *multi-last-sync-frame* now)
+        (return #f)
+        )
+    (set! *multi-last-sync-frame* now)
+
+    ;; 2. Update Local Data
+    (set! (-> *multi-info* local-x) (-> *target* control trans x))
+    (set! (-> *multi-info* local-y) (-> *target* control trans y))
+    (set! (-> *multi-info* local-z) (-> *target* control trans z))
+    (set! (-> *multi-info* local-angle) (quaternion-y-angle (-> *target* control quat)))
+    
+    ;; Hash the level name
+    (set! (-> *multi-info* local-level) (the-as uint 0))
+    (let ((lev (-> *level* level 0)))
+      (if (and lev (nonzero? lev) (= (-> lev status) 'active))
+          (let ((lev-name (-> lev name)))
+            (if (and lev-name (nonzero? lev-name))
+                (set! (-> *multi-info* local-level) (string-crc32 (symbol->string lev-name)))
+                )
+            )
+          )
+      )
+    
+    (let ((local-anim -1))
+      (if (and (-> *target* skel) (> (-> *target* skel active-channels) 0))
+          (let ((chan (-> *target* skel root-channel 0)))
+            (if (and chan (-> chan frame-group))
+                (set! local-anim (-> chan frame-group master-art-group-index))
+                )
+            )
+          )
+      (set! (-> *multi-info* local-anim) local-anim)
+      )
+
+    ;; 3. Bridge Sync
+    (pc-multi-sync-data (the-as uint *multi-info*))
+
+    ;; 4. Remote Presence
+    (if (!= (-> *multi-info* remote-id) 0)
+        (begin
+          ;; Smooth tracking
+          (let ((remote-pos (new 'stack-no-clear 'vector)))
+            (set-vector! remote-pos (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z) 1.0)
+
+            (if *multi-remote-first-seen?*
+                (begin
+                  (vector-copy! *multi-remote-interp-pos* remote-pos)
+                  (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
+                  (set! *multi-remote-first-seen?* #f)
+                  )
+                )
+
+            (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
+            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* 1000.0 (seconds-per-frame))))
+
+            ;; 5. Nametag Debug
+            (let ((tag-pos (new 'stack-no-clear 'vector)))
+              (vector-copy! tag-pos *multi-remote-interp-pos*)
+              (+! (-> tag-pos y) (meters 2.5))
+              (format (clear *mp-nametag-string*) "ID: ~D" (-> *multi-info* remote-id))
+              (add-debug-text-3d #t (bucket-id debug-no-zbuf1) *mp-nametag-string* tag-pos (font-color white) (the-as vector2h #f))
+              )
+
+            ;; 6. Manager Lifecycle (Pointer-based)
+            (let ((mgr-ptr *mp-remote-manager*))
+              (if (or (not mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
+                  ;; Manager is dead or missing, spawn a new one
+                  (if (time-elapsed? *multi-remote-spawn-time* (seconds 1))
+                      (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
+                        (if new-mgr
+                            (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                            )
+                        (set-time! *multi-remote-spawn-time*)
+                        )
+                      )
+                  ;; Process is alive! Update fields safely without executing any deactivates.
+                  (let ((mp-mgr (-> mgr-ptr 0)))
+                    (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
+                    (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
+                    )
+                  )
+              )
+            )
+        )
+        ;; FALLBACK
+        (begin 
+          (set! *multi-remote-first-seen?* #t)
+          )
+        )
+    )
+  
+  (mp-hide-daxter)
+  (none)
+  )

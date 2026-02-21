@@ -1,0 +1,40 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Types & Externs ---
+
+(deftype multiplayer-info (structure)
+  ((local-x      float)            ;; 0
+   (local-y      float)            ;; 4
+   (local-z      float)            ;; 8
+   (local-angle  float)            ;; 12
+   (remote-x     float)            ;; 16
+   (remote-y     float)            ;; 20
+   (remote-z     float)            ;; 24
+   (remote-angle float)            ;; 28
+   (remote-id    uint32)           ;; 32
+   (remote-role  int32)            ;; 36
+   (remote-anim  int32)            ;; 40
+   (local-anim   int32)            ;; 44
+   (local-level  uint32)           ;; 48
+   (remote-level uint32)           ;; 52
+   )
+  :size-assert 56
+  )
+
+(define-extern pc-multi-sync-data (function uint none))
+
+;; Persistent globals
+(define-perm *multi-info* multiplayer-info (new 'static 'multiplayer-info))
+(define-perm *multi-sync-enabled?* symbol #f)
+(define-perm *multi-last-sync-frame* time-frame (seconds 0))
+(define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-interp-angle* float 0.0)
+(define-perm *multi-remote-first-seen?* symbol #t)
+
+;; Track the manager via handle to prevent respawn loops
+(declare-type mp-manager process)
+(define-perm *multi-manager-handle* handle (the-as handle #f))
+(define-perm *multi-remote-spawn-time* time-frame 0)
+
+(define *mp-nametag-string* (new 'global 'string 64 (the-as string #f)))

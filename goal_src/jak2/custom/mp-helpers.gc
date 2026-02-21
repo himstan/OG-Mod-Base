@@ -1,0 +1,22 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(require "custom/mp-types.gc")
+
+;; --- Daxter Management ---
+(defun mp-hide-daxter ()
+  (if (and *sidekick* (!= (the-as uint *sidekick*) 0) (-> *sidekick* draw))
+      (logior! (-> *sidekick* draw status) (draw-control-status no-draw))
+      )
+  (if (and *target* (-> *target* sidekick) (!= (the-as uint (-> *target* sidekick)) 0))
+      (let ((sidekick-proc (-> *target* sidekick 0)))
+        (if (and sidekick-proc (!= (the-as uint sidekick-proc) 0) (-> sidekick-proc draw))
+            (begin
+              (logior! (-> sidekick-proc draw status) (draw-control-status no-draw))
+              (vector-reset! (-> sidekick-proc root scale))
+              )
+            )
+        )
+      )
+  (none)
+  )

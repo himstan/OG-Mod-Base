@@ -474,7 +474,10 @@
   "mod-settings.o" ;; added ;;mod-base-change
   "mod-common-functions.o" ;; added
   "orb-placer.o"  ;; added
-  "multiplayer-sync.o" ;; added
+  "mp-types.o" ;; added
+  "mp-helpers.o" ;; added
+  "mp-actor.o" ;; added
+  "mp-main.o" ;; added
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
  ))

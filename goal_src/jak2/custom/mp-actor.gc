@@ -1,0 +1,140 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(require "custom/mp-types.gc")
+
+;; --- MP Idle State ---
+;; By defining our own state, we bypass Naughty Dog's cutscene engine (manipy-post)
+;; completely. This safely loops the animation and calculates the bones with zero crashes.
+(defstate mp-idle (manipy)
+  :code (behavior ()
+    (loop
+      ;; Safely advance the animation frame
+      (ja :num! (loop!))
+      (suspend)
+      )
+    )
+  :post ja-post ;; Standard engine bone calculation
+  )
+
+;; --- Remote Character Initialization ---
+(defbehavior mp-character-init manipy ((pos vector) (ent entity-actor) (skel-name string) (role int32))
+  (if (not self) (return #f))
+  (stack-size-set! (-> self main-thread) 2048)
+  (logior! (-> self mask) (process-mask heap-shrunk))
+  
+  ;; 1. Root Setup
+  (set! (-> self root) (the-as collide-shape (new 'process 'trsqv)))
+  (vector-copy! (-> self root trans) pos)
+  (quaternion-identity! (-> self root quat))
+  
+  ;; 2. Entity Setup
+  (process-entity-set! self (the-as entity #f))
+  
+  ;; 3. Skeleton Init
+  (initialize-skeleton-by-name self skel-name)
+  
+  ;; 4. Force Visibility & Bounds
+  (if (-> self draw)
+      (begin
+        (set! (-> self draw shadow) #f)
+        (logclear! (-> self draw status) (draw-control-status no-draw no-draw-temp uninited))
+        (logior! (-> self draw status) (draw-control-status on-screen close-to-screen))
+        (set-vector! (-> self draw bounds) 0.0 (meters 2.0) 0.0 (meters 15.0))
+        )
+      )
+  
+  ;; 5. Safe Animation Setup
+  (if (nonzero? (-> self skel))
+      (begin
+        (ja-channel-set! 1)
+        (let ((valid-anim (the-as art-joint-anim #f)))
+          (dotimes (i (-> self draw art-group length))
+            (if (= (-> self draw art-group data i type) art-joint-anim)
+                (begin
+                  (set! valid-anim (the-as art-joint-anim (-> self draw art-group data i)))
+                  (goto found-anim)
+                  )
+                )
+            )
+          (label found-anim)
+          
+          (if valid-anim
+              (ja :group! valid-anim :num! min)
+              )
+          )
+        )
+      )
+  
+  (format 0 "MP-LOG: mp-character-init 4: Done.~%")
+  
+  ;; 6. Enter our custom, crash-free state!
+  (go mp-idle)
+  )
+
+;; --- Multiplayer Manager ---
+(deftype mp-manager (process)
+  ((remote-id    uint32)
+   (remote-role  int32)
+   (manipy-proc  handle)
+   (spawn-timer  time-frame)
+   )
+  (:state-methods
+    idle)
+  )
+
+(defbehavior mp-manager-init mp-manager ((id uint32) (role int32))
+  ;; Protect the manager from memory overflow
+  (stack-size-set! (-> self main-thread) 512)
+  
+  (format 0 "MP-LOG: mp-manager-init: ID ~D Role ~D~%" id role)
+  (set! (-> self remote-id) id)
+  (set! (-> self remote-role) role)
+  (set! (-> self manipy-proc) (the-as handle #f))
+  (set! (-> self spawn-timer) 0)
+  (go-virtual idle)
+  )
+
+(defun find-safe-entity ()
+  (if (and *target* (-> *target* entity)) (return (-> *target* entity)))
+  (dotimes (i (-> *level* length))
+    (let ((lev (-> *level* level i)))
+      (if (and (nonzero? lev) (= (-> lev status) 'active) (-> lev entity) (nonzero? (-> lev entity length)))
+          (return (-> lev entity data 0))
+          )
+      )
+    )
+  (the-as entity-actor #f)
+  )
+
+(defstate idle (mp-manager)
+  :virtual #t
+  :trans (behavior ()
+    (let ((m (handle->process (-> self manipy-proc))))
+      (if (not m)
+          (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
+            (let ((name (if (= (-> self remote-role) 1) "sidekick" "jchar")))
+              (format 0 "MP-LOG: idle-trans: Spawning manipy (~S)...~%" name)
+              ;; Use #f for entity
+              (let ((new-proc (process-spawn manipy :init mp-character-init *multi-remote-interp-pos* (the-as entity-actor #f) name (-> self remote-role) :to self)))
+                (if new-proc
+                    (set! (-> self manipy-proc) (ppointer->handle new-proc))
+                    )
+                )
+              )
+            (set-time! (-> self spawn-timer))
+            )
+          ;; Update existing manipy
+          (let ((mp (the-as manipy m)))
+            (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
+            (quaternion-identity! (-> mp root quat))
+            (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)
+            (if (-> mp draw)
+                (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp))
+                )
+            )
+          )
+      )
+    )
+  :code (behavior () (loop (suspend)))
+  )

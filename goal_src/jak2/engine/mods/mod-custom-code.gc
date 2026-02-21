@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
     (in-package goal)
 
+    (require "custom/mp-main.gc")
+
     ;; name: mod-custom-code.gc
     ;; name in dgo: mod-custom-code
     ;; dgos: TODO
@@ -41,6 +43,7 @@
         (orb-placer-maintenance)
         )
       
+      ;; (format 0 "Tick~%")
       (multiplayer-sync-tick)
 
       (none)
@@ -90,8 +93,6 @@
 
       (none)
       )
-
-    (define-extern *multi-sync-enabled?* symbol)
 
     (defun runs-on-jak-spawn ()
       ;; Code here runs every time jak spawns (loading a file new game or death)   

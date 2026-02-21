@@ -30,13 +30,17 @@ struct MultiplayerInfoGOAL {
     int32_t remote_role;                            // 36
     int32_t remote_anim;                            // 40
     int32_t local_anim;                             // 44
+    uint32_t local_level;                           // 48
+    uint32_t remote_level;                          // 52
 };
 
 struct MultiplayerData {
   float local_x, local_y, local_z, local_angle;
   int local_anim, local_role;
+  uint32_t local_level;
   float remote_x, remote_y, remote_z, remote_angle;
   int remote_anim, remote_role;
+  uint32_t remote_level;
   uint32_t remote_id = 0;
   uint32_t player_id = 0;
   bool initialized = false;
@@ -49,6 +53,7 @@ struct Payload {
   uint32_t id;
   float x, y, z, angle;
   int32_t anim, role;
+  uint32_t level_hash;
 };
 }
 
@@ -68,6 +73,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         gMultiplayerData.local_z = info->local_z;
         gMultiplayerData.local_angle = info->local_angle;
         gMultiplayerData.local_anim = info->local_anim;
+        gMultiplayerData.local_level = info->local_level;
 
         // 2. Assign Role (smaller ID = Jak)
         if (gMultiplayerData.remote_id != 0) {
@@ -88,7 +94,8 @@ void pc_multi_sync_data(u32 info_ptr) {
             gMultiplayerData.local_x, gMultiplayerData.local_y, gMultiplayerData.local_z,
             gMultiplayerData.local_angle,
             gMultiplayerData.local_anim,
-            gMultiplayerData.local_role
+            gMultiplayerData.local_role,
+            gMultiplayerData.local_level
         };
         sendto(gMultiplayerData.socket, (const char*)&send_payload, sizeof(Payload), 0, (sockaddr*)&server_addr, sizeof(server_addr));
 
@@ -113,6 +120,7 @@ void pc_multi_sync_data(u32 info_ptr) {
                 gMultiplayerData.remote_anim = recv_payload.anim;
                 gMultiplayerData.remote_id = recv_payload.id;
                 gMultiplayerData.remote_role = recv_payload.role;
+                gMultiplayerData.remote_level = recv_payload.level_hash;
             }
         }
 
@@ -124,6 +132,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         info->remote_id = gMultiplayerData.remote_id;
         info->remote_role = gMultiplayerData.remote_role;
         info->remote_anim = gMultiplayerData.remote_anim;
+        info->remote_level = gMultiplayerData.remote_level;
 
     } catch (...) {}
 }
