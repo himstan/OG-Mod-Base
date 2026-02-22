@@ -106,6 +106,22 @@
           )
         )
 
+    ;; 3.2 Camera Management
+    (if (= (-> *multi-info* local-role) 1)
+        (begin
+          ;; Daxter Camera: Closer and lower
+          (set-setting! 'string-min-length 'abs (meters 3.0) 0)
+          (set-setting! 'string-max-length 'abs (meters 7.0) 0)
+          (set-setting! 'target-height     'abs (meters 1.0) 0)
+          )
+        (begin
+          ;; Restore Jak Camera
+          (remove-setting! 'string-min-length)
+          (remove-setting! 'string-max-length)
+          (remove-setting! 'target-height)
+          )
+        )
+
     ;; 4. Remote Presence
     (cond
       ((= (-> *multi-info* remote-status) 1)

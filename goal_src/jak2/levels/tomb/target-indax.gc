@@ -699,6 +699,8 @@
                )
           (ja :num! (loop! f0-29))
           )
+        ;; Force head-turning channel to 0 interpolation
+        (ja :chan 1 :frame-interp0 0.0 :frame-interp1 0.0)
         (ja :chan 1 :num! (chan 0))
         (ja :chan 2 :num! (chan 0))
         )
