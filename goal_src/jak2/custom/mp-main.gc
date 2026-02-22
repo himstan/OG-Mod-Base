@@ -91,7 +91,7 @@
                 )
 
             (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
-            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* 1000.0 (seconds-per-frame))))
+            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
 
             ;; 5. Nametag Debug
             (let ((tag-pos (new 'stack-no-clear 'vector)))

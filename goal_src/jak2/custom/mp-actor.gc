@@ -6,11 +6,37 @@
 ;; --- MP Idle State ---
 ;; By defining our own state, we bypass Naughty Dog's cutscene engine (manipy-post)
 ;; completely. This safely loops the animation and calculates the bones with zero crashes.
+;; --- MP Idle State ---
 (defstate mp-idle (manipy)
   :code (behavior ()
     (loop
-      ;; Safely advance the animation frame
-      (ja :num! (loop!))
+      ;; 1. Position & Rotation Sync
+      (vector-copy! (-> self root trans) *multi-remote-interp-pos*)
+      (quaternion-identity! (-> self root quat))
+      (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
+
+      ;; 2. Grab the animation index sent from the remote player
+      (let ((anim-idx (-> *multi-info* remote-anim)))
+        
+        ;; 3. Validate the index against our active art group to prevent crashes
+        (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
+            (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
+              
+              ;; 4. Double-check it is actually an animation data block
+              (if (= (-> target-anim type) art-joint-anim)
+                  (begin
+                    ;; 5. If it's a new animation, snap to it. Otherwise, advance the frame!
+                    (if (!= (ja-group) target-anim)
+                        (ja :group! target-anim :num! min)
+                        (ja :num! (loop!))
+                        )
+                    )
+                  (ja :num! (loop!))
+                  )
+              )
+            (ja :num! (loop!))
+            )
+        )
       (suspend)
       )
     )
