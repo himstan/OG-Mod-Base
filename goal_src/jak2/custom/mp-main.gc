@@ -63,15 +63,21 @@
           )
       )
     
-    (let ((local-anim -1))
+    (let ((local-anim -1)
+          (local-frame 0.0))
       (if (and (-> *target* skel) (> (-> *target* skel active-channels) 0))
           (let ((chan (-> *target* skel root-channel 0)))
             (if (and chan (-> chan frame-group))
-                (set! local-anim (-> chan frame-group master-art-group-index))
+                (begin
+                  (set! local-anim (-> chan frame-group master-art-group-index))
+                  (set! local-frame (-> chan frame-num))
+                  )
                 )
             )
           )
       (set! (-> *multi-info* local-anim) local-anim)
+      (set! (-> *multi-info* local-anim-frame) local-frame)
+      (+! (-> *multi-info* local-packet-id) 1)
       )
 
     ;; 3. Bridge Sync

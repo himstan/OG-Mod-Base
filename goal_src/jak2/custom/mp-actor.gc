@@ -3,9 +3,31 @@
 
 (require "custom/mp-types.gc")
 
-;; --- MP Idle State ---
-;; By defining our own state, we bypass Naughty Dog's cutscene engine (manipy-post)
-;; completely. This safely loops the animation and calculates the bones with zero crashes.
+;; --- Multiplayer Manager ---
+(deftype mp-manager (process)
+  ((remote-id    uint32)
+   (remote-role  int32)
+   (manipy-proc  handle)
+   (spawn-timer  time-frame)
+   (last-anim-packet uint32)
+   )
+  (:state-methods
+    idle)
+  )
+
+(defbehavior mp-manager-init mp-manager ((id uint32) (role int32))
+  ;; Protect the manager from memory overflow
+  (stack-size-set! (-> self main-thread) 512)
+  
+  (format 0 "MP-LOG: mp-manager-init: ID ~D Role ~D~%" id role)
+  (set! (-> self remote-id) id)
+  (set! (-> self remote-role) role)
+  (set! (-> self manipy-proc) (the-as handle #f))
+  (set! (-> self spawn-timer) 0)
+  (set! (-> self last-anim-packet) 0)
+  (go-virtual idle)
+  )
+
 ;; --- MP Idle State ---
 (defstate mp-idle (manipy)
   :code (behavior ()
@@ -15,19 +37,28 @@
       (quaternion-identity! (-> self root quat))
       (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
 
-      ;; 2. Grab the animation index sent from the remote player
-      (let ((anim-idx (-> *multi-info* remote-anim)))
+      ;; 2. Animation Logic
+      (let ((anim-idx (-> *multi-info* remote-anim))
+            (anim-frame (-> *multi-info* remote-anim-frame))
+            (packet-id (-> *multi-info* remote-packet-id))
+            (parent-proc (the-as mp-manager (ppointer->process (-> self parent)))))
         
-        ;; 3. Validate the index against our active art group to prevent crashes
         (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
             (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
-              
-              ;; 4. Double-check it is actually an animation data block
               (if (= (-> target-anim type) art-joint-anim)
                   (begin
-                    ;; 5. If it's a new animation, snap to it. Otherwise, advance the frame!
+                    ;; A. Group Management
                     (if (!= (ja-group) target-anim)
-                        (ja :group! target-anim :num! min)
+                        (ja :group! target-anim :num! (set! anim-frame))
+                        )
+                    
+                    ;; B. Fluidity: Only snap if a NEW packet has arrived
+                    (if (and parent-proc (!= packet-id (-> parent-proc last-anim-packet)))
+                        (begin
+                          (set! (-> self skel root-channel 0 frame-num) anim-frame)
+                          (set! (-> parent-proc last-anim-packet) packet-id)
+                          )
+                        ;; Otherwise, let the engine play the animation naturally at 60fps
                         (ja :num! (loop!))
                         )
                     )
@@ -40,7 +71,7 @@
       (suspend)
       )
     )
-  :post ja-post ;; Standard engine bone calculation
+  :post ja-post
   )
 
 ;; --- Remote Character Initialization ---
@@ -86,29 +117,6 @@
       )
   
   (go mp-idle)
-  )
-
-;; --- Multiplayer Manager ---
-(deftype mp-manager (process)
-  ((remote-id    uint32)
-   (remote-role  int32)
-   (manipy-proc  handle)
-   (spawn-timer  time-frame)
-   )
-  (:state-methods
-    idle)
-  )
-
-(defbehavior mp-manager-init mp-manager ((id uint32) (role int32))
-  ;; Protect the manager from memory overflow
-  (stack-size-set! (-> self main-thread) 512)
-  
-  (format 0 "MP-LOG: mp-manager-init: ID ~D Role ~D~%" id role)
-  (set! (-> self remote-id) id)
-  (set! (-> self remote-role) role)
-  (set! (-> self manipy-proc) (the-as handle #f))
-  (set! (-> self spawn-timer) 0)
-  (go-virtual idle)
   )
 
 (defun find-safe-entity ()

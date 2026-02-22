@@ -49,28 +49,38 @@ struct PacketSync {
     float x, y, z, angle;
     int32_t anim, role;
     uint32_t level_hash;
+    float anim_frame;
+    uint32_t packet_id;
 };
 #pragma pack(pop)
 
 struct MultiplayerInfoGOAL {
-    float local_x, local_y, local_z, local_angle;   // 0, 4, 8, 12
-    float remote_x, remote_y, remote_z, remote_angle; // 16, 20, 24, 28
-    uint32_t remote_id;                             // 32
-    int32_t remote_role;                            // 36
-    int32_t remote_anim;                            // 40
-    int32_t local_anim;                             // 44
-    uint32_t local_level;                           // 48
-    uint32_t remote_level;                          // 52
-    int32_t remote_status;                          // 56
-    int32_t local_role;                             // 60
+    float local_x, local_y, local_z, local_angle;
+    float remote_x, remote_y, remote_z, remote_angle;
+    uint32_t remote_id;
+    int32_t remote_role;
+    int32_t remote_anim;
+    int32_t local_anim;
+    uint32_t local_level;
+    uint32_t remote_level;
+    int32_t remote_status;
+    int32_t local_role;
+    float local_anim_frame;
+    float remote_anim_frame;
+    uint32_t local_packet_id;
+    uint32_t remote_packet_id;
 };
 
 struct MultiplayerData {
   float local_x, local_y, local_z, local_angle;
   int local_anim, local_role;
+  float local_anim_frame;
+  uint32_t local_packet_id = 0;
   uint32_t local_level;
   float remote_x, remote_y, remote_z, remote_angle;
   int remote_anim, remote_role;
+  float remote_anim_frame;
+  uint32_t remote_packet_id = 0;
   uint32_t remote_level;
   uint32_t remote_id = 0;
   uint32_t player_id = 0;
@@ -99,6 +109,8 @@ void pc_multi_sync_data(u32 info_ptr) {
         gMultiplayerData.local_z = info->local_z;
         gMultiplayerData.local_angle = info->local_angle;
         gMultiplayerData.local_anim = info->local_anim;
+        gMultiplayerData.local_anim_frame = info->local_anim_frame;
+        gMultiplayerData.local_packet_id = info->local_packet_id;
         gMultiplayerData.local_level = info->local_level;
 
         sockaddr_in server_addr;
@@ -124,6 +136,8 @@ void pc_multi_sync_data(u32 info_ptr) {
             sync_packet.anim = gMultiplayerData.local_anim;
             sync_packet.role = gMultiplayerData.local_role;
             sync_packet.level_hash = gMultiplayerData.local_level;
+            sync_packet.anim_frame = gMultiplayerData.local_anim_frame;
+            sync_packet.packet_id = gMultiplayerData.local_packet_id;
 
             sendto(gMultiplayerData.socket, (const char*)&sync_packet, sizeof(PacketSync), 0, (sockaddr*)&server_addr, sizeof(server_addr));
         }
@@ -176,6 +190,8 @@ void pc_multi_sync_data(u32 info_ptr) {
                             gMultiplayerData.remote_role = sync->role;
                             gMultiplayerData.remote_level = sync->level_hash;
                             gMultiplayerData.remote_status = 1;
+                            gMultiplayerData.remote_anim_frame = sync->anim_frame;
+                            gMultiplayerData.remote_packet_id = sync->packet_id;
                         }
                     }
                 }
@@ -193,6 +209,8 @@ void pc_multi_sync_data(u32 info_ptr) {
         info->remote_level = gMultiplayerData.remote_level;
         info->remote_status = gMultiplayerData.remote_status;
         info->local_role = gMultiplayerData.local_role;
+        info->remote_anim_frame = gMultiplayerData.remote_anim_frame;
+        info->remote_packet_id = gMultiplayerData.remote_packet_id;
 
     } catch (...) {}
 }
