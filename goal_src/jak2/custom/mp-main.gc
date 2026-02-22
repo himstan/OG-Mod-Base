@@ -76,57 +76,66 @@
     (pc-multi-sync-data (the-as uint *multi-info*))
 
     ;; 4. Remote Presence
-    (if (!= (-> *multi-info* remote-id) 0)
-        (begin
-          ;; Smooth tracking
-          (let ((remote-pos (new 'stack-no-clear 'vector)))
-            (set-vector! remote-pos (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z) 1.0)
+    (cond
+      ((= (-> *multi-info* remote-status) 1)
+       (begin
+         ;; Smooth tracking
+         (let ((remote-pos (new 'stack-no-clear 'vector)))
+           (set-vector! remote-pos (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z) 1.0)
 
-            (if *multi-remote-first-seen?*
-                (begin
-                  (vector-copy! *multi-remote-interp-pos* remote-pos)
-                  (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
-                  (set! *multi-remote-first-seen?* #f)
-                  )
-                )
+           (if *multi-remote-first-seen?*
+               (begin
+                 (vector-copy! *multi-remote-interp-pos* remote-pos)
+                 (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
+                 (set! *multi-remote-first-seen?* #f)
+                 )
+               )
 
-            (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
-            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
+           (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
+           (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
 
-            ;; 5. Nametag Debug
-            (let ((tag-pos (new 'stack-no-clear 'vector)))
-              (vector-copy! tag-pos *multi-remote-interp-pos*)
-              (+! (-> tag-pos y) (meters 2.5))
-              (format (clear *mp-nametag-string*) "ID: ~D" (-> *multi-info* remote-id))
-              (add-debug-text-3d #t (bucket-id debug-no-zbuf1) *mp-nametag-string* tag-pos (font-color white) (the-as vector2h #f))
-              )
+           ;; 5. Nametag Debug
+           (let ((tag-pos (new 'stack-no-clear 'vector)))
+             (vector-copy! tag-pos *multi-remote-interp-pos*)
+             (+! (-> tag-pos y) (meters 2.5))
+             (format (clear *mp-nametag-string*) "ID: ~D" (-> *multi-info* remote-id))
+             (add-debug-text-3d #t (bucket-id debug-no-zbuf1) *mp-nametag-string* tag-pos (font-color white) (the-as vector2h #f))
+             )
 
-            ;; 6. Manager Lifecycle (Pointer-based)
-            (let ((mgr-ptr *mp-remote-manager*))
-              (if (or (not mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
-                  ;; Manager is dead or missing, spawn a new one
-                  (if (time-elapsed? *multi-remote-spawn-time* (seconds 1))
-                      (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
-                        (if new-mgr
-                            (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
-                            )
-                        (set-time! *multi-remote-spawn-time*)
-                        )
-                      )
-                  ;; Process is alive! Update fields safely without executing any deactivates.
-                  (let ((mp-mgr (-> mgr-ptr 0)))
-                    (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
-                    (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
-                    )
-                  )
-              )
-            )
-        )
-        ;; FALLBACK
-        (begin 
-          (set! *multi-remote-first-seen?* #t)
-          )
-        )
+           ;; 6. Manager Lifecycle
+           (let ((mgr-ptr *mp-remote-manager*))
+             (if (or (not mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
+                 ;; Manager is dead or missing, spawn a new one
+                 (begin
+                   (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
+                     (if new-mgr
+                         (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                         )
+                     )
+                   )
+                 ;; Process is alive! Update fields safely.
+                 (let ((mp-mgr (-> mgr-ptr 0)))
+                   (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
+                   (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
+                   )
+                 )
+             )
+           )
+         )
+       )
+      (else
+       ;; FALLBACK / DEACTIVATE
+       (begin
+         (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) 'dead))
+             (begin
+               (deactivate (-> *mp-remote-manager* 0))
+               (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))
+               )
+             )
+         (set! *multi-remote-first-seen?* #t)
+         )
+       )
+      )
     )
   
   (mp-hide-daxter)

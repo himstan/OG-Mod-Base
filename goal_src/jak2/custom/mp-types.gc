@@ -18,8 +18,9 @@
    (local-anim   int32)            ;; 44
    (local-level  uint32)           ;; 48
    (remote-level uint32)           ;; 52
+   (remote-status int32)           ;; 56
    )
-  :size-assert 56
+  :size-assert 60
   )
 
 (define-extern pc-multi-sync-data (function uint none))

@@ -82,6 +82,7 @@
 #include "game/overlord/jak3/overlord.h"
 #include "game/system/Deci2Server.h"
 #include "game/system/iop_thread.h"
+#include "game/system/multiplayer.h"
 #include "sce/deci2.h"
 #include "sce/iop.h"
 #include "sce/libcdvd_ee.h"
@@ -473,5 +474,6 @@ RuntimeExitStatus exec_runtime(GameLaunchOptions game_options, int argc, const c
   lg::info("GOAL Runtime Shutdown (code {})", fmt::underlying(MasterExit));
   munmap(g_ee_main_mem, EE_MAIN_MEM_SIZE);
   Discord_Shutdown();
+  pc_multi_disconnect();
   return MasterExit;
 }
