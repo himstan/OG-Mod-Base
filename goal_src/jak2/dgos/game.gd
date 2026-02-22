@@ -141,6 +141,7 @@
   "projectile-h.o"
   "find-nearest-h.o"
   "target-h.o"
+  "mp-types.o"
   "stats-h.o"
   "bsp-h.o"
   "collide-cache-h.o"
@@ -476,7 +477,6 @@
   "mod-settings.o" ;; added ;;mod-base-change
   "mod-common-functions.o" ;; added
   "orb-placer.o"  ;; added
-  "mp-types.o" ;; added
   "mp-helpers.o" ;; added
   "mp-actor.o" ;; added
   "mp-main.o" ;; added

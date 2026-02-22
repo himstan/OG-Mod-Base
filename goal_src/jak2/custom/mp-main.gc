@@ -33,7 +33,9 @@
           (not *display*)
           (not *target*)
           (not (-> *target* control))
-          (!= (-> *level* loading-level) (-> *level* default-level)))
+          (!= (-> *level* loading-level) (-> *level* default-level))
+          (focus-test? *target* teleporting)
+          )
       (return #f)
       )
 
@@ -74,6 +76,34 @@
 
     ;; 3. Bridge Sync
     (pc-multi-sync-data (the-as uint *multi-info*))
+    (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
+        (begin
+          (format 0 "[MP] Role assigned or respawned: 1. Transforming...~%")
+          (send-event *target* 'change-mode 'indax)
+          )
+        )
+
+    ;; 3.1 Local Visibility Management
+    (if (= (-> *multi-info* local-role) 1)
+        (begin
+          ;; We are Daxter. Hide the physical Jak shell.
+          (if (and *target* (-> *target* draw))
+              (logior! (-> *target* draw status) (draw-control-status no-draw))
+              )
+          ;; Ensure our sidekick (which draws the Daxter model) is visible.
+          (if (and *target* (-> *target* sidekick))
+              (let ((sk (-> *target* sidekick 0)))
+                (if (and sk (!= (the-as uint sk) 0) (-> sk draw))
+                    (logclear! (-> sk draw status) (draw-control-status no-draw))
+                    )
+                )
+              )
+          )
+        ;; We are Jak. Hide the NPC sidekick to avoid duplicates.
+        (if (!= (-> *multi-info* local-role) 1)
+            (mp-hide-daxter)
+            )
+        )
 
     ;; 4. Remote Presence
     (cond

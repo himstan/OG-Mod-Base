@@ -19,8 +19,9 @@
    (local-level  uint32)           ;; 48
    (remote-level uint32)           ;; 52
    (remote-status int32)           ;; 56
+   (local-role   int32)            ;; 60
    )
-  :size-assert 60
+  :size-assert 64
   )
 
 (define-extern pc-multi-sync-data (function uint none))

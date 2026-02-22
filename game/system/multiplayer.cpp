@@ -63,6 +63,7 @@ struct MultiplayerInfoGOAL {
     uint32_t local_level;                           // 48
     uint32_t remote_level;                          // 52
     int32_t remote_status;                          // 56
+    int32_t local_role;                             // 60
 };
 
 struct MultiplayerData {
@@ -192,6 +193,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         info->remote_anim = gMultiplayerData.remote_anim;
         info->remote_level = gMultiplayerData.remote_level;
         info->remote_status = gMultiplayerData.remote_status;
+        info->local_role = gMultiplayerData.local_role;
 
     } catch (...) {}
 }

@@ -5,6 +5,8 @@
 ;; name in dgo: target
 ;; dgos: ENGINE, GAME
 
+(require "custom/mp-types.gc")
+
 ;; DECOMP BEGINS
 
 (defbehavior target-falling-trans target ((arg0 symbol) (arg1 time-frame))
@@ -47,6 +49,9 @@
 (defstate target-stance (target)
   :event target-standard-event-handler
   :enter (behavior ()
+    (if (and *multi-info* (= (-> *multi-info* local-role) 1) (not (focus-test? self indax)))
+        (go target-indax-start (the handle #f))
+        )
     (set! (-> self control mod-surface) *walk-mods*)
     (set-time! (-> self state-time))
     )
@@ -66,7 +71,7 @@
       (remove-exit)
       (go target-ice-stance)
       )
-    (when (move-legs?)
+    (when (and (move-legs?) (not (focus-test? self indax)))
       (set! (-> self control bend-target) 0.0)
       (logclear! (-> self state-flags) (state-flags lleg-still rleg-still lleg-no-ik rleg-no-ik))
       (remove-exit)
@@ -1656,6 +1661,9 @@
 (defstate target-hit-ground (target)
   :event target-walk-event-handler
   :enter (behavior ((arg0 symbol))
+    (if (and *multi-info* (= (-> *multi-info* local-role) 1) (not (focus-test? self indax)))
+        (go target-indax-start (the handle #f))
+        )
     (set! (-> self control turn-go-the-long-way) 0.0)
     (cond
       ((or (= arg0 'stuck) (focus-test? self indax))
@@ -2579,6 +2587,9 @@
       )
     )
   :enter (behavior ((arg0 symbol))
+    (if (and *multi-info* (= (-> *multi-info* local-role) 1) (= arg0 'flop))
+        (set! arg0 #f)
+        )
     (set-time! (-> self state-time))
     (logclear! (-> self control status) (collide-status on-surface on-ground touch-surface))
     (target-start-attack)

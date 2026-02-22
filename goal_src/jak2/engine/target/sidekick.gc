@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
+(require "custom/mp-types.gc")
+
 ;; name: sidekick.gc
 ;; name in dgo: sidekick
 ;; dgos: ENGINE, GAME
@@ -20,6 +22,12 @@
               :origin-joint-index 6
               :shadow-joint-index 6
               )
+
+(defskelgroup daxter-indax-ag daxter daxter-lod0-jg -1
+              ((daxter-lod0-mg (meters 999999)))
+              :bounds (static-spherem 0 0 0 2)
+              :shadow daxter-shadow-mg
+              :sort 1)
 
 (defskelgroup skel-sidekick-highres daxter-highres daxter-highres-lod0-jg -1
               ((daxter-highres-lod0-mg (meters 999999)))
