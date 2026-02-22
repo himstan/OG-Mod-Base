@@ -43,4 +43,5 @@
 (define-perm *multi-manager-handle* handle (the-as handle #f))
 (define-perm *multi-remote-spawn-time* time-frame 0)
 
-(define *mp-nametag-string* (new 'global 'string 64 (the-as string #f)))
+(define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
+(define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))

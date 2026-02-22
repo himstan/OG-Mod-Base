@@ -25,6 +25,18 @@
     )
   )
 
+(defun mp-get-anim-name ((proc process-drawable) (idx int))
+  (if (and proc (nonzero? proc) (-> proc draw) (-> proc draw art-group) (>= idx 0) (< idx (-> proc draw art-group length)))
+      (let ((name (-> proc draw art-group data idx name)))
+        (if (and name (nonzero? name))
+            name
+            "unknown"
+            )
+        )
+      "unknown"
+      )
+  )
+
 ;; --- Tick Logic ---
 
 (defun multiplayer-sync-tick ()
@@ -65,12 +77,41 @@
     
     (let ((local-anim -1)
           (local-frame 0.0))
-      (if (and (-> *target* skel) (> (-> *target* skel active-channels) 0))
-          (let ((chan (-> *target* skel root-channel 0)))
-            (if (and chan (-> chan frame-group))
-                (begin
-                  (set! local-anim (-> chan frame-group master-art-group-index))
-                  (set! local-frame (-> chan frame-num))
+      (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)))
+          (let ((skel (-> *target* skel)))
+            (if (= (-> *multi-info* local-role) 1)
+                ;; --- Role 1 (Daxter): Simple Capture ---
+                ;; Daxter's states are simpler; skip complex scanning to prevent crashes.
+                (let ((chan (-> skel root-channel 0)))
+                  (if (and (nonzero? chan) (-> chan frame-group))
+                      (begin
+                        (set! local-anim (-> chan frame-group master-art-group-index))
+                        (set! local-frame (-> chan frame-num))
+                        )
+                      )
+                  )
+                ;; --- Role 0 (Jak): Multi-Channel Scan ---
+                ;; Jak uses deep blending for Walk/Run. Scan up to 7 channels safely.
+                (let ((max-weight 0.0)
+                      (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
+                  (dotimes (i limit)
+                    (let ((chan (-> skel root-channel i)))
+                      (if (and (nonzero? chan) (-> chan frame-group) (>= (-> chan frame-interp 0) max-weight))
+                          (begin
+                            (set! max-weight (-> chan frame-interp 0))
+                            (set! local-anim (-> chan frame-group master-art-group-index))
+                            (set! local-frame (-> chan frame-num))
+                            )
+                          )
+                      )
+                    )
+                  ;; Fallback for Jak
+                  (if (and (= local-anim -1) (-> skel root-channel 0 frame-group))
+                      (begin
+                        (set! local-anim (-> skel root-channel 0 frame-group master-art-group-index))
+                        (set! local-frame (-> skel root-channel 0 frame-num))
+                        )
+                      )
                   )
                 )
             )
@@ -84,7 +125,7 @@
     (pc-multi-sync-data (the-as uint *multi-info*))
     (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
         (begin
-          (format 0 "[MP] Role assigned or respawned: 1. Transforming...~%")
+          (format 0 "[MP] Role assigned: 1. Transforming...~%")
           (send-event *target* 'change-mode 'indax)
           )
         )
@@ -140,14 +181,6 @@
 
            (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
-
-           ;; 5. Nametag Debug
-           (let ((tag-pos (new 'stack-no-clear 'vector)))
-             (vector-copy! tag-pos *multi-remote-interp-pos*)
-             (+! (-> tag-pos y) (meters 2.5))
-             (format (clear *mp-nametag-string*) "ID: ~D" (-> *multi-info* remote-id))
-             (add-debug-text-3d #t (bucket-id debug-no-zbuf1) *mp-nametag-string* tag-pos (font-color white) (the-as vector2h #f))
-             )
 
            ;; 6. Manager Lifecycle
            (let ((mgr-ptr *mp-remote-manager*))
