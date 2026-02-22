@@ -49,18 +49,13 @@
   (stack-size-set! (-> self main-thread) 2048)
   (logior! (-> self mask) (process-mask heap-shrunk))
   
-  ;; 1. Root Setup
   (set! (-> self root) (the-as collide-shape (new 'process 'trsqv)))
   (vector-copy! (-> self root trans) pos)
   (quaternion-identity! (-> self root quat))
-  
-  ;; 2. Entity Setup
   (process-entity-set! self (the-as entity #f))
-  
-  ;; 3. Skeleton Init
   (initialize-skeleton-by-name self skel-name)
+  ;; --------------------------------------
   
-  ;; 4. Force Visibility & Bounds
   (if (-> self draw)
       (begin
         (set! (-> self draw shadow) #f)
@@ -70,7 +65,6 @@
         )
       )
   
-  ;; 5. Safe Animation Setup
   (if (nonzero? (-> self skel))
       (begin
         (ja-channel-set! 1)
@@ -84,7 +78,6 @@
                 )
             )
           (label found-anim)
-          
           (if valid-anim
               (ja :group! valid-anim :num! min)
               )
@@ -92,9 +85,6 @@
         )
       )
   
-  (format 0 "MP-LOG: mp-character-init 4: Done.~%")
-  
-  ;; 6. Enter our custom, crash-free state!
   (go mp-idle)
   )
 

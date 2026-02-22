@@ -421,6 +421,8 @@
   "hud-ring-ag.go"
   "jakb-ag.go"
   "daxter-ag.go"
+  "target-indax.o"
+  "jak-indax+0-ag.go"
   "board-ag.go"
   "gun-ag.go"
   "jak-gun+0-ag.go"
