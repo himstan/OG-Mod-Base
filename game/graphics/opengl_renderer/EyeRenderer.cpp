@@ -594,10 +594,10 @@ std::optional<u64> EyeRenderer::lookup_eye_texture(u8 eye_id) {
     return {};
   }
   auto* gpu_tex = m_gpu_eye_textures[eye_id].gpu_tex;
-  if (gpu_tex) {
+  if (gpu_tex && !gpu_tex->gpu_textures.empty()) {
     return gpu_tex->gpu_textures.at(0).gl;
   } else {
-    fmt::print("lookup eye failed for {}\n", eye_id);
+    // fmt::print("lookup eye failed for {}\n", eye_id);
     return {};
   }
 }
@@ -606,10 +606,10 @@ std::optional<u64> EyeRenderer::lookup_eye_texture_hash(u64 hash, bool lr) {
   for (auto& slot : m_gpu_eye_textures) {
     if (slot.fnv_name_hash == hash && slot.lr == lr) {
       auto* gpu_tex = slot.gpu_tex;
-      if (gpu_tex) {
+      if (gpu_tex && !gpu_tex->gpu_textures.empty()) {
         return gpu_tex->gpu_textures.at(0).gl;
       } else {
-        fmt::print("lookup eye failed for {} (1)\n", hash);
+        // fmt::print("lookup eye failed for {} (1)\n", hash);
         return {};
       }
     }

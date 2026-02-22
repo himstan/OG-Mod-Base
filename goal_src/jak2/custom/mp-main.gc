@@ -86,23 +86,18 @@
     ;; 3.1 Local Visibility Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
-          ;; We are Daxter. Hide the physical Jak shell.
+          ;; We are Daxter. The Jak shell now looks like Daxter, so keep it visible!
           (if (and *target* (-> *target* draw))
-              (logior! (-> *target* draw status) (draw-control-status no-draw))
-              )
-          ;; Ensure our sidekick (which draws the Daxter model) is visible.
-          (if (and *target* (-> *target* sidekick))
-              (let ((sk (-> *target* sidekick 0)))
-                (if (and sk (!= (the-as uint sk) 0) (-> sk draw))
-                    (logclear! (-> sk draw status) (draw-control-status no-draw))
-                    )
-                )
+              (logclear! (-> *target* draw status) (draw-control-status no-draw))
               )
           )
-        ;; We are Jak. Hide the NPC sidekick to avoid duplicates.
-        (if (!= (-> *multi-info* local-role) 1)
-            (mp-hide-daxter)
-            )
+        ;; We are Jak. Hide the NPC sidekick.
+        (begin
+          (if (and *target* (-> *target* draw))
+              (logclear! (-> *target* draw status) (draw-control-status no-draw))
+              )
+          (mp-hide-daxter)
+          )
         )
 
     ;; 4. Remote Presence

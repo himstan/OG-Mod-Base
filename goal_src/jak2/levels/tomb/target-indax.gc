@@ -270,6 +270,7 @@
   (target-gun-end-mode #t)
   (target-exit)
   (logior! (-> self game features) (game-feature sidekick))
+  (target-sidekick-setup #t)
   (if (zero? (-> self indax))
       (set! (-> self indax) (new 'process 'indax-info))
       )
@@ -278,42 +279,18 @@
   (set! (-> self control ctrl-xz-vel) 0.0)
   (logior! (-> self focus-status) (focus-status indax))
   (set! (-> self control bend-target) 0.0)
-  
-  ;; MANUAL COLLISION SETUP (adapted for Daxter scale)
-  (let ((gp-0 (-> self control)))
-    (let ((f30-2 0.2))
-      (set! (-> gp-0 draw-offset y) 0.0)
-      ;; Set root prim sphere
-      (set! (-> gp-0 root-prim local-sphere x) (-> *TARGET-bank* root-offset x))
-      (set! (-> gp-0 root-prim local-sphere y) (-> *TARGET-bank* root-offset y))
-      (set! (-> gp-0 root-prim local-sphere z) (-> *TARGET-bank* root-offset z))
-      (set! (-> gp-0 root-prim local-sphere w) (-> *TARGET-bank* root-radius))
-      
-      ;; Set individual collision spheres
-      (set-vector! (-> gp-0 collision-spheres 0 local-sphere) 0.0 (-> *TARGET-bank* body-radius) 0.0 (-> *TARGET-bank* body-radius))
-      (set-vector! (-> gp-0 collision-spheres 1 local-sphere) 0.0 (+ (-> *TARGET-bank* body-radius) (* 2867.2 f30-2)) 0.0 (-> *TARGET-bank* body-radius))
-      (set-vector! (-> gp-0 collision-spheres 2 local-sphere) 0.0 (+ (-> *TARGET-bank* body-radius) (* 5734.4 f30-2)) 0.0 (-> *TARGET-bank* body-radius))
-      )
-    (set! (-> gp-0 root-prim prim-core action) (collide-action solid stuck-wall-escape))
-    (set! (-> gp-0 root-prim prim-core collide-with) (collide-spec backgnd water obstacle camera-blocker hit-by-others-list player-list))
-    )
-
+  (target-collide-set! 'indax 0.0)
   (set! (-> self fact health) (-> self fact health-max))
   (set-time! (-> self indax indax-start-time))
   (set! (-> self indax art-group-backup) (-> self draw art-group))
   
-  ;; Use global daxter skeleton via manual sync (safest way to re-init Jak's skeleton)
-  (let ((ag (art-group-get-by-name *level* "daxter" (the-as (pointer uint32) #f))))
-    (when (and ag (= (-> ag type) art-group))
-      (set! (-> self draw art-group) ag)
-      (set! (-> self draw jgeo) (the-as art-joint-geo (-> ag data (-> skel-sidekick jgeo))))
-      (set! (-> self draw mgeo) (the-as merc-ctrl (-> ag data (-> skel-sidekick mgeo 0))))
-      (set! (-> self draw bounds quad) (-> skel-sidekick bounds quad))
+  ;; 1. Sidekick draws Daxter
+  (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
+      (set! (-> self draw art-group) (-> self sidekick 0 draw art-group))
       )
-    )
-  
+  ;; 2. Hide Jak shell
   (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
-  ;; Only send indax matrix event if sidekick exists
+  ;; 3. Signal sidekick to follow
   (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
       (send-event (ppointer->process (-> self sidekick)) 'matrix 'indax)
       )
@@ -348,7 +325,11 @@
     (target-collide-set! 'normal 0.0)
     (set! (-> self draw art-group) (-> self indax art-group-backup))
     (logclear! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
-    (send-event (ppointer->process (-> self sidekick)) 'matrix #f)
+    
+    (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
+        (send-event (ppointer->process (-> self sidekick)) 'matrix #f)
+        )
+
     (if (not (focus-test? self dead))
         (set! (-> self fact health) (-> self fact health-max))
         )
