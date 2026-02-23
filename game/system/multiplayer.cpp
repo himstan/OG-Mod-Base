@@ -23,7 +23,8 @@ enum class PacketType : uint8_t {
     STATE_UPDATE = 0, 
     EVENT_JOIN = 1,
     EVENT_LEAVE = 2,
-    EVENT_WORLD = 3
+    EVENT_WORLD = 3,
+    FULL_SYNC = 4
 };
 
 #pragma pack(push, 1)
@@ -46,6 +47,15 @@ struct PacketWorldEvent {
   PacketHeader header;
   uint32_t event_type;
   uint32_t actor_id;
+};
+
+struct PacketFullSync {
+    PacketHeader header;
+    float money;
+    float gems;
+    float skill;
+    uint32_t sync_aids_count;
+    uint32_t sync_aids[512];
 };
 
 #pragma pack(pop)
@@ -79,6 +89,15 @@ struct MultiplayerInfoGOAL {
     uint32_t out_event_type;
     uint32_t out_event_aid;
     uint32_t out_event_seq;
+    float host_money;
+    float host_gems;
+    float host_skill;
+    float client_sync_money;
+    float client_sync_gems;
+    float client_sync_skill;
+    uint32_t client_sync_flag;
+    uint32_t sync_aids_count;
+    uint32_t sync_aids[512];
 };
 
 struct MultiplayerData {
@@ -133,6 +152,21 @@ void pc_multi_sync_data(u32 info_ptr) {
                           PacketWorldEvent* world_event = (PacketWorldEvent*)event.packet->data;
                           lg::info("[Multiplayer] Received World Event: Type {}, AID {}", world_event->event_type, world_event->actor_id);
                           gMultiplayerData.inbound_events.push_back(*world_event);
+                        } else if (header->type == PacketType::FULL_SYNC && event.packet->dataLength == sizeof(PacketFullSync)) {
+                          PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
+                          lg::info("[Multiplayer] Received Full Sync from Host: Money {}, Gems {}, Skill {}, Aids {}", 
+                                   full_sync->money, full_sync->gems, full_sync->skill, full_sync->sync_aids_count);
+                          info->client_sync_money = full_sync->money;
+                          info->client_sync_gems = full_sync->gems;
+                          info->client_sync_skill = full_sync->skill;
+                          
+                          // Safety check: Clamp count to buffer size
+                          uint32_t count = full_sync->sync_aids_count;
+                          if (count > 512) count = 512;
+                          
+                          info->sync_aids_count = count;
+                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 512);
+                          info->client_sync_flag = 1;
                         }
                     }
                     enet_packet_destroy(event.packet);
@@ -140,6 +174,27 @@ void pc_multi_sync_data(u32 info_ptr) {
                 }
                 case ENET_EVENT_TYPE_CONNECT:
                     lg::info("[Multiplayer] Peer connected: {}:{}", event.peer->address.host, event.peer->address.port);
+                    // Host Handshake: Send current save state to the new client
+                    if (gMultiplayerData.local_role == 0) {
+                        PacketFullSync sync;
+                        memset(&sync, 0, sizeof(PacketFullSync)); // Clear to be safe
+                        sync.header.type = PacketType::FULL_SYNC;
+                        sync.header.sequenceNum = gMultiplayerData.sequence_num;
+                        sync.money = info->host_money;
+                        sync.gems = info->host_gems;
+                        sync.skill = info->host_skill;
+                        
+                        uint32_t count = info->sync_aids_count;
+                        if (count > 512) count = 512;
+                        sync.sync_aids_count = count;
+                        
+                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 512);
+
+                        ENetPacket* sync_packet = enet_packet_create(&sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
+                        enet_peer_send(event.peer, 1, sync_packet);
+                        lg::info("[Multiplayer] Sent Full Sync to new peer: Money {}, Gems {}, Skill {}, Aids {}", 
+                                 sync.money, sync.gems, sync.skill, sync.sync_aids_count);
+                    }
                     break;
                 case ENET_EVENT_TYPE_DISCONNECT:
                     lg::info("[Multiplayer] Peer disconnected.");

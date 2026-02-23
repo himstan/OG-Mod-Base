@@ -31,9 +31,18 @@
    (in-event-seq      uint32)           ;; 88
    (out-event-type    uint32)           ;; 92
    (out-event-aid     uint32)           ;; 96
-   (out-event-seq     uint32))           ;; 100
+   (out-event-seq     uint32)           ;; 100
+   (host-money        float)            ;; 104
+   (host-gems         float)            ;; 108
+   (host-skill        float)            ;; 112
+   (client-sync-money float)            ;; 116
+   (client-sync-gems  float)            ;; 120
+   (client-sync-skill float)            ;; 124
+   (client-sync-flag  uint32)           ;; 128
+   (sync-aids-count   uint32)           ;; 132
+   (sync-aids         uint32 512))      ;; 136
    
-  :size-assert 104)
+  :size-assert 2184)
   
 
 (define-extern pc-multi-sync-data (function uint none))

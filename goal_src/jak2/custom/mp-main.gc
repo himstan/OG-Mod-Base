@@ -43,6 +43,25 @@
     (set! *multi-last-sync-frame* now)
 
     ;; 2. Update Local Data
+    (set! (-> *multi-info* host-money) (-> *game-info* money))
+    (set! (-> *multi-info* host-gems) (-> *game-info* gem))
+    (set! (-> *multi-info* host-skill) (-> *game-info* skill))
+
+    ;; Extraction of dead/collected aids
+    (let ((perm-array (-> *game-info* perm-list))
+          (count 0))
+      (when perm-array
+        (dotimes (i (-> perm-array length))
+          (let ((perm (-> perm-array data i)))
+            (when (logtest? (-> perm status) (entity-perm-status dead))
+              (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
+              (+! count 1)
+              (if (>= count 512) (goto full-buffer))))))
+      (label full-buffer)
+      (if (> count 0)
+          (format 0 "[MP-Host] Extracted ~D dead AIDs for sync.~%" count))
+      (set! (-> *multi-info* sync-aids-count) (the-as uint count)))
+
     (set! (-> *multi-info* local-x) (-> *target* control trans x))
     (set! (-> *multi-info* local-y) (-> *target* control trans y))
     (set! (-> *multi-info* local-z) (-> *target* control trans z))
@@ -97,10 +116,13 @@
           (mp-receive-world-event (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
           
 
-    (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
+    (if (and *target* (nonzero? *target*) (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
         (begin
-          (format 0 "[MP] Role assigned: 1. Transforming...~%")
-          (send-event *target* 'change-mode 'indax)))
+          (format 0 "[MP] Role assigned: 1. Transforming via go target-indax-start...~%")
+          ;; Direct go-process is safer as it handles state entry correctly
+          (go-process *target* target-indax-start (the-as handle #f))
+          )
+        )
 
     ;; 4.1 Local Visibility Management
     (if (= (-> *multi-info* local-role) 1)
@@ -168,5 +190,44 @@
                (deactivate (-> *mp-remote-manager* 0))
                (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
          (set! *multi-remote-first-seen?* #t)))))
+
+  ;; --- 5. Full State Sync Application ---
+  (when (and (= (-> *multi-info* local-role) 1) (= (-> *multi-info* client-sync-flag) 1))
+    (format 0 "[MP-Client] Applying Full Sync from Host...~%")
+    (set! (-> *game-info* money) (-> *multi-info* client-sync-money))
+    (set! (-> *game-info* gem) (-> *multi-info* client-sync-gems))
+    (set! (-> *game-info* skill) (-> *multi-info* client-sync-skill))
+    
+    (let ((count (-> *multi-info* sync-aids-count)))
+      (if (> count 512) (set! count (the-as uint 512)))
+      (format 0 "[MP-Client] Processing ~D AIDs from Mega Buffer...~%" count)
+      (dotimes (i (the-as int count))
+        (let ((aid (-> *multi-info* sync-aids i)))
+          (format 0 "[MP-Client] Syncing AID: #x~X~%" aid)
+          (let ((perm (actor-perm *game-info* (the-as actor-id aid))))
+            (cond
+              (perm
+                (logior! (-> perm status) (entity-perm-status dead)))
+              (else
+                ;; Not in perm-list yet, add it
+                (let ((game-perms (-> *game-info* perm-list)))
+                  (when (< (-> game-perms length) (-> game-perms allocated-length))
+                    (let ((new-perm (-> game-perms data (-> game-perms length))))
+                      (set! (-> new-perm aid) (the-as actor-id aid))
+                      (set! (-> new-perm status) (entity-perm-status dead))
+                      (+! (-> game-perms length) 1)
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ))
+      (format 0 "[MP-Client] Mega Buffer processed successfully!~%"))
+
+    (set! (-> *multi-info* client-sync-flag) (the-as uint 0))
+    (format 0 "[MP-Client] Initial Handshake Complete!~%")
+    )
+
   (none))
   
