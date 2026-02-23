@@ -20,8 +20,8 @@
   (set! (-> *multi-info* out-event-type) (the-as uint32 event-type))
   (set! (-> *multi-info* out-event-aid) (the-as uint32 actor-id))
   (1+! (-> *multi-info* out-event-seq))
-  (none)
-  )
+  (none))
+  
 
 (defun mp-receive-world-event ((evt-type uint) (aid uint))
   "Process an incoming world event from the reliable channel"
@@ -42,7 +42,7 @@
                    (format 0 "[MP] Sending 'pickup to Orb process...~%")
                    (send-event (-> ent extra process) 'pickup))
                  (format 0 "[MP] Orb has no process (already dead or not loaded)~%")))
-           (format 0 "[MP] Failed to find Entity for AID ~D~%"))))
-    )
-  (none)
-  )  
+           (format 0 "[MP] Failed to find Entity for AID ~D~%")))))
+    
+  (none))
+    
