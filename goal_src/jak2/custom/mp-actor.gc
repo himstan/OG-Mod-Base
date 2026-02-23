@@ -1,19 +1,15 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-(require "custom/mp-types.gc")
-
 ;; --- Multiplayer Manager ---
 (deftype mp-manager (process)
   ((remote-id    uint32)
    (remote-role  int32)
    (manipy-proc  handle)
    (spawn-timer  time-frame)
-   (last-anim-packet uint32)
-   )
+   (last-anim-packet uint32))
   (:state-methods
-    idle)
-  )
+    idle))
 
 (defbehavior mp-manager-init mp-manager ((id uint32) (role int32))
   ;; Protect the manager from memory overflow
@@ -25,54 +21,42 @@
   (set! (-> self manipy-proc) (the-as handle #f))
   (set! (-> self spawn-timer) 0)
   (set! (-> self last-anim-packet) 0)
-  (go-virtual idle)
-  )
+  (go-virtual idle))
 
 ;; --- MP Idle State ---
 (defstate mp-idle (manipy)
   :code (behavior ()
-    (loop
-      ;; 1. Position & Rotation Sync
-      (vector-copy! (-> self root trans) *multi-remote-interp-pos*)
-      (quaternion-identity! (-> self root quat))
-      (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
+         (loop
+           ;; 1. Position & Rotation Sync
+           (vector-copy! (-> self root trans) *multi-remote-interp-pos*)
+           (quaternion-identity! (-> self root quat))
+           (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
 
-      ;; 2. Animation Logic
-      (let ((anim-idx (-> *multi-info* remote-anim))
-            (anim-frame (-> *multi-info* remote-anim-frame))
-            (packet-id (-> *multi-info* remote-packet-id))
-            (parent-proc (the-as mp-manager (ppointer->process (-> self parent)))))
+           ;; 2. Animation Logic
+           (let ((anim-idx (-> *multi-info* remote-anim))
+                 (anim-frame (-> *multi-info* remote-anim-frame))
+                 (packet-id (-> *multi-info* remote-packet-id))
+                 (parent-proc (the-as mp-manager (ppointer->process (-> self parent)))))
         
-        (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
-            (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
-              (if (= (-> target-anim type) art-joint-anim)
-                  (begin
-                    ;; A. Group Management
-                    (if (!= (ja-group) target-anim)
-                        (ja :group! target-anim :num! (set! anim-frame))
-                        )
+             (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
+                 (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
+                   (if (= (-> target-anim type) art-joint-anim)
+                       (begin
+                         ;; A. Group Management
+                         (if (!= (ja-group) target-anim)
+                             (ja :group! target-anim :num! (set! anim-frame)))     
                     
-                    ;; B. Fluidity: Only snap if a NEW packet has arrived
-                    (if (and parent-proc (!= packet-id (-> parent-proc last-anim-packet)))
-                        (begin
-                          (set! (-> self skel root-channel 0 frame-num) anim-frame)
-                          (set! (-> parent-proc last-anim-packet) packet-id)
-                          )
-                        ;; Otherwise, let the engine play the animation naturally at 60fps
-                        (ja :num! (loop!))
-                        )
-                    )
-                  (ja :num! (loop!))
-                  )
-              )
-            (ja :num! (loop!))
-            )
-        )
-      (suspend)
-      )
-    )
-  :post ja-post
-  )
+                         ;; B. Fluidity: Only snap if a NEW packet has arrived
+                         (if (and parent-proc (!= packet-id (-> parent-proc last-anim-packet)))
+                             (begin
+                               (set! (-> self skel root-channel 0 frame-num) anim-frame)
+                               (set! (-> parent-proc last-anim-packet) packet-id))
+                             ;; Otherwise, let the engine play the animation naturally at 60fps
+                             (ja :num! (loop!))))
+                       (ja :num! (loop!))))
+                 (ja :num! (loop!))))
+           (suspend)))
+  :post ja-post)
 
 ;; --- Remote Character Initialization ---
 (defbehavior mp-character-init manipy ((pos vector) (ent entity-actor) (skel-name string) (role int32))
@@ -92,9 +76,7 @@
         (set! (-> self draw shadow) #f)
         (logclear! (-> self draw status) (draw-control-status no-draw no-draw-temp uninited))
         (logior! (-> self draw status) (draw-control-status on-screen close-to-screen))
-        (set-vector! (-> self draw bounds) 0.0 (meters 2.0) 0.0 (meters 15.0))
-        )
-      )
+        (set-vector! (-> self draw bounds) 0.0 (meters 2.0) 0.0 (meters 15.0))))
   
   (if (nonzero? (-> self skel))
       (begin
@@ -104,61 +86,39 @@
             (if (= (-> self draw art-group data i type) art-joint-anim)
                 (begin
                   (set! valid-anim (the-as art-joint-anim (-> self draw art-group data i)))
-                  (goto found-anim)
-                  )
-                )
-            )
+                  (goto found-anim))))
           (label found-anim)
           (if valid-anim
-              (ja :group! valid-anim :num! min)
-              )
-          )
-        )
-      )
-  
-  (go mp-idle)
-  )
+              (ja :group! valid-anim :num! min)))))
+  (go mp-idle))
 
 (defun find-safe-entity ()
   (if (and *target* (-> *target* entity)) (return (-> *target* entity)))
   (dotimes (i (-> *level* length))
     (let ((lev (-> *level* level i)))
       (if (and (nonzero? lev) (= (-> lev status) 'active) (-> lev entity) (nonzero? (-> lev entity length)))
-          (return (-> lev entity data 0))
-          )
-      )
-    )
-  (the-as entity-actor #f)
-  )
+          (return (-> lev entity data 0)))))
+  (the-as entity-actor #f))
 
 (defstate idle (mp-manager)
   :virtual #t
   :trans (behavior ()
-    (let ((m (handle->process (-> self manipy-proc))))
-      (if (not m)
-          (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
-            (let ((name (if (= (-> self remote-role) 1) "sidekick" "jchar")))
-              (format 0 "MP-LOG: idle-trans: Spawning manipy (~S)...~%" name)
-              ;; Use #f for entity
-              (let ((new-proc (process-spawn manipy :init mp-character-init *multi-remote-interp-pos* (the-as entity-actor #f) name (-> self remote-role) :to self)))
-                (if new-proc
-                    (set! (-> self manipy-proc) (ppointer->handle new-proc))
-                    )
-                )
-              )
-            (set-time! (-> self spawn-timer))
-            )
-          ;; Update existing manipy
-          (let ((mp (the-as manipy m)))
-            (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
-            (quaternion-identity! (-> mp root quat))
-            (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)
-            (if (-> mp draw)
-                (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp))
-                )
-            )
-          )
-      )
-    )
-  :code (behavior () (loop (suspend)))
-  )
+          (let ((m (handle->process (-> self manipy-proc))))
+            (if (not m)
+                (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
+                  (let ((name (if (= (-> self remote-role) 1) "sidekick" "jchar")))
+                    (format 0 "MP-LOG: idle-trans: Spawning manipy (~S)...~%" name)
+                    ;; Use #f for entity
+                    (let ((new-proc (process-spawn manipy :init mp-character-init *multi-remote-interp-pos* (the-as entity-actor #f) name (-> self remote-role) :to self)))
+                      (if new-proc
+                          (set! (-> self manipy-proc) (ppointer->handle new-proc)))))
+                  (set-time! (-> self spawn-timer)))
+                ;; Update existing manipy
+                (let ((mp (the-as manipy m)))
+                  (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
+                  (quaternion-identity! (-> mp root quat))
+                  (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)
+                  (if (-> mp draw)
+                      (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp)))))))
+    
+  :code (behavior () (loop (suspend))))

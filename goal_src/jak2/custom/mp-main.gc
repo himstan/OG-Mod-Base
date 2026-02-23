@@ -1,10 +1,6 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-(require "custom/mp-types.gc")
-(require "custom/mp-helpers.gc")
-(require "custom/mp-actor.gc")
-
 ;; --- Externs ---
 (define-extern *multi-remote-spawn-time* time-frame)
 (define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
@@ -13,29 +9,21 @@
 (defun string-crc32 ((str string))
   "Simple hash function for level name verification"
   (if (or (not str) (zero? str))
-      (return (the-as uint 0))
-      )
+      (return (the-as uint 0)))
   (let ((hash (the-as uint 0))
         (ptr (-> str data)))
     (while (nonzero? (-> ptr 0))
       (set! hash (+ (-> ptr 0) (* hash 31)))
-      (set! ptr (&-> ptr 1))
-      )
-    hash
-    )
-  )
+      (set! ptr (&-> ptr 1)))
+    hash))
 
 (defun mp-get-anim-name ((proc process-drawable) (idx int))
   (if (and proc (nonzero? proc) (-> proc draw) (-> proc draw art-group) (>= idx 0) (< idx (-> proc draw art-group length)))
       (let ((name (-> proc draw art-group data idx name)))
         (if (and name (nonzero? name))
             name
-            "unknown"
-            )
-        )
-      "unknown"
-      )
-  )
+            "unknown"))
+      "unknown"))
 
 ;; --- Tick Logic ---
 
@@ -46,15 +34,12 @@
           (not *target*)
           (not (-> *target* control))
           (!= (-> *level* loading-level) (-> *level* default-level))
-          (focus-test? *target* teleporting)
-          )
-      (return #f)
-      )
+          (focus-test? *target* teleporting))
+      (return #f))
 
   (let ((now (current-time)))
     (if (= *multi-last-sync-frame* now)
-        (return #f)
-        )
+        (return #f))
     (set! *multi-last-sync-frame* now)
 
     ;; 2. Update Local Data
@@ -69,12 +54,7 @@
       (if (and lev (nonzero? lev) (= (-> lev status) 'active))
           (let ((lev-name (-> lev name)))
             (if (and lev-name (nonzero? lev-name))
-                (set! (-> *multi-info* local-level) (string-crc32 (symbol->string lev-name)))
-                )
-            )
-          )
-      )
-    
+                (set! (-> *multi-info* local-level) (string-crc32 (symbol->string lev-name)))))))
     (let ((local-anim -1)
           (local-frame 0.0))
       (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)))
@@ -86,10 +66,7 @@
                   (if (and (nonzero? chan) (-> chan frame-group))
                       (begin
                         (set! local-anim (-> chan frame-group master-art-group-index))
-                        (set! local-frame (-> chan frame-num))
-                        )
-                      )
-                  )
+                        (set! local-frame (-> chan frame-num)))))
                 ;; --- Role 0 (Jak): Multi-Channel Scan ---
                 ;; Jak uses deep blending for Walk/Run. Scan up to 7 channels safely.
                 (let ((max-weight 0.0)
@@ -100,69 +77,51 @@
                           (begin
                             (set! max-weight (-> chan frame-interp 0))
                             (set! local-anim (-> chan frame-group master-art-group-index))
-                            (set! local-frame (-> chan frame-num))
-                            )
-                          )
-                      )
-                    )
+                            (set! local-frame (-> chan frame-num))))))
                   ;; Fallback for Jak
                   (if (and (= local-anim -1) (-> skel root-channel 0 frame-group))
                       (begin
                         (set! local-anim (-> skel root-channel 0 frame-group master-art-group-index))
-                        (set! local-frame (-> skel root-channel 0 frame-num))
-                        )
-                      )
-                  )
-                )
-            )
-          )
+                        (set! local-frame (-> skel root-channel 0 frame-num))))))))
       (set! (-> *multi-info* local-anim) local-anim)
       (set! (-> *multi-info* local-anim-frame) local-frame)
-      (+! (-> *multi-info* local-packet-id) 1)
-      )
-
+      (+! (-> *multi-info* local-packet-id) 1))
+      
     ;; 3. Bridge Sync
     (pc-multi-sync-data (the-as uint *multi-info*))
     (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
         (begin
           (format 0 "[MP] Role assigned: 1. Transforming...~%")
-          (send-event *target* 'change-mode 'indax)
-          )
-        )
+          (send-event *target* 'change-mode 'indax)))
 
     ;; 3.1 Local Visibility Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
           ;; We are Daxter. The Jak shell now looks like Daxter, so keep it visible!
           (if (and *target* (-> *target* draw))
-              (logclear! (-> *target* draw status) (draw-control-status no-draw))
-              )
-          )
+              (logclear! (-> *target* draw status) (draw-control-status no-draw))))
+              
         ;; We are Jak. Hide the NPC sidekick.
         (begin
           (if (and *target* (-> *target* draw))
-              (logclear! (-> *target* draw status) (draw-control-status no-draw))
-              )
-          (mp-hide-daxter)
-          )
-        )
-
+              (logclear! (-> *target* draw status) (draw-control-status no-draw)))
+              
+          (mp-hide-daxter)))
+          
     ;; 3.2 Camera Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
           ;; Daxter Camera: Closer and lower
           (set-setting! 'string-min-length 'abs (meters 3.0) 0)
           (set-setting! 'string-max-length 'abs (meters 7.0) 0)
-          (set-setting! 'target-height     'abs (meters 1.0) 0)
-          )
+          (set-setting! 'target-height     'abs (meters 1.0) 0))
+          
         (begin
           ;; Restore Jak Camera
           (remove-setting! 'string-min-length)
           (remove-setting! 'string-max-length)
-          (remove-setting! 'target-height)
-          )
-        )
-
+          (remove-setting! 'target-height)))
+          
     ;; 4. Remote Presence
     (cond
       ((= (-> *multi-info* remote-status) 1)
@@ -175,10 +134,8 @@
                (begin
                  (vector-copy! *multi-remote-interp-pos* remote-pos)
                  (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
-                 (set! *multi-remote-first-seen?* #f)
-                 )
-               )
-
+                 (set! *multi-remote-first-seen?* #f)))
+                 
            (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
 
@@ -189,34 +146,19 @@
                  (begin
                    (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
                      (if new-mgr
-                         (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
-                         )
-                     )
-                   )
+                         (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr)))))
+                         
                  ;; Process is alive! Update fields safely.
                  (let ((mp-mgr (-> mgr-ptr 0)))
                    (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
-                   (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
-                   )
-                 )
-             )
-           )
-         )
-       )
+                   (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))))))))
       (else
        ;; FALLBACK / DEACTIVATE
        (begin
          (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) 'dead))
              (begin
                (deactivate (-> *mp-remote-manager* 0))
-               (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))
-               )
-             )
-         (set! *multi-remote-first-seen?* #t)
-         )
-       )
-      )
-    )
+               (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
+         (set! *multi-remote-first-seen?* #t)))))
+  (none))
   
-  (none)
-  )
