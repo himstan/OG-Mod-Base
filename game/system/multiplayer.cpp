@@ -22,7 +22,8 @@ namespace {
 enum class PacketType : uint8_t { 
     STATE_UPDATE = 0, 
     EVENT_JOIN = 1,
-    EVENT_LEAVE = 2 
+    EVENT_LEAVE = 2,
+    EVENT_WORLD = 3
 };
 
 #pragma pack(push, 1)
@@ -39,6 +40,12 @@ struct PacketPlayerState {
     uint16_t anim;
     float anim_frame;
     uint32_t level_hash;
+};
+
+struct PacketWorldEvent {
+  PacketHeader header;
+  uint32_t event_type;
+  uint32_t actor_id;
 };
 
 #pragma pack(pop)
@@ -66,6 +73,12 @@ struct MultiplayerInfoGOAL {
     float remote_anim_frame;
     uint32_t local_packet_id;
     uint32_t remote_packet_id;
+    uint32_t in_event_type;
+    uint32_t in_event_aid;
+    uint32_t in_event_seq;
+    uint32_t out_event_type;
+    uint32_t out_event_aid;
+    uint32_t out_event_seq;
 };
 
 struct MultiplayerData {
@@ -75,8 +88,10 @@ struct MultiplayerData {
   int local_role = -1;
   uint32_t local_net_id = 0;
   uint32_t sequence_num = 0;
+  uint32_t last_out_event_seq = 0;
   
   std::unordered_map<uint32_t, RemoteEntityState> remote_entities;
+  std::vector<PacketWorldEvent> inbound_events;
 };
 
 MultiplayerData gMultiplayerData;
@@ -114,6 +129,9 @@ void pc_multi_sync_data(u32 info_ptr) {
                                 entity.level_hash = state->level_hash;
                                 entity.last_sequence_num = state->header.sequenceNum;
                             }
+                        } else if (header->type == PacketType::EVENT_WORLD && event.packet->dataLength == sizeof(PacketWorldEvent)) {
+                          PacketWorldEvent* world_event = (PacketWorldEvent*)event.packet->data;
+                          gMultiplayerData.inbound_events.push_back(*world_event);
                         }
                     }
                     enet_packet_destroy(event.packet);
@@ -132,6 +150,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         }
 
         // --- 2. Network Send (Broadcast/Target) ---
+        // 2a. State Update (Channel 0, Unsequenced)
         PacketPlayerState local_state;
         local_state.header.type = PacketType::STATE_UPDATE;
         local_state.header.sequenceNum = ++gMultiplayerData.sequence_num;
@@ -147,14 +166,39 @@ void pc_multi_sync_data(u32 info_ptr) {
         ENetPacket* packet = enet_packet_create(&local_state, sizeof(PacketPlayerState), ENET_PACKET_FLAG_UNSEQUENCED);
         
         if (gMultiplayerData.local_role == 0) {
-            // Host: Broadcast to all peers
             enet_host_broadcast(gMultiplayerData.host, 0, packet);
         } else if (gMultiplayerData.server_peer) {
-            // Client: Send to Host
             enet_peer_send(gMultiplayerData.server_peer, 0, packet);
         }
 
+        // 2b. World Events (Channel 1, Reliable)
+        if (info->out_event_seq > gMultiplayerData.last_out_event_seq) {
+          PacketWorldEvent out_event;
+          out_event.header.type = PacketType::EVENT_WORLD;
+          out_event.header.sequenceNum = info->out_event_seq;
+          out_event.event_type = info->out_event_type;
+          out_event.actor_id = info->out_event_aid;
+
+          ENetPacket* event_packet = enet_packet_create(&out_event, sizeof(PacketWorldEvent), ENET_PACKET_FLAG_RELIABLE);
+          if (gMultiplayerData.local_role == 0) {
+            enet_host_broadcast(gMultiplayerData.host, 1, event_packet);
+          } else if (gMultiplayerData.server_peer) {
+            enet_peer_send(gMultiplayerData.server_peer, 1, event_packet);
+          }
+          gMultiplayerData.last_out_event_seq = info->out_event_seq;
+        }
+
         // --- 3. GOAL Sync (Mapping remote_entities back to legacy pointer) ---
+        // 3a. Update Inbound Events (Inbox)
+        if (!gMultiplayerData.inbound_events.empty()) {
+          auto& event = gMultiplayerData.inbound_events.front();
+          info->in_event_type = event.event_type;
+          info->in_event_aid = event.actor_id;
+          info->in_event_seq++;
+          gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
+        }
+
+        // 3b. Remote Player State Sync
         // For the MVP, we assume there's only one remote player (the other one)
         uint32_t other_net_id = (gMultiplayerData.local_role == 0) ? 1 : 0;
         

@@ -12,3 +12,12 @@
               (logior! (-> sidekick-proc draw status) (draw-control-status no-draw))
               (vector-reset! (-> sidekick-proc root scale))))))
   (none))
+
+;; --- Event Helpers ---
+(defun mp-send-world-event ((event-type uint) (actor-id uint))
+  "Trigger an outbound world event via the reliable channel"
+  (set! (-> *multi-info* out-event-type) (the-as uint32 event-type))
+  (set! (-> *multi-info* out-event-aid) (the-as uint32 actor-id))
+  (1+! (-> *multi-info* out-event-seq))
+  (none))
+  

@@ -24,9 +24,15 @@
    (remote-anim-frame float)            ;; 68
    (local-packet-id   uint32)           ;; 72
    (remote-packet-id  uint32)           ;; 76
-   )
-  :size-assert 80
-  )
+   (in-event-type     uint32)           ;; 80
+   (in-event-aid      uint32)           ;; 84
+   (in-event-seq      uint32)           ;; 88
+   (out-event-type    uint32)           ;; 92
+   (out-event-aid     uint32)           ;; 96
+   (out-event-seq     uint32))           ;; 100
+   
+  :size-assert 104)
+  
 
 (define-extern pc-multi-sync-data (function uint none))
 
@@ -34,6 +40,7 @@
 (define-perm *multi-info* multiplayer-info (new 'static 'multiplayer-info))
 (define-perm *multi-sync-enabled?* symbol #f)
 (define-perm *multi-last-sync-frame* time-frame (seconds 0))
+(define-perm *multi-last-in-event-seq* uint (the-as uint 0))
 (define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
 (define-perm *multi-remote-interp-angle* float 0.0)
 (define-perm *multi-remote-first-seen?* symbol #t)

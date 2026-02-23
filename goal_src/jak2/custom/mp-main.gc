@@ -89,12 +89,21 @@
       
     ;; 3. Bridge Sync
     (pc-multi-sync-data (the-as uint *multi-info*))
+
+    ;; 4. Process Inbox
+    (if (!= (-> *multi-info* in-event-seq) *multi-last-in-event-seq*)
+        (begin
+          (set! *multi-last-in-event-seq* (-> *multi-info* in-event-seq))
+          (format 0 "[MP] Received World Event: Type ~D, AID ~D~%" (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
+          ;; Future: Trigger actual game logic here (e.g. (send-event (search-by-aid (-> *multi-info* in-event-aid)) 'die))
+          
+
     (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
         (begin
           (format 0 "[MP] Role assigned: 1. Transforming...~%")
           (send-event *target* 'change-mode 'indax)))
 
-    ;; 3.1 Local Visibility Management
+    ;; 4.1 Local Visibility Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
           ;; We are Daxter. The Jak shell now looks like Daxter, so keep it visible!
