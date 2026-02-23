@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
+(require "custom/mp-types.gc")
+
 ;; name: collectables.gc
 ;; name in dgo: collectables
 ;; dgos: ENGINE, GAME
@@ -1420,6 +1422,11 @@
 (defstate pickup (money)
   :virtual #t
   :code (behavior ((arg0 symbol) (arg1 handle))
+    (let ((p-type (if (-> self fact) (-> self fact pickup-type) (pickup-type none))))
+      (format 0 "[MP] Money pickup: type ~D, entity ~A, handle-proc ~A~%" p-type (-> self entity) (handle->process arg1))
+      (if (and (-> self entity) (nonzero? (-> self entity)) (= p-type (pickup-type skill)) (handle->process arg1))
+          (mp-send-world-event MP_EVENT_ORB (the-as uint (-> self entity aid))))
+      )
     (process-entity-status! self (entity-perm-status dead) #t)
     )
   :exit (behavior ()

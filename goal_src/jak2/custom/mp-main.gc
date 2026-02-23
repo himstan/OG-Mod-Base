@@ -94,8 +94,7 @@
     (if (!= (-> *multi-info* in-event-seq) *multi-last-in-event-seq*)
         (begin
           (set! *multi-last-in-event-seq* (-> *multi-info* in-event-seq))
-          (format 0 "[MP] Received World Event: Type ~D, AID ~D~%" (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
-          ;; Future: Trigger actual game logic here (e.g. (send-event (search-by-aid (-> *multi-info* in-event-aid)) 'die))
+          (mp-receive-world-event (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
           
 
     (if (and (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))

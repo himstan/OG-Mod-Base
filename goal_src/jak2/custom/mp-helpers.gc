@@ -16,8 +16,28 @@
 ;; --- Event Helpers ---
 (defun mp-send-world-event ((event-type uint) (actor-id uint))
   "Trigger an outbound world event via the reliable channel"
+  (format 0 "[MP] Sending World Event: Type ~D, AID ~D (Seq ~D)~%" event-type actor-id (1+ (-> *multi-info* out-event-seq)))
   (set! (-> *multi-info* out-event-type) (the-as uint32 event-type))
   (set! (-> *multi-info* out-event-aid) (the-as uint32 actor-id))
   (1+! (-> *multi-info* out-event-seq))
-  (none))
-  
+  (none)
+  )
+
+(defun mp-receive-world-event ((evt-type uint) (aid uint))
+  "Process an incoming world event from the reliable channel"
+  (format 0 "[MP] Receiving World Event: Type ~D, AID ~D~%" evt-type aid)
+  (cond
+    ((= evt-type MP_EVENT_ORB)
+     (let ((ent (entity-by-aid aid)))
+       (if (and ent (nonzero? ent))
+           (begin
+             (format 0 "[MP] Found Orb Entity for AID ~D. Process: ~A~%" aid (-> ent extra process))
+             (if (and (-> ent extra process) (nonzero? (-> ent extra process)))
+                 (begin
+                   (format 0 "[MP] Sending 'pickup to Orb process...~%")
+                   (send-event (-> ent extra process) 'pickup))
+                 (format 0 "[MP] Orb has no process (already dead or not loaded)~%")))
+           (format 0 "[MP] Failed to find Entity for AID ~D~%"))))
+    )
+  (none)
+  )  

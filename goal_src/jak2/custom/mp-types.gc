@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
+(defconstant MP_EVENT_ORB (the-as uint 1))
+
 ;; --- Types & Externs ---
 
 (deftype multiplayer-info (structure)
@@ -35,6 +37,7 @@
   
 
 (define-extern pc-multi-sync-data (function uint none))
+(define-extern mp-send-world-event (function uint uint none))
 
 ;; Persistent globals
 (define-perm *multi-info* multiplayer-info (new 'static 'multiplayer-info))

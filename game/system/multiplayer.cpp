@@ -131,6 +131,7 @@ void pc_multi_sync_data(u32 info_ptr) {
                             }
                         } else if (header->type == PacketType::EVENT_WORLD && event.packet->dataLength == sizeof(PacketWorldEvent)) {
                           PacketWorldEvent* world_event = (PacketWorldEvent*)event.packet->data;
+                          lg::info("[Multiplayer] Received World Event: Type {}, AID {}", world_event->event_type, world_event->actor_id);
                           gMultiplayerData.inbound_events.push_back(*world_event);
                         }
                     }
@@ -173,6 +174,7 @@ void pc_multi_sync_data(u32 info_ptr) {
 
         // 2b. World Events (Channel 1, Reliable)
         if (info->out_event_seq > gMultiplayerData.last_out_event_seq) {
+          lg::info("[Multiplayer] Sending World Event: Type {}, AID {}, Seq {}", info->out_event_type, info->out_event_aid, info->out_event_seq);
           PacketWorldEvent out_event;
           out_event.header.type = PacketType::EVENT_WORLD;
           out_event.header.sequenceNum = info->out_event_seq;
