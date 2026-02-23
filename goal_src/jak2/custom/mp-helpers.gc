@@ -32,6 +32,11 @@
        (if (and ent (nonzero? ent))
            (begin
              (format 0 "[MP] Found Orb Entity for AID ~D. Process: ~A~%" aid (-> ent extra process))
+             ;; 1. Update local player score and HUD
+             (if (and *target* (nonzero? *target*))
+                 (send-event *target* 'get-pickup (pickup-type skill) 1.0))
+             
+             ;; 2. Kill the orb process
              (if (and (-> ent extra process) (nonzero? (-> ent extra process)))
                  (begin
                    (format 0 "[MP] Sending 'pickup to Orb process...~%")
