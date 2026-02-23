@@ -240,6 +240,10 @@ build_third_party_lib(tree-sitter tree-sitter)
 # native OS dialogs for error messages
 build_third_party_lib(libtinyfiledialogs libtinyfiledialogs)
 
+# build ENet for networking
+include_directories(third-party/enet/include)
+build_third_party_lib(enet enet)
+
 # build format library
 include_directories(third-party/fmt/include)
 build_third_party_lib(fmt fmt)

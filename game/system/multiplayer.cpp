@@ -1,20 +1,16 @@
 #include <string>
+#include <unordered_map>
+#include <vector>
+#include <enet/enet.h>
+
 #include "multiplayer.h"
-#include "common/cross_sockets/XSocket.h"
 #include "game/kernel/common/kmachine.h"
 #include "game/kernel/jak2/kscheme.h"
 #include "common/log/log.h"
 
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-#include <WinSock2.h>
 #include <process.h>
 #else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 #endif
 
@@ -24,35 +20,36 @@
 namespace {
 
 enum class PacketType : uint8_t { 
-    JOIN = 0, 
-    LEAVE = 1, 
-    SYNC = 2 
+    STATE_UPDATE = 0, 
+    EVENT_JOIN = 1,
+    EVENT_LEAVE = 2 
 };
 
 #pragma pack(push, 1)
+
 struct PacketHeader {
     PacketType type;
-    uint32_t sender_id;
+    uint32_t sequenceNum; // Incremented every tick by the sender
 };
 
-struct PacketJoin {
+struct PacketPlayerState {
     PacketHeader header;
-    int32_t assigned_role;
-};
-
-struct PacketLeave {
-    PacketHeader header;
-};
-
-struct PacketSync {
-    PacketHeader header;
+    uint32_t netId;
     float x, y, z, angle;
-    int32_t anim, role;
-    uint32_t level_hash;
+    uint16_t anim;
     float anim_frame;
-    uint32_t packet_id;
+    uint32_t level_hash;
 };
+
 #pragma pack(pop)
+
+struct RemoteEntityState {
+    float x, y, z, angle;
+    uint16_t anim;
+    float anim_frame;
+    uint32_t level_hash;
+    uint32_t last_sequence_num = 0;
+};
 
 struct MultiplayerInfoGOAL {
     float local_x, local_y, local_z, local_angle;
@@ -72,184 +69,184 @@ struct MultiplayerInfoGOAL {
 };
 
 struct MultiplayerData {
-  float local_x, local_y, local_z, local_angle;
-  int local_anim, local_role;
-  float local_anim_frame;
-  uint32_t local_packet_id = 0;
-  uint32_t local_level;
-  float remote_x, remote_y, remote_z, remote_angle;
-  int remote_anim, remote_role;
-  float remote_anim_frame;
-  uint32_t remote_packet_id = 0;
-  uint32_t remote_level;
-  uint32_t remote_id = 0;
-  uint32_t player_id = 0;
-  int32_t remote_status = 0;
   bool initialized = false;
-  int socket = -1;
+  ENetHost* host = nullptr;
+  ENetPeer* server_peer = nullptr; // Only used if we are a client
+  int local_role = -1;
+  uint32_t local_net_id = 0;
+  uint32_t sequence_num = 0;
+  
+  std::unordered_map<uint32_t, RemoteEntityState> remote_entities;
 };
 
 MultiplayerData gMultiplayerData;
 
 }
 
-void sync_network_data() {}
-
 void pc_multi_sync_data(u32 info_ptr) {
     try {
+        if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
         if (info_ptr == 0 || info_ptr < 0x1000) return;
-        if (gMultiplayerData.socket < 0) return;
 
         MultiplayerInfoGOAL* info = (MultiplayerInfoGOAL*)Ptr<u8>(info_ptr).c();
         if (!info) return;
 
-        // 1. Read Local
-        gMultiplayerData.local_x = info->local_x;
-        gMultiplayerData.local_y = info->local_y;
-        gMultiplayerData.local_z = info->local_z;
-        gMultiplayerData.local_angle = info->local_angle;
-        gMultiplayerData.local_anim = info->local_anim;
-        gMultiplayerData.local_anim_frame = info->local_anim_frame;
-        gMultiplayerData.local_packet_id = info->local_packet_id;
-        gMultiplayerData.local_level = info->local_level;
-
-        sockaddr_in server_addr;
-        memset(&server_addr, 0, sizeof(server_addr));
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_port = htons(8080);
-        server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-        // 2. Initial Join (One-time or periodic until role assigned)
-        if (gMultiplayerData.local_role == -1) {
-            PacketHeader join_header = { PacketType::JOIN, gMultiplayerData.player_id };
-            sendto(gMultiplayerData.socket, (const char*)&join_header, sizeof(PacketHeader), 0, (sockaddr*)&server_addr, sizeof(server_addr));
-        }
-
-        // 3. Send SYNC (Only if we have a role!)
-        if (gMultiplayerData.local_role != -1) {
-            PacketSync sync_packet;
-            sync_packet.header = { PacketType::SYNC, gMultiplayerData.player_id };
-            sync_packet.x = gMultiplayerData.local_x;
-            sync_packet.y = gMultiplayerData.local_y;
-            sync_packet.z = gMultiplayerData.local_z;
-            sync_packet.angle = gMultiplayerData.local_angle;
-            sync_packet.anim = gMultiplayerData.local_anim;
-            sync_packet.role = gMultiplayerData.local_role;
-            sync_packet.level_hash = gMultiplayerData.local_level;
-            sync_packet.anim_frame = gMultiplayerData.local_anim_frame;
-            sync_packet.packet_id = gMultiplayerData.local_packet_id;
-
-            sendto(gMultiplayerData.socket, (const char*)&sync_packet, sizeof(PacketSync), 0, (sockaddr*)&server_addr, sizeof(server_addr));
-        }
-
-        // 4. Recv Loop
-        char buffer[512];
-        sockaddr_in from_addr;
-#ifdef _WIN32
-        int from_len = sizeof(from_addr);
-#else
-        socklen_t from_len = sizeof(from_addr);
-#endif
-
-        while (true) {
-            int n = recvfrom(gMultiplayerData.socket, buffer, sizeof(buffer), 0, (sockaddr*)&from_addr, &from_len);
-            if (n <= 0) break; 
-
-            if (n >= (int)sizeof(PacketHeader)) {
-                PacketHeader* header = (PacketHeader*)buffer;
-                
-                if (header->type == PacketType::JOIN) {
-                    if (n == sizeof(PacketJoin)) {
-                        PacketJoin* join = (PacketJoin*)buffer;
-                        if (join->header.sender_id == gMultiplayerData.player_id) {
-                            gMultiplayerData.local_role = join->assigned_role;
-                            lg::info("[Multiplayer] Server assigned role: {}", gMultiplayerData.local_role);
-                        } else {
-                            gMultiplayerData.remote_status = 1;
-                            gMultiplayerData.remote_id = join->header.sender_id;
-                            gMultiplayerData.remote_role = join->assigned_role;
+        // --- 1. Network Receive (ENet Service) ---
+        ENetEvent event;
+        while (enet_host_service(gMultiplayerData.host, &event, 0) > 0) {
+            switch (event.type) {
+                case ENET_EVENT_TYPE_RECEIVE: {
+                    if (event.packet->dataLength >= sizeof(PacketHeader)) {
+                        PacketHeader* header = (PacketHeader*)event.packet->data;
+                        
+                        if (header->type == PacketType::STATE_UPDATE && event.packet->dataLength == sizeof(PacketPlayerState)) {
+                            PacketPlayerState* state = (PacketPlayerState*)event.packet->data;
+                            
+                            // Update remote entities map
+                            auto& entity = gMultiplayerData.remote_entities[state->netId];
+                            if (state->header.sequenceNum > entity.last_sequence_num) {
+                                entity.x = state->x;
+                                entity.y = state->y;
+                                entity.z = state->z;
+                                entity.angle = state->angle;
+                                entity.anim = state->anim;
+                                entity.anim_frame = state->anim_frame;
+                                entity.level_hash = state->level_hash;
+                                entity.last_sequence_num = state->header.sequenceNum;
+                            }
                         }
                     }
-                } 
-                else if (header->type == PacketType::LEAVE) {
-                    if (header->sender_id == gMultiplayerData.remote_id) {
-                        gMultiplayerData.remote_status = 0;
-                        gMultiplayerData.remote_id = 0;
-                    }
+                    enet_packet_destroy(event.packet);
+                    break;
                 }
-                else if (header->type == PacketType::SYNC) {
-                    if (n == sizeof(PacketSync)) {
-                        PacketSync* sync = (PacketSync*)buffer;
-                        if (sync->header.sender_id != gMultiplayerData.player_id) {
-                            gMultiplayerData.remote_x = sync->x;
-                            gMultiplayerData.remote_y = sync->y;
-                            gMultiplayerData.remote_z = sync->z;
-                            gMultiplayerData.remote_angle = sync->angle;
-                            gMultiplayerData.remote_anim = sync->anim;
-                            gMultiplayerData.remote_id = sync->header.sender_id;
-                            gMultiplayerData.remote_role = sync->role;
-                            gMultiplayerData.remote_level = sync->level_hash;
-                            gMultiplayerData.remote_status = 1;
-                            gMultiplayerData.remote_anim_frame = sync->anim_frame;
-                            gMultiplayerData.remote_packet_id = sync->packet_id;
-                        }
-                    }
-                }
+                case ENET_EVENT_TYPE_CONNECT:
+                    lg::info("[Multiplayer] Peer connected: {}:{}", event.peer->address.host, event.peer->address.port);
+                    break;
+                case ENET_EVENT_TYPE_DISCONNECT:
+                    lg::info("[Multiplayer] Peer disconnected.");
+                    // In a real scenario, we might want to remove the entity associated with this peer
+                    break;
+                default:
+                    break;
             }
         }
 
-        // 5. Write Remote Back to GOAL
-        info->remote_x = gMultiplayerData.remote_x;
-        info->remote_y = gMultiplayerData.remote_y;
-        info->remote_z = gMultiplayerData.remote_z;
-        info->remote_angle = gMultiplayerData.remote_angle;
-        info->remote_id = gMultiplayerData.remote_id;
-        info->remote_role = gMultiplayerData.remote_role;
-        info->remote_anim = gMultiplayerData.remote_anim;
-        info->remote_level = gMultiplayerData.remote_level;
-        info->remote_status = gMultiplayerData.remote_status;
-        info->local_role = gMultiplayerData.local_role;
-        info->remote_anim_frame = gMultiplayerData.remote_anim_frame;
-        info->remote_packet_id = gMultiplayerData.remote_packet_id;
+        // --- 2. Network Send (Broadcast/Target) ---
+        PacketPlayerState local_state;
+        local_state.header.type = PacketType::STATE_UPDATE;
+        local_state.header.sequenceNum = ++gMultiplayerData.sequence_num;
+        local_state.netId = gMultiplayerData.local_net_id;
+        local_state.x = info->local_x;
+        local_state.y = info->local_y;
+        local_state.z = info->local_z;
+        local_state.angle = info->local_angle;
+        local_state.anim = (uint16_t)info->local_anim;
+        local_state.anim_frame = info->local_anim_frame;
+        local_state.level_hash = info->local_level;
 
-    } catch (...) {}
+        ENetPacket* packet = enet_packet_create(&local_state, sizeof(PacketPlayerState), ENET_PACKET_FLAG_UNSEQUENCED);
+        
+        if (gMultiplayerData.local_role == 0) {
+            // Host: Broadcast to all peers
+            enet_host_broadcast(gMultiplayerData.host, 0, packet);
+        } else if (gMultiplayerData.server_peer) {
+            // Client: Send to Host
+            enet_peer_send(gMultiplayerData.server_peer, 0, packet);
+        }
+
+        // --- 3. GOAL Sync (Mapping remote_entities back to legacy pointer) ---
+        // For the MVP, we assume there's only one remote player (the other one)
+        uint32_t other_net_id = (gMultiplayerData.local_role == 0) ? 1 : 0;
+        
+        if (gMultiplayerData.remote_entities.count(other_net_id)) {
+            auto& remote = gMultiplayerData.remote_entities[other_net_id];
+            info->remote_x = remote.x;
+            info->remote_y = remote.y;
+            info->remote_z = remote.z;
+            info->remote_angle = remote.angle;
+            info->remote_anim = (int32_t)remote.anim;
+            info->remote_anim_frame = remote.anim_frame;
+            info->remote_level = remote.level_hash;
+            info->remote_packet_id = remote.last_sequence_num;
+            info->remote_id = other_net_id;
+            info->remote_role = (int32_t)other_net_id; // NetID 1 = Daxter, NetID 0 = Jak
+            info->remote_status = 1;
+        } else {
+            info->remote_status = 0;
+        }
+        
+        info->local_role = gMultiplayerData.local_role;
+        info->local_packet_id = gMultiplayerData.sequence_num;
+
+    } catch (...) {
+        lg::error("[Multiplayer] Exception in pc_multi_sync_data");
+    }
 }
 
 void pc_multi_disconnect() {
-    if (gMultiplayerData.socket < 0) return;
-    
-    sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8080);
-    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    if (!gMultiplayerData.initialized) return;
 
-    PacketHeader leave_header = { PacketType::LEAVE, gMultiplayerData.player_id };
-    sendto(gMultiplayerData.socket, (const char*)&leave_header, sizeof(PacketHeader), 0, (sockaddr*)&server_addr, sizeof(server_addr));
+    if (gMultiplayerData.host) {
+        if (gMultiplayerData.local_role == 1 && gMultiplayerData.server_peer) {
+            enet_peer_disconnect_now(gMultiplayerData.server_peer, 0);
+        }
+        enet_host_destroy(gMultiplayerData.host);
+        gMultiplayerData.host = nullptr;
+    }
     
-    lg::info("[Multiplayer] Sent disconnect packet to server.");
+    enet_deinitialize();
+    gMultiplayerData.initialized = false;
+    lg::info("[Multiplayer] Disconnected and ENet deinitialized.");
 }
 
 void init_multiplayer_pc_port() {
-  if (gMultiplayerData.initialized) return;
+    if (gMultiplayerData.initialized) return;
 
-  lg::info("[Multiplayer] Initializing UDP Socket (Flat Mode)...");
-  gMultiplayerData.socket = open_socket(AF_INET, SOCK_DGRAM, 0);
-  if (gMultiplayerData.socket >= 0) {
-#ifdef _WIN32
-      unsigned long mode = 1;
-      ioctlsocket(gMultiplayerData.socket, FIONBIO, &mode);
-      // Improved ID generation to avoid collisions on same-second starts
-      gMultiplayerData.player_id = (uint32_t)_getpid() ^ ((uint32_t)time(NULL) << 8);
-#else
-      int mode = 1;
-      ioctl(gMultiplayerData.socket, FIONBIO, &mode);
-      gMultiplayerData.player_id = (uint32_t)getpid() ^ ((uint32_t)time(NULL) << 8);
-#endif
-      gMultiplayerData.local_role = -1; // Not yet assigned
-      gMultiplayerData.initialized = true;
-      lg::info("[Multiplayer] Socket opened: {}, Unique ID: {}", gMultiplayerData.socket, gMultiplayerData.player_id);
-  }
+    if (enet_initialize() != 0) {
+        lg::error("[Multiplayer] Error initializing ENet.");
+        return;
+    }
 
-  jak2::make_function_symbol_from_c("pc-multi-sync-data", (void*)pc_multi_sync_data);
+    ENetAddress address;
+    address.host = ENET_HOST_ANY;
+    address.port = 3000;
+
+    // Try to host
+    gMultiplayerData.host = enet_host_create(&address, 32, 2, 0, 0);
+
+    if (gMultiplayerData.host) {
+        lg::info("[Multiplayer] Listen server started on port 3000.");
+        gMultiplayerData.local_role = 0;
+        gMultiplayerData.local_net_id = 0;
+    } else {
+        // Fallback to client
+        gMultiplayerData.host = enet_host_create(NULL, 1, 2, 0, 0);
+        if (gMultiplayerData.host) {
+            ENetAddress server_address;
+            enet_address_set_host(&server_address, "127.0.0.1");
+            server_address.port = 3000;
+
+            gMultiplayerData.server_peer = enet_host_connect(gMultiplayerData.host, &server_address, 2, 0);
+            if (gMultiplayerData.server_peer) {
+                lg::info("[Multiplayer] Client connecting to 127.0.0.1:3000...");
+                gMultiplayerData.local_role = 1;
+                gMultiplayerData.local_net_id = 1;
+            } else {
+                lg::error("[Multiplayer] Could not connect to host.");
+                enet_host_destroy(gMultiplayerData.host);
+                gMultiplayerData.host = nullptr;
+                return;
+            }
+        } else {
+            lg::error("[Multiplayer] Could not create ENet client host.");
+            return;
+        }
+    }
+
+    gMultiplayerData.initialized = true;
+    jak2::make_function_symbol_from_c("pc-multi-sync-data", (void*)pc_multi_sync_data);
+}
+
+void sync_network_data() {
+    // Legacy function, can be empty or used for background polling if needed
 }
