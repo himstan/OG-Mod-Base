@@ -47,20 +47,40 @@
     (set! (-> *multi-info* host-gems) (-> *game-info* gem))
     (set! (-> *multi-info* host-skill) (-> *game-info* skill))
 
-    ;; Extraction of dead/collected aids
-    (let ((perm-array (-> *game-info* perm-list))
-          (count 0))
-      (when perm-array
-        (dotimes (i (-> perm-array length))
-          (let ((perm (-> perm-array data i)))
-            (when (logtest? (-> perm status) (entity-perm-status dead))
-              (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
-              (+! count 1)
-              (if (>= count 512) (goto full-buffer))))))
-      (label full-buffer)
-      (if (> count 0)
-          (format 0 "[MP-Host] Extracted ~D dead AIDs for sync.~%" count))
-      (set! (-> *multi-info* sync-aids-count) (the-as uint count)))
+    ;; Extraction of dead/collected aids (HOST ONLY)
+    (if (= (-> *multi-info* local-role) 0)
+        (let ((count 0))
+          ;; 1. Scan the global persistent list (for already-unloaded levels)
+          (let ((perm-array (-> *game-info* perm-list)))
+            (when perm-array
+              (dotimes (i (-> perm-array length))
+                (let ((perm (-> perm-array data i)))
+                  (when (logtest? (-> perm status) (entity-perm-status dead))
+                    (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
+                    (+! count 1)
+                    (if (>= count 512) (goto full-buffer)))))))
+
+          ;; 2. Scan the currently loaded level (for items just picked up)
+          (let ((lev (-> *level* level 0)))
+            (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+              (let ((entities (-> lev bsp level entity)))
+                (dotimes (i (-> entities length))
+                  (let ((perm (-> entities data i entity extra perm)))
+                    (when (logtest? (-> perm status) (entity-perm-status dead))
+                      ;; Check for duplicates (don't add if already in our buffer)
+                      (let ((already-in? #f))
+                        (dotimes (j count)
+                          (if (= (-> *multi-info* sync-aids j) (the-as uint (-> perm aid)))
+                              (set! already-in? #t)))
+                        (when (not already-in?)
+                          (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
+                          (+! count 1)
+                          (if (>= count 512) (goto full-buffer))))))))))
+
+          (label full-buffer)
+          (if (!= count (the-as int (-> *multi-info* sync-aids-count)))
+              (format 0 "[MP-Host] World State changed: ~D dead entities found.~%" count))
+          (set! (-> *multi-info* sync-aids-count) (the-as uint count))))
 
     (set! (-> *multi-info* local-x) (-> *target* control trans x))
     (set! (-> *multi-info* local-y) (-> *target* control trans y))
@@ -120,10 +140,7 @@
         (begin
           (format 0 "[MP] Role assigned: 1. Transforming via go target-indax-start...~%")
           ;; Direct go-process is safer as it handles state entry correctly
-          (go-process *target* target-indax-start (the-as handle #f))
-          )
-        )
-
+          (go-process *target* target-indax-start (the-as handle #f))))
     ;; 4.1 Local Visibility Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
@@ -204,30 +221,38 @@
       (dotimes (i (the-as int count))
         (let ((aid (-> *multi-info* sync-aids i)))
           (format 0 "[MP-Client] Syncing AID: #x~X~%" aid)
+          
+          ;; 1. Update Global Perm List
           (let ((perm (actor-perm *game-info* (the-as actor-id aid))))
             (cond
               (perm
                 (logior! (-> perm status) (entity-perm-status dead)))
               (else
-                ;; Not in perm-list yet, add it
                 (let ((game-perms (-> *game-info* perm-list)))
                   (when (< (-> game-perms length) (-> game-perms allocated-length))
                     (let ((new-perm (-> game-perms data (-> game-perms length))))
                       (set! (-> new-perm aid) (the-as actor-id aid))
                       (set! (-> new-perm status) (entity-perm-status dead))
-                      (+! (-> game-perms length) 1)
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          ))
+                      (+! (-> game-perms length) 1)))))))
+
+          ;; 2. Update Active Level Entities (to kill things already spawned)
+          (dotimes (l 6)
+            (let ((lev (-> *level* level l)))
+              (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+                (let ((entities (-> lev bsp level entity)))
+                  (when (and entities (nonzero? entities))
+                    (dotimes (j (-> entities length))
+                      (let ((ent (-> entities data j)))
+                        (when (= (-> ent aid) (the-as uint aid))
+                          (format 0 "[MP-Client] Found and killing entity #x~X in level ~A~%" aid (-> lev name))
+                          ;; Mark as dead in the level's own perm
+                          (logior! (-> ent perm status) (entity-perm-status dead))
+                          ;; Forcefully kill the process if it exists
+                          (let ((proc (-> ent process)))
+                            (if (and proc (nonzero? proc))
+                                (deactivate proc)))))))))))))
       (format 0 "[MP-Client] Mega Buffer processed successfully!~%"))
-
     (set! (-> *multi-info* client-sync-flag) (the-as uint 0))
-    (format 0 "[MP-Client] Initial Handshake Complete!~%")
-    )
-
+    (format 0 "[MP-Client] Initial Handshake Complete!~%"))
   (none))
   
