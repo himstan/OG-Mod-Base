@@ -2,6 +2,7 @@
 (in-package goal)
 
 (defconstant MP_EVENT_ORB (the-as uint 1))
+(defconstant MP_EVENT_GEM (the-as uint 2))
 
 ;; --- Types & Externs ---
 
