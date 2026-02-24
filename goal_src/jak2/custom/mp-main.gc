@@ -52,12 +52,17 @@
         (let ((count 0))
           ;; 1. Global Task State (Shelved)
           
-          ;; 2. Active Level Hashes
-          (dotimes (i 6)
-            (let ((lev (-> *level* level i)))
-              (if (and lev (nonzero? lev) (= (-> lev status) 'active))
-                  (set! (-> *multi-info* host-levels i) (string-crc32 (symbol->string (-> lev name))))
-                  (set! (-> *multi-info* host-levels i) (the-as uint 0)))))
+          ;; 2. Continue Point Sync
+          (let ((dst (-> *multi-info* host-continue)))
+            (dotimes (i 32) (set! (-> dst i) (the-as uint 0))) ;; Clear first
+            (let ((cont (-> *game-info* current-continue)))
+              (if (and cont (nonzero? cont))
+                  (let ((cont-name (-> cont name)))
+                    (if (and cont-name (nonzero? cont-name))
+                        (let ((src (-> cont-name data))
+                              (len (min 31 (length cont-name))))
+                          (dotimes (i len)
+                            (set! (-> dst i) (-> src i)))))))))
 
           ;; 3. Scan the global persistent list
           (let ((perm-array (-> *game-info* perm-list)))
@@ -67,7 +72,7 @@
                   (when (logtest? (-> perm status) (entity-perm-status dead))
                     (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
                     (+! count 1)
-                    (if (>= count 488) (goto full-buffer)))))))
+                    (if (>= count 486) (goto full-buffer)))))))
 
           ;; 4. Scan the currently loaded level
           (let ((lev (-> *level* level 0)))
@@ -83,7 +88,7 @@
                         (when (not already-in?)
                           (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
                           (+! count 1)
-                          (if (>= count 488) (goto full-buffer))))))))))
+                          (if (>= count 486) (goto full-buffer))))))))))
 
           (label full-buffer)
           (if (!= count (the-as int (-> *multi-info* sync-aids-count)))
@@ -219,15 +224,21 @@
             ;; Force close the host's task node to trigger world changes
             (task-node-close! (the-as game-task-node h-task)))))
     
-    ;; TELEPORT TO HOST POSITION (Level Sync)
-    ;; Teleporting *target* to the host's level location triggers the engine to load the correct level.
-    (format 0 "[MP-Client] Teleporting to Host position: ~F ~F ~F~%" (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z))
-    (set! (-> *target* control trans x) (-> *multi-info* remote-x))
-    (set! (-> *target* control trans y) (-> *multi-info* remote-y))
-    (set! (-> *target* control trans z) (-> *multi-info* remote-z))
+    ;; 2. World Context & Level Sync (Hard Load)
+    ;; We reconstruct the string from the host-continue byte array and force a re-initialization of the game state.
+    (let ((dst (-> *mp-continue-name* data))
+          (src (-> *multi-info* host-continue)))
+      (dotimes (i 32)
+        (set! (-> dst i) (-> src i))))
+    
+    (when (nonzero? (length *mp-continue-name*))
+      (format 0 "[MP-Client] Forcing world context sync via continue-point: ~S~%" *mp-continue-name*)
+      (set-continue! *game-info* *mp-continue-name* #t)
+      ;; This triggers the engine to drop everything and load the target level context
+      (initialize! *game-info* 'game (the-as game-save #f) *mp-continue-name*))
     
     (let ((count (-> *multi-info* sync-aids-count)))
-      (if (> count 488) (set! count (the-as uint 488)))
+      (if (> count 486) (set! count (the-as uint 486)))
       (format 0 "[MP-Client] Processing ~D AIDs from Mega Buffer...~%" count)
       (dotimes (i (the-as int count))
         (let ((aid (-> *multi-info* sync-aids i)))

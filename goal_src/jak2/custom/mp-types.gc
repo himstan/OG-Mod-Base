@@ -43,10 +43,10 @@
    (client-sync-flag  uint32)           ;; 128
    (host-task         uint32)           ;; 132
    (host-node         uint32)           ;; 136
-   (host-levels       uint32 6)         ;; 140 (Active hashes for slots 0-5)
-   (task-mask         uint8 64)         ;; 164 (Bitmask of closed nodes)
-   (sync-aids-count   uint32)           ;; 228
-   (sync-aids         uint32 488))      ;; 232 (Adjusted to maintain 2184 size)
+   (host-continue     uint8 32)         ;; 140
+   (task-mask         uint8 64)         ;; 172
+   (sync-aids-count   uint32)           ;; 236
+   (sync-aids         uint32 486))      ;; 240
    
   :size-assert 2184)
   
@@ -81,3 +81,4 @@
 
 (define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
+(define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))

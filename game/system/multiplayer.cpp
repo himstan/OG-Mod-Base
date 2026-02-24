@@ -57,10 +57,10 @@ struct PacketFullSync {
     float x, y, z;
     uint32_t host_task;
     uint32_t host_node;
-    uint32_t host_levels[6];
+    char host_continue[32];
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[488];
+    uint32_t sync_aids[486];
 };
 
 #pragma pack(pop)
@@ -103,10 +103,10 @@ struct MultiplayerInfoGOAL {
     uint32_t client_sync_flag;
     uint32_t host_task;
     uint32_t host_node;
-    uint32_t host_levels[6];
+    char host_continue[32];
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[488];
+    uint32_t sync_aids[486];
 };
 
 struct MultiplayerData {
@@ -173,15 +173,15 @@ void pc_multi_sync_data(u32 info_ptr) {
                           info->remote_z = full_sync->z;
                           info->host_task = full_sync->host_task;
                           info->host_node = full_sync->host_node;
-                          memcpy(info->host_levels, full_sync->host_levels, sizeof(uint32_t) * 6);
+                          memcpy(info->host_continue, full_sync->host_continue, 32);
                           memcpy(info->task_mask, full_sync->task_mask, 64);
                           
                           // Safety check: Clamp count to new buffer size
                           uint32_t count = full_sync->sync_aids_count;
-                          if (count > 488) count = 488;
+                          if (count > 486) count = 486;
                           
                           info->sync_aids_count = count;
-                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 488);
+                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 486);
                           info->client_sync_flag = 1;
                         }
                     }
@@ -204,14 +204,14 @@ void pc_multi_sync_data(u32 info_ptr) {
                         sync.z = info->local_z;
                         sync.host_task = info->host_task;
                         sync.host_node = info->host_node;
-                        memcpy(sync.host_levels, info->host_levels, sizeof(uint32_t) * 6);
+                        memcpy(sync.host_continue, info->host_continue, 32);
                         memcpy(sync.task_mask, info->task_mask, 64);
                         
                         uint32_t count = info->sync_aids_count;
-                        if (count > 488) count = 488;
+                        if (count > 486) count = 486;
                         sync.sync_aids_count = count;
                         
-                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 488);
+                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 486);
 
                         ENetPacket* sync_packet = enet_packet_create(&sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
                         enet_peer_send(event.peer, 1, sync_packet);
