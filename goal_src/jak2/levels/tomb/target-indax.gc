@@ -355,7 +355,7 @@
   ;; 1. Sidekick draws Daxter
   (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
       (set! (-> self draw art-group) (-> self sidekick 0 draw art-group)))
-  
+      
   (ja-channel-set! 1)
       
   ;; 2. Hide Jak shell
