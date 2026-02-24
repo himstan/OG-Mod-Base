@@ -203,7 +203,7 @@
     (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)))
         (let ((skel (-> *target* skel)))
           (if (= (-> *multi-info* local-role) 1)
-              (let ((chan (-> skel root-channel 0)))
+              (let ((chan (-> skel channel 0)))
                 (if (and (nonzero? chan) (-> chan frame-group))
                     (begin
                       (set! local-anim (-> chan frame-group master-art-group-index))
@@ -211,16 +211,16 @@
               (let ((max-weight 0.0)
                     (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
                 (dotimes (i limit)
-                  (let ((chan (-> skel root-channel i)))
+                  (let ((chan (-> skel channel i)))
                     (if (and (nonzero? chan) (-> chan frame-group) (>= (-> chan frame-interp 0) max-weight))
                         (begin
                           (set! max-weight (-> chan frame-interp 0))
                           (set! local-anim (-> chan frame-group master-art-group-index))
                           (set! local-frame (-> chan frame-num))))))
-                (if (and (= local-anim -1) (-> skel root-channel 0 frame-group))
+                (if (and (= local-anim -1) (-> skel channel 0 frame-group))
                     (begin
-                      (set! local-anim (-> skel root-channel 0 frame-group master-art-group-index))
-                      (set! local-frame (-> skel root-channel 0 frame-num))))))))
+                      (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
+                      (set! local-frame (-> skel channel 0 frame-num))))))))
     (set! (-> *multi-info* local-anim) local-anim)
     (set! (-> *multi-info* local-anim-frame) local-frame)
     (+! (-> *multi-info* local-packet-id) 1))
@@ -305,11 +305,28 @@
       (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
         (if (and sk (nonzero? sk) (-> sk skel) (nonzero? (-> sk skel)) (-> sk draw art-group))
             (if (= (-> *multi-info* riding?) (the-as uint 1))
-                (let ((chan (-> sk skel channel 0)))
-                  (if (and (nonzero? chan) (-> chan frame-group) (= (-> chan frame-group type) art-joint-anim))
+                (let ((skel (-> sk skel))
+                      (best-anim -1)
+                      (best-frame 0.0)
+                      (max-weight -1.0))
+                  ;; Safe scan of channels for dominant animation
+                  (let ((limit (min (the int (-> skel active-channels)) 4)))
+                    (dotimes (i limit)
+                      (let ((chan (-> skel channel i)))
+                        (if (and (nonzero? chan) 
+                                 (-> chan frame-group) 
+                                 (= (-> chan frame-group type) art-joint-anim)
+                                 (>= (-> chan frame-interp 0) max-weight))
+                            (begin
+                              (set! max-weight (-> chan frame-interp 0))
+                              (set! best-anim (-> chan frame-group master-art-group-index))
+                              (set! best-frame (-> chan frame-num)))))))
+                  
+                  (if (!= best-anim -1)
                       (begin
-                        (set-mp-sidekick-anim! (-> chan frame-group master-art-group-index))
-                        (set-mp-sidekick-frame! (-> chan frame-num))))
+                        (set-mp-sidekick-anim! best-anim)
+                        (set-mp-sidekick-frame! best-frame)))
+                  
                   (logclear! (-> sk draw status) (draw-control-status no-draw)))
                 ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
                 (logior! (-> sk draw status) (draw-control-status no-draw))))))
@@ -334,17 +351,16 @@
             ;; Row 1: Primary Target (Jak for Host, Daxter for Client)
             (let ((loc-anim (-> *multi-info* local-anim))
                   (rem-anim (-> *multi-info* remote-anim)))
-              (format *stdcon* "Targ: ~D (~S)  |  Targ: ~D (~S)~%" 
+              (format *stdcon* "Targ (Net): ~D (~S)  |  Targ (Net): ~D (~S)~%" 
                       loc-anim (mp-get-anim-name *target* loc-anim)
                       rem-anim (mp-get-anim-name mp rem-anim)))
             
-            ;; Row 2: Sidekick (if applicable)
-            (if riding?
-                (let ((loc-sk-anim (if (= role 0) (mp-sidekick-anim) -1))
-                      (rem-sk-anim (if (= role 1) (mp-sidekick-anim) -1)))
-                  (format *stdcon* "Side: ~D (~S)  |  Side: ~D (~S)~%"
-                          loc-sk-anim (if (= role 0) (mp-get-anim-name sk loc-sk-anim) "N/A")
-                          rem-sk-anim (if (= role 1) (mp-get-anim-name sk rem-sk-anim) "N/A"))))
+            ;; Row 2: Sidekick (The Daxter on Jak's shoulder)
+            (let ((loc-sk-anim (if (and sk (-> sk skel)) (-> sk skel channel 0 frame-group master-art-group-index) -1))
+                  (net-sk-anim (mp-sidekick-anim)))
+              (format *stdcon* "Side (Eng): ~D (~S)  |  Side (Net): ~D (~S)~%"
+                      loc-sk-anim (mp-get-anim-name sk loc-sk-anim)
+                      net-sk-anim (if riding? (mp-get-anim-name sk net-sk-anim) "N/A")))
             )))
       ))
 

@@ -355,6 +355,8 @@
   ;; 1. Sidekick draws Daxter
   (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
       (set! (-> self draw art-group) (-> self sidekick 0 draw art-group)))
+  
+  (ja-channel-set! 1)
       
   ;; 2. Hide Jak shell
   (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
@@ -1605,20 +1607,26 @@
                                           (let ((anim (the-as art-joint-anim anim-elt)))
                                             (begin
                                               ;; Authoritatively set animation for both sidekick and target shell
-                                              (joint-control-channel-group! (-> sk skel channel 0) anim num-func-none)
-                                              (set! (-> sk skel channel 0 frame-num) (mp-sidekick-frame))
-                                              (joint-control-channel-group! (-> self skel channel 0) anim num-func-none)
-                                              (set! (-> self skel channel 0 frame-num) (mp-sidekick-frame))))))))))
+                                              (let ((chan (-> sk skel channel 0)))
+                                                (set! (-> chan frame-group) anim)
+                                                (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                (set! (-> chan num-func) num-func-none))
+                                              (let ((chan (-> self skel channel 0)))
+                                                (set! (-> chan frame-group) anim)
+                                                (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                (set! (-> chan num-func) num-func-none)))))))))))
+                      
+                      ;; Snap *target* root to puppet's shoulder joint (Joint 23)
                       (quaternion-copy! (-> self control quat) (-> mp root quat))
                       (if (nonzero? (-> mp node-list data 23 bone transform))
                           (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
                           (vector-copy! (-> self control trans) (-> mp root trans)))
+                      
+                      ;; Zero out velocities to prevent the engine from trying to "move" us out of the snap
                       (vector-zero! (-> self control transv))
                       (set! (-> self control ctrl-xz-vel) 0.0))))
               (begin
                 (set! (-> self control trans x) (-> *multi-info* remote-x))
                 (set! (-> self control trans y) (-> *multi-info* remote-y))
                 (set! (-> self control trans z) (-> *multi-info* remote-z))))))
-    )
-  )
-)
+    ))
