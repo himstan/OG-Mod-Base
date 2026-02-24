@@ -47,16 +47,18 @@
                  (ja :num! (loop!))))
 
            ;; 2. Logic for Ride-Along model visibility
-           (if (= (-> *multi-info* riding?) 1)
-               ;; If SOMEONE is riding, hide the remote puppet on BOTH ends.
-               ;; (Host uses local sidekick, Client uses local sidekick pinned to Jak puppet)
-               (logior! (-> self draw status) (draw-control-status no-draw))
-               ;; No one is riding:
-               (if (= (-> *multi-info* local-role) 0)
-                   ;; Host: Show the remote Daxter puppet
-                   (logclear! (-> self draw status) (draw-control-status no-draw))
-                   ;; Client: Hide the sidekick on the Host (since we're separate actors)
-                   (send-event self 'draw #f)))
+           (cond
+             ((= (-> *multi-info* local-role) 0)
+              ;; I am Jak (Host):
+              (if (= (-> *multi-info* riding?) 1)
+                  ;; Hide the remote Daxter puppet (using local sidekick instead)
+                  (logior! (-> self draw status) (draw-control-status no-draw))
+                  ;; Show the remote Daxter puppet
+                  (logclear! (-> self draw status) (draw-control-status no-draw))))
+             (else
+              ;; I am Daxter (Client):
+              ;; ALWAYS show the remote Jak puppet
+              (logclear! (-> self draw status) (draw-control-status no-draw))))
                
            (suspend))
          )
