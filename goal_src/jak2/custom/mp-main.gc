@@ -242,7 +242,9 @@
         (mp-receive-world-event (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
         
 
-  (if (and *target* (nonzero? *target*) (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
+  (if (and *target* (nonzero? *target*) 
+           (= (-> *multi-info* local-role) 1) 
+           (not (logtest? (-> *target* focus-status) (focus-status indax))))
       (begin
         (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
         (target-indax-init #t)))
@@ -298,12 +300,17 @@
              (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
        (set! *multi-remote-first-seen?* #t))))
           
-  ;; 3. Daxter visibility for Host (Jak)
+  ;; 3. Daxter Animation Sync & Visibility for Host (Jak)
   (if (and (= (-> *multi-info* local-role) 0) *target* (nonzero? *target*) (-> *target* sidekick))
-      (if (= (-> *multi-info* riding?) 1)
-          ;; Show Daxter if riding
-          (logclear! (-> *target* sidekick 0 draw status) (draw-control-status no-draw))
-          ;; Hide Daxter if not riding (the remote puppet is shown instead)
-          (logior! (-> *target* sidekick 0 draw status) (draw-control-status no-draw))))
+      (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
+        (if (and sk (nonzero? sk))
+            (if (= (-> *multi-info* riding?) (the-as uint 1))
+                (begin
+                  ;; Broadcast sidekick state while riding
+                  (set-mp-sidekick-anim! (-> sk skel root-channel 0 frame-group master-art-group-index))
+                  (set-mp-sidekick-frame! (-> sk skel root-channel 0 frame-num))
+                  (logclear! (-> sk draw status) (draw-control-status no-draw)))
+                ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
+                (logior! (-> sk draw status) (draw-control-status no-draw))))))
           
   (none))

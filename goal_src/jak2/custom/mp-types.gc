@@ -50,6 +50,24 @@
    (sync-aids         uint32 485))      ;; 244
    
   :size-assert 2184)
+
+;; Helper macros to access sidekick sync data stored in the tail of sync-aids
+;; This avoids "Inconsistent type definition" errors while keeping C++ alignment.
+(defmacro mp-sidekick-anim ()
+  `(the-as int (-> *multi-info* sync-aids 483))
+  )
+
+(defmacro mp-sidekick-frame ()
+  `(the-as float (-> *multi-info* sync-aids 484))
+  )
+
+(defmacro set-mp-sidekick-anim! (val)
+  `(set! (-> *multi-info* sync-aids 483) (the-as uint ,val))
+  )
+
+(defmacro set-mp-sidekick-frame! (val)
+  `(set! (-> *multi-info* sync-aids 484) (the-as uint ,val))
+  )
   
 
 (define-extern pc-multi-sync-data (function uint none))

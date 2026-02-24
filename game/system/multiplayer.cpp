@@ -42,6 +42,8 @@ struct PacketPlayerState {
     float anim_frame;
     uint32_t level_hash;
     uint32_t riding;
+    int32_t sidekick_anim;
+    float sidekick_frame;
 };
 
 struct PacketWorldEvent {
@@ -62,7 +64,9 @@ struct PacketFullSync {
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
     uint32_t riding;
-    uint32_t sync_aids[485];
+    uint32_t sync_aids[483];
+    int32_t sidekick_anim;
+    float sidekick_frame;
 };
 
 #pragma pack(pop)
@@ -73,6 +77,8 @@ struct RemoteEntityState {
     float anim_frame;
     uint32_t level_hash;
     uint32_t riding;
+    int32_t sidekick_anim;
+    float sidekick_frame;
     uint32_t last_sequence_num = 0;
 };
 
@@ -110,7 +116,9 @@ struct MultiplayerInfoGOAL {
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
     uint32_t riding;
-    uint32_t sync_aids[485];
+    uint32_t sync_aids[483];
+    int32_t sidekick_anim;
+    float sidekick_frame;
 };
 
 struct MultiplayerData {
@@ -128,9 +136,10 @@ struct MultiplayerData {
 
 MultiplayerData gMultiplayerData;
 
-}
+} // namespace
 
 void pc_multi_sync_data(u32 info_ptr) {
+    using namespace jak2;
     try {
         if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
         if (info_ptr == 0 || info_ptr < 0x1000) return;
@@ -160,6 +169,8 @@ void pc_multi_sync_data(u32 info_ptr) {
                                 entity.anim_frame = state->anim_frame;
                                 entity.level_hash = state->level_hash;
                                 entity.riding = state->riding;
+                                entity.sidekick_anim = state->sidekick_anim;
+                                entity.sidekick_frame = state->sidekick_frame;
                                 entity.last_sequence_num = state->header.sequenceNum;
                             }
                         } else if (header->type == PacketType::EVENT_WORLD && event.packet->dataLength == sizeof(PacketWorldEvent)) {
@@ -249,6 +260,8 @@ void pc_multi_sync_data(u32 info_ptr) {
         local_state.anim_frame = info->local_anim_frame;
         local_state.level_hash = info->local_level;
         local_state.riding = info->riding;
+        local_state.sidekick_anim = info->sidekick_anim;
+        local_state.sidekick_frame = info->sidekick_frame;
 
         ENetPacket* packet = enet_packet_create(&local_state, sizeof(PacketPlayerState), ENET_PACKET_FLAG_UNSEQUENCED);
         
@@ -303,11 +316,14 @@ void pc_multi_sync_data(u32 info_ptr) {
                 info->remote_z = remote.z;
                 info->remote_angle = remote.angle;
                 info->remote_anim = (int32_t)remote.anim;
-                info->remote_anim_frame = remote.anim_frame;
-                info->remote_level = remote.level_hash;
-                info->remote_packet_id = remote.last_sequence_num;
-                info->riding = remote.riding;
-                info->remote_id = other_net_id;
+                            info->remote_anim_frame = remote.anim_frame;
+                            info->remote_level = remote.level_hash;
+                            info->remote_packet_id = remote.last_sequence_num;
+                            info->riding = remote.riding;
+                            info->sidekick_anim = remote.sidekick_anim;
+                            info->sidekick_frame = remote.sidekick_frame;
+                            info->remote_id = other_net_id;
+                
                 info->remote_role = (int32_t)other_net_id; // NetID 1 = Daxter, NetID 0 = Jak
                 info->remote_status = 1;
             }
