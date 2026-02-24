@@ -50,7 +50,16 @@
     ;; Extraction of dead/collected aids (HOST ONLY)
     (if (= (-> *multi-info* local-role) 0)
         (let ((count 0))
-          ;; 1. Scan the global persistent list (for already-unloaded levels)
+          ;; 1. Global Task State (Shelved)
+          
+          ;; 2. Active Level Hashes
+          (dotimes (i 6)
+            (let ((lev (-> *level* level i)))
+              (if (and lev (nonzero? lev) (= (-> lev status) 'active))
+                  (set! (-> *multi-info* host-levels i) (string-crc32 (symbol->string (-> lev name))))
+                  (set! (-> *multi-info* host-levels i) (the-as uint 0)))))
+
+          ;; 3. Scan the global persistent list
           (let ((perm-array (-> *game-info* perm-list)))
             (when perm-array
               (dotimes (i (-> perm-array length))
@@ -58,16 +67,15 @@
                   (when (logtest? (-> perm status) (entity-perm-status dead))
                     (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
                     (+! count 1)
-                    (if (>= count 512) (goto full-buffer)))))))
+                    (if (>= count 488) (goto full-buffer)))))))
 
-          ;; 2. Scan the currently loaded level (for items just picked up)
+          ;; 4. Scan the currently loaded level
           (let ((lev (-> *level* level 0)))
             (when (and lev (nonzero? lev) (= (-> lev status) 'active))
               (let ((entities (-> lev bsp level entity)))
                 (dotimes (i (-> entities length))
                   (let ((perm (-> entities data i entity extra perm)))
                     (when (logtest? (-> perm status) (entity-perm-status dead))
-                      ;; Check for duplicates (don't add if already in our buffer)
                       (let ((already-in? #f))
                         (dotimes (j count)
                           (if (= (-> *multi-info* sync-aids j) (the-as uint (-> perm aid)))
@@ -75,7 +83,7 @@
                         (when (not already-in?)
                           (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
                           (+! count 1)
-                          (if (>= count 512) (goto full-buffer))))))))))
+                          (if (>= count 488) (goto full-buffer))))))))))
 
           (label full-buffer)
           (if (!= count (the-as int (-> *multi-info* sync-aids-count)))
@@ -99,15 +107,11 @@
       (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)))
           (let ((skel (-> *target* skel)))
             (if (= (-> *multi-info* local-role) 1)
-                ;; --- Role 1 (Daxter): Simple Capture ---
-                ;; Daxter's states are simpler; skip complex scanning to prevent crashes.
                 (let ((chan (-> skel root-channel 0)))
                   (if (and (nonzero? chan) (-> chan frame-group))
                       (begin
                         (set! local-anim (-> chan frame-group master-art-group-index))
                         (set! local-frame (-> chan frame-num)))))
-                ;; --- Role 0 (Jak): Multi-Channel Scan ---
-                ;; Jak uses deep blending for Walk/Run. Scan up to 7 channels safely.
                 (let ((max-weight 0.0)
                       (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
                   (dotimes (i limit)
@@ -117,7 +121,6 @@
                             (set! max-weight (-> chan frame-interp 0))
                             (set! local-anim (-> chan frame-group master-art-group-index))
                             (set! local-frame (-> chan frame-num))))))
-                  ;; Fallback for Jak
                   (if (and (= local-anim -1) (-> skel root-channel 0 frame-group))
                       (begin
                         (set! local-anim (-> skel root-channel 0 frame-group master-art-group-index))
@@ -126,10 +129,19 @@
       (set! (-> *multi-info* local-anim-frame) local-frame)
       (+! (-> *multi-info* local-packet-id) 1))
       
-    ;; 3. Bridge Sync
+    (if (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*)
+        (begin
+          (let ((idx *mp-event-queue-read-ptr*))
+            (set! (-> *multi-info* out-event-type) (-> *mp-event-queue* idx etype))
+            (set! (-> *multi-info* out-event-aid) (-> *mp-event-queue* idx aid))
+            (1+! (-> *multi-info* out-event-seq))
+            (set! *mp-event-queue-read-ptr* (logand (+ idx 1) 31))
+            (format 0 "[MP] Pushed event from queue to bridge: Type ~D, AID ~D (Seq ~D)~%" 
+                    (-> *multi-info* out-event-type) (-> *multi-info* out-event-aid) (-> *multi-info* out-event-seq))))
+        )
+
     (pc-multi-sync-data (the-as uint *multi-info*))
 
-    ;; 4. Process Inbox
     (if (!= (-> *multi-info* in-event-seq) *multi-last-in-event-seq*)
         (begin
           (set! *multi-last-in-event-seq* (-> *multi-info* in-event-seq))
@@ -139,41 +151,30 @@
     (if (and *target* (nonzero? *target*) (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
         (begin
           (format 0 "[MP] Role assigned: 1. Transforming via go target-indax-start...~%")
-          ;; Direct go-process is safer as it handles state entry correctly
           (go-process *target* target-indax-start (the-as handle #f))))
-    ;; 4.1 Local Visibility Management
+
     (if (= (-> *multi-info* local-role) 1)
         (begin
-          ;; We are Daxter. The Jak shell now looks like Daxter, so keep it visible!
           (if (and *target* (-> *target* draw))
               (logclear! (-> *target* draw status) (draw-control-status no-draw))))
-              
-        ;; We are Jak. Hide the NPC sidekick.
         (begin
           (if (and *target* (-> *target* draw))
               (logclear! (-> *target* draw status) (draw-control-status no-draw)))
-              
           (mp-hide-daxter)))
           
-    ;; 3.2 Camera Management
     (if (= (-> *multi-info* local-role) 1)
         (begin
-          ;; Daxter Camera: Closer and lower
           (set-setting! 'string-min-length 'abs (meters 3.0) 0)
           (set-setting! 'string-max-length 'abs (meters 7.0) 0)
           (set-setting! 'target-height     'abs (meters 1.0) 0))
-          
         (begin
-          ;; Restore Jak Camera
           (remove-setting! 'string-min-length)
           (remove-setting! 'string-max-length)
           (remove-setting! 'target-height)))
           
-    ;; 4. Remote Presence
     (cond
       ((= (-> *multi-info* remote-status) 1)
        (begin
-         ;; Smooth tracking
          (let ((remote-pos (new 'stack-no-clear 'vector)))
            (set-vector! remote-pos (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z) 1.0)
 
@@ -186,21 +187,16 @@
            (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
            (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
 
-           ;; 6. Manager Lifecycle
            (let ((mgr-ptr *mp-remote-manager*))
              (if (or (not mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
-                 ;; Manager is dead or missing, spawn a new one
                  (begin
                    (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
                      (if new-mgr
                          (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr)))))
-                         
-                 ;; Process is alive! Update fields safely.
                  (let ((mp-mgr (-> mgr-ptr 0)))
                    (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
                    (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))))))))
       (else
-       ;; FALLBACK / DEACTIVATE
        (begin
          (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) 'dead))
              (begin
@@ -215,14 +211,26 @@
     (set! (-> *game-info* gem) (-> *multi-info* client-sync-gems))
     (set! (-> *game-info* skill) (-> *multi-info* client-sync-skill))
     
+    ;; 1. Sync Mission State
+    (let ((h-task (-> *multi-info* host-task)))
+      (if (nonzero? h-task)
+          (begin
+            (format 0 "[MP-Client] Syncing Mission Task ID: ~D~%" h-task)
+            ;; Force close the host's task node to trigger world changes
+            (task-node-close! (the-as game-task-node h-task)))))
+    
+    ;; TELEPORT TO HOST POSITION (Level Sync)
+    ;; Teleporting *target* to the host's level location triggers the engine to load the correct level.
+    (format 0 "[MP-Client] Teleporting to Host position: ~F ~F ~F~%" (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z))
+    (set! (-> *target* control trans x) (-> *multi-info* remote-x))
+    (set! (-> *target* control trans y) (-> *multi-info* remote-y))
+    (set! (-> *target* control trans z) (-> *multi-info* remote-z))
+    
     (let ((count (-> *multi-info* sync-aids-count)))
-      (if (> count 512) (set! count (the-as uint 512)))
+      (if (> count 488) (set! count (the-as uint 488)))
       (format 0 "[MP-Client] Processing ~D AIDs from Mega Buffer...~%" count)
       (dotimes (i (the-as int count))
         (let ((aid (-> *multi-info* sync-aids i)))
-          (format 0 "[MP-Client] Syncing AID: #x~X~%" aid)
-          
-          ;; 1. Update Global Perm List
           (let ((perm (actor-perm *game-info* (the-as actor-id aid))))
             (cond
               (perm
@@ -235,7 +243,6 @@
                       (set! (-> new-perm status) (entity-perm-status dead))
                       (+! (-> game-perms length) 1)))))))
 
-          ;; 2. Update Active Level Entities (to kill things already spawned)
           (dotimes (l 6)
             (let ((lev (-> *level* level l)))
               (when (and lev (nonzero? lev) (= (-> lev status) 'active))
@@ -244,10 +251,7 @@
                     (dotimes (j (-> entities length))
                       (let ((ent (-> entities data j)))
                         (when (= (-> ent aid) (the-as uint aid))
-                          (format 0 "[MP-Client] Found and killing entity #x~X in level ~A~%" aid (-> lev name))
-                          ;; Mark as dead in the level's own perm
                           (logior! (-> ent perm status) (entity-perm-status dead))
-                          ;; Forcefully kill the process if it exists
                           (let ((proc (-> ent process)))
                             (if (and proc (nonzero? proc))
                                 (deactivate proc)))))))))))))
@@ -255,4 +259,3 @@
     (set! (-> *multi-info* client-sync-flag) (the-as uint 0))
     (format 0 "[MP-Client] Initial Handshake Complete!~%"))
   (none))
-  

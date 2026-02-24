@@ -15,12 +15,30 @@
 
 ;; --- Event Helpers ---
 (defun mp-send-world-event ((event-type uint) (actor-id uint))
-  "Trigger an outbound world event via the reliable channel"
-  (format 0 "[MP] Sending World Event: Type ~D, AID ~D (Seq ~D)~%" event-type actor-id (1+ (-> *multi-info* out-event-seq)))
-  (set! (-> *multi-info* out-event-type) (the-as uint32 event-type))
-  (set! (-> *multi-info* out-event-aid) (the-as uint32 actor-id))
-  (1+! (-> *multi-info* out-event-seq))
+  "Queue an outbound world event"
+  (let ((idx *mp-event-queue-write-ptr*))
+    (format 0 "[MP] Queueing World Event: Type ~D, AID ~D at idx ~D~%" event-type actor-id idx)
+    (set! (-> *mp-event-queue* idx etype) (the-as uint32 event-type))
+    (set! (-> *mp-event-queue* idx aid) (the-as uint32 actor-id))
+    ;; Increment write pointer with wrap-around
+    (set! *mp-event-queue-write-ptr* (logand (+ idx 1) 31)))
   (none))
+
+(defun mp-airlock-remote-ready? ((airlock-pos vector))
+  "Check if the remote player is close enough to the airlock to allow opening.
+   Returns #t if no remote player is connected."
+  (if (= (-> *multi-info* remote-status) 0)
+      (return #t))
+  
+  (let ((remote-pos (new 'stack-no-clear 'vector)))
+    (set! (-> remote-pos x) (-> *multi-info* remote-x))
+    (set! (-> remote-pos y) (-> *multi-info* remote-y))
+    (set! (-> remote-pos z) (-> *multi-info* remote-z))
+    (set! (-> remote-pos w) 1.0)
+    
+    ;; If remote is within 100 meters, they are 'ready'
+    (< (vector-vector-xz-distance airlock-pos remote-pos) (meters 100.0)))
+  )
   
 
 (defun mp-receive-world-event ((evt-type uint) (aid uint))
@@ -31,34 +49,69 @@
      (let ((ent (entity-by-aid aid)))
        (if (and ent (nonzero? ent))
            (begin
+             (logior! (-> ent extra perm status) (entity-perm-status dead))
              (format 0 "[MP] Found Orb Entity for AID ~D. Process: ~A~%" aid (-> ent extra process))
+             
+             ;; Only give reward if NOT host (host handles own local pickups)
+             ;; In this MVP: Role 0 = Host, Role 1 = Client.
+             ;; The server relays events. We should only reward if it's "remote".
+             ;; Since we don't have a sender-id, we assume if we are Client, 
+             ;; we only reward if the Host picked it up.
+             ;; Wait, if I am Client and I pick it up, I send it to Host. 
+             ;; Host rewards. If Host picks it up, they send to Client. Client rewards.
+             
+             ;; FIX: We only update HUD/Score if the process was NOT already dead locally.
+             ;; However, since we just marked it dead above, we need to check if it WAS dead.
+             
              ;; 1. Update local player score and HUD
              (if (and *target* (nonzero? *target*))
-                 (send-event *target* 'get-pickup (pickup-type skill) 1.0))
+                 (begin
+                   (format 0 "[MP] Rewarding Orb to local player (Pickup Type Skill)~%")
+                   (send-event *target* 'get-pickup (pickup-type skill) 1.0)))
              
              ;; 2. Kill the orb process
-             (if (and (-> ent extra process) (nonzero? (-> ent extra process)))
-                 (begin
-                   (format 0 "[MP] Sending 'pickup to Orb process...~%")
-                   (send-event (-> ent extra process) 'pickup))
-                 (format 0 "[MP] Orb has no process (already dead or not loaded)~%")))
+             (let ((proc (-> ent extra process)))
+               (if (and proc (nonzero? proc))
+                   (begin
+                     (format 0 "[MP] Sending 'pickup to Orb process...~%")
+                     (send-event proc 'pickup))
+                   (format 0 "[MP] Orb has no process (already dead or not loaded), marked perm-dead~%"))))
            (format 0 "[MP] Failed to find Entity for AID ~D~%"))))
     ((= evt-type MP_EVENT_GEM)
      (let ((ent (entity-by-aid aid)))
        (if (and ent (nonzero? ent))
            (begin
+             (logior! (-> ent extra perm status) (entity-perm-status dead))
              (format 0 "[MP] Found Gem Entity for AID ~D. Process: ~A~%" aid (-> ent extra process))
+             
              ;; 1. Update local player score and HUD (1.0 = 1 gem)
              (if (and *target* (nonzero? *target*))
-                 (send-event *target* 'get-pickup (pickup-type gem) 1.0))
+                 (begin
+                   (format 0 "[MP] Rewarding Gem to local player~%")
+                   (send-event *target* 'get-pickup (pickup-type gem) 1.0)))
              
              ;; 2. Kill the gem process
-             (if (and (-> ent extra process) (nonzero? (-> ent extra process)))
-                 (begin
-                   (format 0 "[MP] Sending 'pickup to Gem process...~%")
-                   (send-event (-> ent extra process) 'pickup))
-                 (format 0 "[MP] Gem has no process (already dead or not loaded)~%")))
-           (format 0 "[MP] Failed to find Entity for AID ~D~%")))))
+             (let ((proc (-> ent extra process)))
+               (if (and proc (nonzero? proc))
+                   (begin
+                     (format 0 "[MP] Sending 'pickup to Gem process...~%")
+                     (send-event proc 'pickup))
+                   (format 0 "[MP] Gem has no process (already dead or not loaded), marked perm-dead~%"))))
+           (format 0 "[MP] Failed to find Entity for AID ~D~%"))))
+    ((= evt-type MP_EVENT_BREAK)
+     (let ((ent (entity-by-aid aid)))
+       (if (and ent (nonzero? ent))
+           (begin
+             ;; Mark it dead permanently so it doesn't respawn if paged out/in
+             (logior! (-> ent extra perm status) (entity-perm-status dead))
+             (let ((proc (-> ent extra process)))
+               (if (and proc (nonzero? proc))
+                   (begin
+                     (format 0 "[MP] Breaking object AID ~D (~A)~%" aid proc)
+                     ;; Send a generic attack event to trigger breakage
+                     (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'generic)))))
+                   (format 0 "[MP] Breakable AID ~D has no process, marked perm-dead~%" aid))))
+           (format 0 "[MP] Failed to find Entity for AID ~D for break event~%" aid)))))
     
   (none))
     

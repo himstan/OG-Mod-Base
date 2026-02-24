@@ -54,8 +54,13 @@ struct PacketFullSync {
     float money;
     float gems;
     float skill;
+    float x, y, z;
+    uint32_t host_task;
+    uint32_t host_node;
+    uint32_t host_levels[6];
+    uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[512];
+    uint32_t sync_aids[488];
 };
 
 #pragma pack(pop)
@@ -96,8 +101,12 @@ struct MultiplayerInfoGOAL {
     float client_sync_gems;
     float client_sync_skill;
     uint32_t client_sync_flag;
+    uint32_t host_task;
+    uint32_t host_node;
+    uint32_t host_levels[6];
+    uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[512];
+    uint32_t sync_aids[488];
 };
 
 struct MultiplayerData {
@@ -159,13 +168,20 @@ void pc_multi_sync_data(u32 info_ptr) {
                           info->client_sync_money = full_sync->money;
                           info->client_sync_gems = full_sync->gems;
                           info->client_sync_skill = full_sync->skill;
+                          info->remote_x = full_sync->x;
+                          info->remote_y = full_sync->y;
+                          info->remote_z = full_sync->z;
+                          info->host_task = full_sync->host_task;
+                          info->host_node = full_sync->host_node;
+                          memcpy(info->host_levels, full_sync->host_levels, sizeof(uint32_t) * 6);
+                          memcpy(info->task_mask, full_sync->task_mask, 64);
                           
-                          // Safety check: Clamp count to buffer size
+                          // Safety check: Clamp count to new buffer size
                           uint32_t count = full_sync->sync_aids_count;
-                          if (count > 512) count = 512;
+                          if (count > 488) count = 488;
                           
                           info->sync_aids_count = count;
-                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 512);
+                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 488);
                           info->client_sync_flag = 1;
                         }
                     }
@@ -183,12 +199,19 @@ void pc_multi_sync_data(u32 info_ptr) {
                         sync.money = info->host_money;
                         sync.gems = info->host_gems;
                         sync.skill = info->host_skill;
+                        sync.x = info->local_x;
+                        sync.y = info->local_y;
+                        sync.z = info->local_z;
+                        sync.host_task = info->host_task;
+                        sync.host_node = info->host_node;
+                        memcpy(sync.host_levels, info->host_levels, sizeof(uint32_t) * 6);
+                        memcpy(sync.task_mask, info->task_mask, 64);
                         
                         uint32_t count = info->sync_aids_count;
-                        if (count > 512) count = 512;
+                        if (count > 488) count = 488;
                         sync.sync_aids_count = count;
                         
-                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 512);
+                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 488);
 
                         ENetPacket* sync_packet = enet_packet_create(&sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
                         enet_peer_send(event.peer, 1, sync_packet);

@@ -1427,8 +1427,12 @@
       (if (and (-> self entity) (nonzero? (-> self entity)) (handle->process arg1))
           (cond
             ((= p-type (pickup-type skill))
+             ;; Award locally
+             (send-event *target* 'get-pickup (pickup-type skill) 1.0)
              (mp-send-world-event MP_EVENT_ORB (the-as uint (-> self entity aid))))
             ((= p-type (pickup-type gem))
+             ;; Award locally
+             (send-event *target* 'get-pickup (pickup-type gem) 1.0)
              (mp-send-world-event MP_EVENT_GEM (the-as uint (-> self entity aid))))))
       )
     (process-entity-status! self (entity-perm-status dead) #t)

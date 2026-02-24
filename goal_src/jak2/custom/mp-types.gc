@@ -3,6 +3,7 @@
 
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))
+(defconstant MP_EVENT_BREAK (the-as uint 3))
 
 ;; --- Types & Externs ---
 
@@ -40,14 +41,29 @@
    (client-sync-gems  float)            ;; 120
    (client-sync-skill float)            ;; 124
    (client-sync-flag  uint32)           ;; 128
-   (sync-aids-count   uint32)           ;; 132
-   (sync-aids         uint32 512))      ;; 136
+   (host-task         uint32)           ;; 132
+   (host-node         uint32)           ;; 136
+   (host-levels       uint32 6)         ;; 140 (Active hashes for slots 0-5)
+   (task-mask         uint8 64)         ;; 164 (Bitmask of closed nodes)
+   (sync-aids-count   uint32)           ;; 228
+   (sync-aids         uint32 488))      ;; 232 (Adjusted to maintain 2184 size)
    
   :size-assert 2184)
   
 
 (define-extern pc-multi-sync-data (function uint none))
 (define-extern mp-send-world-event (function uint uint none))
+(define-extern mp-airlock-remote-ready? (function vector symbol))
+
+(deftype mp-event (structure)
+  ((etype uint32)
+   (aid   uint32))
+  )
+
+;; Queue for outbound events to prevent overwriting when multiple things happen in 1 frame
+(define-perm *mp-event-queue* (inline-array mp-event) (new 'static 'inline-array mp-event 32))
+(define-perm *mp-event-queue-write-ptr* int 0)
+(define-perm *mp-event-queue-read-ptr* int 0)
 
 ;; Persistent globals
 (define-perm *multi-info* multiplayer-info (new 'static 'multiplayer-info))
