@@ -3,7 +3,6 @@
 
 ;; --- Externs ---
 (define-extern *multi-remote-spawn-time* time-frame)
-(define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
@@ -245,8 +244,8 @@
 
   (if (and *target* (nonzero? *target*) (= (-> *multi-info* local-role) 1) (not (focus-test? *target* indax)))
       (begin
-        (format 0 "[MP] Role assigned: 1. Transforming via go target-indax-start...~%")
-        (go-process *target* target-indax-start (the-as handle #f))))
+        (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
+        (target-indax-init #t)))
 
   (if (= (-> *multi-info* local-role) 1)
       (begin
@@ -255,7 +254,7 @@
       (begin
         (if (and *target* (-> *target* draw))
             (logclear! (-> *target* draw status) (draw-control-status no-draw)))
-        (mp-hide-daxter)))
+        ))
         
   (if (= (-> *multi-info* local-role) 1)
       (begin
@@ -298,5 +297,13 @@
              (deactivate (-> *mp-remote-manager* 0))
              (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
        (set! *multi-remote-first-seen?* #t))))
-
+          
+  ;; 3. Daxter visibility for Host (Jak)
+  (if (and (= (-> *multi-info* local-role) 0) *target* (nonzero? *target*) (-> *target* sidekick))
+      (if (= (-> *multi-info* riding?) 1)
+          ;; Show Daxter if riding
+          (logclear! (-> *target* sidekick 0 draw status) (draw-control-status no-draw))
+          ;; Hide Daxter if not riding (the remote puppet is shown instead)
+          (logior! (-> *target* sidekick 0 draw status) (draw-control-status no-draw))))
+          
   (none))

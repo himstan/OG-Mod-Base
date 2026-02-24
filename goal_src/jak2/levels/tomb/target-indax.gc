@@ -14,7 +14,7 @@
 (define-extern target-indax-handler (function process int symbol event-message-block object :behavior target))
 (define-extern target-indax-dangerous-event-handler (function process int symbol event-message-block object :behavior target))
 (define-extern target-indax-jump-event-handler (function process int symbol event-message-block object :behavior target))
-(define-extern target-indax-init (function none :behavior target))
+(define-extern target-indax-init (function symbol none :behavior target))
 (define-extern target-indax-exit (function none :behavior target))
 (define-extern target-indax-real-post (function none :behavior target))
 (define-extern target-indax-post (function none :behavior target))
@@ -32,6 +32,7 @@
 (define-extern target-indax-hit-setup-anim (function attack-info none :behavior target))
 (define-extern target-indax-hit (state symbol attack-info target))
 (define-extern target-indax-death (state symbol target))
+(define-extern target-ride-along (state target))
 
 (define-extern skel-sidekick skeleton-group)
 
@@ -332,7 +333,7 @@
   :post target-indax-post)
   
 
-(defbehavior target-indax-init target ()
+(defbehavior target-indax-init target ((ride-along? symbol))
   (logior! (-> self control current-surface flags) (surface-flag gun-fast-exit))
   (target-gun-end-mode #t)
   (target-exit)
@@ -363,7 +364,9 @@
       
 
   (remove-exit)
-  (go target-indax-stance)
+  (if ride-along?
+      (go target-ride-along)
+      (go target-indax-stance))
   (none))
   
 
@@ -533,8 +536,7 @@
 (defstate target-indax-start (target)
   :event target-standard-event-handler
   :code (behavior ((arg0 handle))
-         (target-indax-init)
-         (go target-indax-stance))
+         (target-indax-init #f))
     
   :post target-indax-post)
   
@@ -604,7 +606,15 @@
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
              
-              (go target-indax-attack))
+              (begin
+                (let ((remote-pos (new 'stack-no-clear 'vector)))
+                  (set! (-> remote-pos x) (-> *multi-info* remote-x))
+                  (set! (-> remote-pos y) (-> *multi-info* remote-y))
+                  (set! (-> remote-pos z) (-> *multi-info* remote-z))
+                  (set! (-> remote-pos w) 1.0)
+                  (if (< (vector-vector-xz-distance (-> self control trans) remote-pos) (meters 2.0))
+                      (go target-ride-along)
+                      (go target-indax-attack)))))
         
           (fall-test target-indax-falling -4096000.0))
     
@@ -718,7 +728,15 @@
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
              
-              (go target-indax-attack))
+              (begin
+                (let ((remote-pos (new 'stack-no-clear 'vector)))
+                  (set! (-> remote-pos x) (-> *multi-info* remote-x))
+                  (set! (-> remote-pos y) (-> *multi-info* remote-y))
+                  (set! (-> remote-pos z) (-> *multi-info* remote-z))
+                  (set! (-> remote-pos w) 1.0)
+                  (if (< (vector-vector-xz-distance (-> self control trans) remote-pos) (meters 2.0))
+                      (go target-ride-along)
+                      (go target-indax-attack)))))
         
           (fall-test target-indax-falling -4096000.0))
     
@@ -1531,3 +1549,78 @@
     
   :post target-no-stick-post)
   
+
+(defstate target-ride-along (target)
+  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+    (case message
+      (('end-mode)
+       (go target-stance))
+      (('attack 'attack-or-shove 'attack-invinc)
+       ;; If we get hit while riding, we should probably fall off
+       (target-attacked message (the-as attack-info (-> block param 1)) proc (the-as touching-shapes-entry (-> block param 0)) target-indax-hit))
+      (else
+        (target-indax-handler proc argc message block))))
+
+  :enter (behavior ()
+    (set! (-> self control transv quad) (the-as uint128 0))
+    (set! (-> self control ctrl-xz-vel) 0.0)
+    (set! (-> *multi-info* riding?) (the-as uint 1))
+    ;; Disable collision
+    (let ((v1-3 (-> self control root-prim)))
+      (set! (-> v1-3 prim-core collide-as) (collide-spec))
+      (set! (-> v1-3 prim-core collide-with) (collide-spec)))
+    (target-exit)
+    (logior! (-> self focus-status) (focus-status indax))
+    ;; Ensure sidekick is setup
+    (target-sidekick-setup #t)
+    ;; Hide Jak shell
+    (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
+    ;; Sidekick draws Daxter
+    (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
+        (set! (-> self draw art-group) (-> self sidekick 0 draw art-group)))
+    ;; Signal sidekick to clone parent (Jak)
+    (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
+        (send-event (ppointer->process (-> self sidekick)) 'matrix #f)))
+
+  :exit (behavior ()
+    (set! (-> *multi-info* riding?) (the-as uint 0))
+    ;; Restore collision
+    (target-collide-set! 'indax 0.0)
+    (target-indax-exit))
+
+  :trans (behavior ()
+    ;; Check for dismount (Jump)
+    (if (and (cpad-pressed? (-> self control cpad number) x) (can-jump? #f))
+        (begin
+          ;; Launch off
+          (vector-z-quaternion! (-> self control transv) (-> self control quat))
+          (vector-float*! (-> self control transv) (-> self control transv) (meters -4.0))
+          (set! (-> self control transv y) (meters 4.0))
+          (go target-indax-falling #f)))
+    
+    ;; Snap to remote host puppet (Jak)
+    (let ((mgr-ptr *mp-remote-manager*))
+      (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
+          (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))
+            (if (and mp (nonzero? mp))
+                (begin
+                  ;; 1. Update sidekick attachment if not already set (every frame is fine for reliability)
+                  (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
+                      (send-event (ppointer->process (-> self sidekick)) 'matrix 'manipy mp))
+                  
+                  ;; 2. Snap *target* root to puppet's shoulder joint for camera/HUD tracking
+                  (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
+                  (quaternion-copy! (-> self control quat) (-> mp root quat)))))
+          (begin
+            ;; Fallback if puppet not spawned yet
+            (set! (-> self control trans x) (-> *multi-info* remote-x))
+            (set! (-> self control trans y) (-> *multi-info* remote-y))
+            (set! (-> self control trans z) (-> *multi-info* remote-z))
+            (set-quaternion! (-> self control) (-> self control dir-targ))))))
+
+  :code (behavior ()
+    (until #f
+      (suspend)))
+
+  :post target-indax-post)
+

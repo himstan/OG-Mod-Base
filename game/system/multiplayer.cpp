@@ -41,6 +41,7 @@ struct PacketPlayerState {
     uint16_t anim;
     float anim_frame;
     uint32_t level_hash;
+    uint32_t riding;
 };
 
 struct PacketWorldEvent {
@@ -60,7 +61,8 @@ struct PacketFullSync {
     char host_continue[32];
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[486];
+    uint32_t riding;
+    uint32_t sync_aids[485];
 };
 
 #pragma pack(pop)
@@ -70,6 +72,7 @@ struct RemoteEntityState {
     uint16_t anim;
     float anim_frame;
     uint32_t level_hash;
+    uint32_t riding;
     uint32_t last_sequence_num = 0;
 };
 
@@ -106,7 +109,8 @@ struct MultiplayerInfoGOAL {
     char host_continue[32];
     uint8_t task_mask[64];
     uint32_t sync_aids_count;
-    uint32_t sync_aids[486];
+    uint32_t riding;
+    uint32_t sync_aids[485];
 };
 
 struct MultiplayerData {
@@ -155,6 +159,7 @@ void pc_multi_sync_data(u32 info_ptr) {
                                 entity.anim = state->anim;
                                 entity.anim_frame = state->anim_frame;
                                 entity.level_hash = state->level_hash;
+                                entity.riding = state->riding;
                                 entity.last_sequence_num = state->header.sequenceNum;
                             }
                         } else if (header->type == PacketType::EVENT_WORLD && event.packet->dataLength == sizeof(PacketWorldEvent)) {
@@ -178,10 +183,11 @@ void pc_multi_sync_data(u32 info_ptr) {
                           
                           // Safety check: Clamp count to new buffer size
                           uint32_t count = full_sync->sync_aids_count;
-                          if (count > 486) count = 486;
+                          if (count > 485) count = 485;
                           
                           info->sync_aids_count = count;
-                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 486);
+                          info->riding = full_sync->riding;
+                          memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 485);
                           info->client_sync_flag = 1;
                         }
                     }
@@ -208,10 +214,11 @@ void pc_multi_sync_data(u32 info_ptr) {
                         memcpy(sync.task_mask, info->task_mask, 64);
                         
                         uint32_t count = info->sync_aids_count;
-                        if (count > 486) count = 486;
+                        if (count > 485) count = 485;
                         sync.sync_aids_count = count;
+                        sync.riding = info->riding;
                         
-                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 486);
+                        memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 485);
 
                         ENetPacket* sync_packet = enet_packet_create(&sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
                         enet_peer_send(event.peer, 1, sync_packet);
@@ -241,6 +248,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         local_state.anim = (uint16_t)info->local_anim;
         local_state.anim_frame = info->local_anim_frame;
         local_state.level_hash = info->local_level;
+        local_state.riding = info->riding;
 
         ENetPacket* packet = enet_packet_create(&local_state, sizeof(PacketPlayerState), ENET_PACKET_FLAG_UNSEQUENCED);
         
@@ -284,17 +292,25 @@ void pc_multi_sync_data(u32 info_ptr) {
         
         if (gMultiplayerData.remote_entities.count(other_net_id)) {
             auto& remote = gMultiplayerData.remote_entities[other_net_id];
-            info->remote_x = remote.x;
-            info->remote_y = remote.y;
-            info->remote_z = remote.z;
-            info->remote_angle = remote.angle;
-            info->remote_anim = (int32_t)remote.anim;
-            info->remote_anim_frame = remote.anim_frame;
-            info->remote_level = remote.level_hash;
-            info->remote_packet_id = remote.last_sequence_num;
-            info->remote_id = other_net_id;
-            info->remote_role = (int32_t)other_net_id; // NetID 1 = Daxter, NetID 0 = Jak
-            info->remote_status = 1;
+            
+            // Safety: If riding, Host ignores movement for Daxter
+            if (info->riding && info->local_role == 0 && other_net_id == 1) {
+                // Keep the status active but don't update coords/anims
+                info->remote_status = 1;
+            } else {
+                info->remote_x = remote.x;
+                info->remote_y = remote.y;
+                info->remote_z = remote.z;
+                info->remote_angle = remote.angle;
+                info->remote_anim = (int32_t)remote.anim;
+                info->remote_anim_frame = remote.anim_frame;
+                info->remote_level = remote.level_hash;
+                info->remote_packet_id = remote.last_sequence_num;
+                info->riding = remote.riding;
+                info->remote_id = other_net_id;
+                info->remote_role = (int32_t)other_net_id; // NetID 1 = Daxter, NetID 0 = Jak
+                info->remote_status = 1;
+            }
         } else {
             info->remote_status = 0;
         }

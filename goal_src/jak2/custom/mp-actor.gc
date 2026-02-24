@@ -1,16 +1,6 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-;; --- Multiplayer Manager ---
-(deftype mp-manager (process)
-  ((remote-id    uint32)
-   (remote-role  int32)
-   (manipy-proc  handle)
-   (spawn-timer  time-frame)
-   (last-anim-packet uint32))
-  (:state-methods
-    idle))
-
 (defbehavior mp-manager-init mp-manager ((id uint32) (role int32))
   ;; Protect the manager from memory overflow
   (stack-size-set! (-> self main-thread) 512)
@@ -55,7 +45,21 @@
                              (ja :num! (loop!))))
                        (ja :num! (loop!))))
                  (ja :num! (loop!))))
-           (suspend)))
+
+           ;; 2. Logic for Ride-Along model visibility
+           (if (= (-> *multi-info* riding?) 1)
+               ;; If SOMEONE is riding, hide the remote puppet on BOTH ends.
+               ;; (Host uses local sidekick, Client uses local sidekick pinned to Jak puppet)
+               (logior! (-> self draw status) (draw-control-status no-draw))
+               ;; No one is riding:
+               (if (= (-> *multi-info* local-role) 0)
+                   ;; Host: Show the remote Daxter puppet
+                   (logclear! (-> self draw status) (draw-control-status no-draw))
+                   ;; Client: Hide the sidekick on the Host (since we're separate actors)
+                   (send-event self 'draw #f)))
+               
+           (suspend))
+         )
   :post ja-post)
 
 ;; --- Remote Character Initialization ---
@@ -115,9 +119,25 @@
                   (set-time! (-> self spawn-timer)))
                 ;; Update existing manipy
                 (let ((mp (the-as manipy m)))
-                  (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
-                  (quaternion-identity! (-> mp root quat))
-                  (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)
+                  (cond
+                    ((and (= (-> self remote-role) 1) (= (-> *multi-info* riding?) 1))
+                     ;; Daxter is riding. Snap to Host Jak's joint if we are the host.
+                     (if (and (= (-> *multi-info* local-role) 0) *target*)
+                         (begin
+                           (vector-copy! (-> mp root trans) (-> *target* control sidekick-root parent bone transform trans))
+                           (quaternion-copy! (-> mp root quat) (-> *target* control quat))
+                           (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) (-> *target* upper-body twist z)))
+                         (begin
+                           ;; Otherwise just use received coords (interpolated)
+                           (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
+                           (quaternion-identity! (-> mp root quat))
+                           (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*))))
+                    (else
+                      ;; Independent state
+                      (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
+                      (quaternion-identity! (-> mp root quat))
+                      (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)))
+                  
                   (if (-> mp draw)
                       (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp)))))))
     

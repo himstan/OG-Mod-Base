@@ -46,7 +46,8 @@
    (host-continue     uint8 32)         ;; 140
    (task-mask         uint8 64)         ;; 172
    (sync-aids-count   uint32)           ;; 236
-   (sync-aids         uint32 486))      ;; 240
+   (riding?           uint32)           ;; 240
+   (sync-aids         uint32 485))      ;; 244
    
   :size-assert 2184)
   
@@ -75,7 +76,16 @@
 (define-perm *multi-remote-first-seen?* symbol #t)
 
 ;; Track the manager via handle to prevent respawn loops
-(declare-type mp-manager process)
+(deftype mp-manager (process)
+  ((remote-id    uint32)
+   (remote-role  int32)
+   (manipy-proc  handle)
+   (spawn-timer  time-frame)
+   (last-anim-packet uint32))
+  (:state-methods
+    idle))
+
+(define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
 (define-perm *multi-manager-handle* handle (the-as handle #f))
 (define-perm *multi-remote-spawn-time* time-frame 0)
 
