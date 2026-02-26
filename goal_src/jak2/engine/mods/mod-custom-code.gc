@@ -27,14 +27,14 @@
       ;; (increase-power-cell-by-one) This is a call to increase-power-cell-by-one defined in mod-common-functions.gc
 
       ;; Sample code to turn jak pink whenever he's doing the jetboard hover glitch
-      ;; (when *target* 
+      ;; (when *target*
       ;;   (if (board-hovering?)
       ;;     (draw-pink *target*)
       ;;     (draw-normal *target*)
       ;;     )
       ;;   )
 
-      (if *show-input-display* 
+      (if *show-input-display*
         (input-display-on)
         (input-display-off)
         )
@@ -42,7 +42,7 @@
       (when *debug-segment*
         (orb-placer-maintenance)
         )
-      
+
       ;; (format 0 "Tick~%")
       (multiplayer-sync-tick)
 
@@ -56,7 +56,7 @@
       )
 
     (defun runs-on-task-close ()
-    
+
 
       (none)
       )
@@ -66,25 +66,25 @@
         ;; Code here runs as soon as you pickup ANY eco
 
         (case eco-type
-          (((pickup-type eco-yellow))      
+          (((pickup-type eco-yellow))
             ;; Code here runs as soon as you pickup yellow eco
 
             )
-          (((pickup-type eco-red))      
+          (((pickup-type eco-red))
             ;; Code here runs as soon as you pickup red eco
 
             )
-          (((pickup-type eco-blue))      
+          (((pickup-type eco-blue))
             ;; Code here runs as soon as you pickup blue eco
 
             )
 
-          (((pickup-type eco-green))      
-            ;; Code here runs as soon as you pickup big green eco 
+          (((pickup-type eco-green))
+            ;; Code here runs as soon as you pickup big green eco
 
             )
           )
-        
+
         (when from-vent?
           ;; Code here runs only if the eco was picked up from a vent
 
@@ -95,7 +95,7 @@
       )
 
     (defun runs-on-jak-spawn ()
-      ;; Code here runs every time jak spawns (loading a file new game or death)   
+      ;; Code here runs every time jak spawns (loading a file new game or death)
       (set! *multi-sync-enabled?* #t)
       (format 0 "[GOAL] Jak spawned! Enabling multiplayer sync.~%")
 
@@ -106,14 +106,14 @@
       (case death-event
         (('dying)
           ;; Code here runs immediately every time jak dies, before any death animation or death cutscene
-          
+
           )
         (('blackout)
           ;; Code here runs after jak dies (and any death cutscene finishes), during the blackout before he spawns
 
           )
         )
-      
+
       (none)
       )
 

@@ -350,7 +350,7 @@
         (set! (-> self offset trans y) (* 204.8 f0-3))
         (set! (-> self offset trans z) (* 409.6 f0-3))
         )
-        
+
       ;; MULTIPLAYER OVERRIDE
       (if (and *multi-info* (= (-> *multi-info* local-role) 1) (= (-> *multi-info* riding?) (the-as uint 1)))
           (let ((idx (mp-sidekick-anim)))
@@ -362,7 +362,7 @@
                         (set! (-> chan frame-group) anim)
                         (set! (-> chan frame-num) (mp-sidekick-frame))
                         (set! (-> chan num-func) num-func-none)))))))
-                        
+
       (update-anim-data (-> self skel))
       (when *debug-segment*
         (let ((gp-2 (-> *display* frames (-> *display* on-screen) profile-array data 0))
@@ -454,7 +454,7 @@
     (if (logtest? (-> self skel status) (joint-control-status eye-anim-valid eye-anim))
         (merc-eye-anim self)
         )
-        
+
     (when (!= (not (-> *setting-control* user-current mirror)) (not (-> self mirror)))
       (cond
         ((-> self mirror)

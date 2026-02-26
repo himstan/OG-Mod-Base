@@ -4,10 +4,32 @@
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))
 (defconstant MP_EVENT_BREAK (the-as uint 3))
+(defconstant MP_EVENT_ATTACK_ENEMY (the-as uint 4))
+(defconstant MP_EVENT_ENEMY_DEATH (the-as uint 5))
+(defconstant MP_EVENT_PLAYER_HIT (the-as uint 6))
+(defconstant MP_EVENT_DEBUG (the-as uint 7))
 
 ;; --- Types & Externs ---
 
 (define *local-riding?* #f)
+
+(deftype mp-enemy-state (structure)
+  ((actor-id    uint32)
+   (x           float)
+   (y          float)
+   (z          float)
+   (quat-x     float)
+   (quat-y     float)
+   (quat-z     float)
+   (quat-w     float)
+   (anim-index int32)
+   (anim-frame float)
+   (hp         int32)
+   (state      uint32)
+   (focus-aid  uint32)
+   (attack-flag uint8))
+  :pack-me
+  )
 
 (deftype multiplayer-info (structure)
   ((local-x           float)            ;; 0
@@ -49,32 +71,45 @@
    (task-mask         uint8 64)         ;; 172
    (sync-aids-count   uint32)           ;; 236
    (riding?           uint32)           ;; 240
-   (sync-aids         uint32 485))      ;; 244
-   
-  :size-assert 2184)
+   (enemy-count       uint32)           ;; 244
+   (enemies           mp-enemy-state 24 :inline) ;; 248
+   (player-procs      handle 2)
+   (sync-aids         uint32 128)
+   (sidekick-anim     int32)
+   (sidekick-frame    float)
+   (pad               uint8 224) ;; Reduced from 320 to maintain size assertion
+   )
 
-;; Helper macros to access sidekick sync data stored in the tail of sync-aids
-;; This avoids "Inconsistent type definition" errors while keeping C++ alignment.
+  :size-assert 2352)
+
+;; Helper macros to access sidekick sync data
 (defmacro mp-sidekick-anim ()
-  `(the-as int (-> *multi-info* sync-aids 483))
+  `(-> *multi-info* sidekick-anim)
   )
 
 (defmacro mp-sidekick-frame ()
-  `(the-as float (-> *multi-info* sync-aids 484))
+  `(-> *multi-info* sidekick-frame)
   )
 
 (defmacro set-mp-sidekick-anim! (val)
-  `(set! (-> *multi-info* sync-aids 483) (the-as uint ,val))
+  `(set! (-> *multi-info* sidekick-anim) ,val)
   )
 
 (defmacro set-mp-sidekick-frame! (val)
-  `(set! (-> *multi-info* sync-aids 484) (the-as uint ,val))
+  `(set! (-> *multi-info* sidekick-frame) ,val)
   )
-  
+
 
 (define-extern pc-multi-sync-data (function uint none))
 (define-extern mp-send-world-event (function uint uint none))
+(define-extern mp-receive-world-event (function uint uint none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
+(define-extern *kernel-context* kernel-context)
+(declare-type enemy process-focusable)
+(define-extern iterate-process-tree (function process-tree (function object object) kernel-context object))
+(define-extern mp-sync-enemies-host (function none))
+(define-extern mp-sync-enemies-client (function none))
+(define-extern mp-enemy-sync-idle (state enemy))
 
 (deftype mp-event (structure)
   ((etype uint32)
@@ -96,10 +131,13 @@
 (define-perm *multi-remote-first-seen?* symbol #t)
 
 ;; Track the manager via handle to prevent respawn loops
+(declare-type mp-target-proxy process-focusable)
+
 (deftype mp-manager (process)
   ((remote-id    uint32)
    (remote-role  int32)
    (manipy-proc  handle)
+   (proxy-proc   handle)
    (spawn-timer  time-frame)
    (last-anim-packet uint32))
   (:state-methods
@@ -113,3 +151,6 @@
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #t)
+(define-perm *mp-hijacks-applied?* symbol #f)
+(define *mp-daxter-damage-mult* 2.0)
+(define *mp-crimson-guard-lightning-callback* (the-as (function process uint int) #f))

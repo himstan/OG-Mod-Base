@@ -27,6 +27,7 @@
 ;; --- Tick Logic ---
 
 (defun multiplayer-sync-tick ()
+  ;; (format 0 "MP Tick~%")
   (let ((now (current-time)))
     (if (= *multi-last-sync-frame* now)
         (return #f))
@@ -34,6 +35,11 @@
 
   ;; 0. ALWAYS sync with C++ bridge (even during loading) to keep remote-x/y/z fresh
   (pc-multi-sync-data (the-as uint *multi-info*))
+
+  (when (not *mp-hijacks-applied?*)
+    (format 0 "[MP] Applying global AI hijacks...~%")
+    (mp-apply-ai-hijacks)
+    (set! *mp-hijacks-applied?* #t))
 
   ;; 1. Handle Full Sync State Machine (MUST BE ABOVE GUARDS)
   (when (and (= (-> *multi-info* local-role) 1) (nonzero? (-> *multi-info* client-sync-flag)))
@@ -66,11 +72,11 @@
          (set! (-> *game-info* money) (-> *multi-info* client-sync-money))
          (set! (-> *game-info* gem) (-> *multi-info* client-sync-gems))
          (set! (-> *game-info* skill) (-> *multi-info* client-sync-skill))
-         
+
          (let ((h-task (-> *multi-info* host-task)))
            (if (nonzero? h-task)
                (task-node-close! (the-as game-task-node h-task))))
-         
+
          ;; Sync AIDs (Orbs, etc.)
          (let ((count (-> *multi-info* sync-aids-count)))
            (if (> count 486) (set! count (the-as uint 486)))
@@ -89,7 +95,7 @@
                            (set! (-> new-perm aid) (the-as actor-id aid))
                            (set! (-> new-perm status) (entity-perm-status dead))
                            (+! (-> game-perms length) 1)))))))
-               
+
                ;; 2. Surgical Deactivation (Now that the level is 'active, this will actually find things)
                (dotimes (l 6)
                  (let ((lev (-> *level* level l)))
@@ -107,14 +113,14 @@
                                      (begin
                                        (format 0 "[MP-Client] Surgical Deactivate: Actor AID ~D in Level ~S~%" aid (-> lev name))
                                        (deactivate proc)))))))))))))))
-         
+
          ;; FINAL TELEPORT: Snap to Host's exact position
          (format 0 "[MP-Client] Snap-Teleport to Host: ~F ~F ~F~%" (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z))
          (set! (-> *target* control trans x) (-> *multi-info* remote-x))
          (set! (-> *target* control trans y) (-> *multi-info* remote-y))
          (set! (-> *target* control trans z) (-> *multi-info* remote-z))
          (set-setting! 'allow-recharge #f 0.0 0)
-         
+
          (set! (-> *multi-info* client-sync-flag) (the-as uint 0))
          (format 0 "[MP-Client] Join Handshake & Level Alignment Successful!~%")
          )
@@ -144,59 +150,64 @@
 
   ;; Extraction of dead/collected aids (HOST ONLY)
   (if (= (-> *multi-info* local-role) 0)
-      (let ((count 0))
-        ;; 1. Global Task State (Shelved)
-        
-        ;; 2. Continue Point Sync
-        (let ((dst (-> *multi-info* host-continue)))
-          (dotimes (i 32) (set! (-> dst i) (the-as uint 0))) ;; Clear first
-          (let ((cont (-> *game-info* current-continue)))
-            (if (and cont (nonzero? cont))
-                (let ((cont-name (-> cont name)))
-                  (if (and cont-name (nonzero? cont-name))
-                      (let ((src (-> cont-name data))
-                            (len (min 31 (length cont-name))))
-                        (dotimes (i len)
-                          (set! (-> dst i) (-> src i)))))))))
+      (begin
+        (mp-sync-enemies-host)
+        (let ((count 0))
+          ;; 1. Global Task State (Shelved)
 
-        ;; 3. Scan the global persistent list
-        (let ((perm-array (-> *game-info* perm-list)))
-          (when perm-array
-            (dotimes (i (-> perm-array length))
-              (let ((perm (-> perm-array data i)))
-                (when (logtest? (-> perm status) (entity-perm-status dead))
-                  (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
-                  (+! count 1)
-                  (if (>= count 480) (goto full-buffer)))))))
+          ;; 2. Continue Point Sync
+          (let ((dst (-> *multi-info* host-continue)))
+            (dotimes (i 32) (set! (-> dst i) (the-as uint 0))) ;; Clear first
+            (let ((cont (-> *game-info* current-continue)))
+              (if (and cont (nonzero? cont))
+                  (let ((cont-name (-> cont name)))
+                    (if (and cont-name (nonzero? cont-name))
+                        (let ((src (-> cont-name data))
+                              (len (min 31 (length cont-name))))
+                          (dotimes (i len)
+                            (set! (-> dst i) (-> src i)))))))))
 
-        ;; 4. Scan all loaded levels (Capture actors that haven't hit the perm-list yet)
-        (dotimes (l 6)
-          (let ((lev (-> *level* level l)))
-            (when (and lev (nonzero? lev) (= (-> lev status) 'active))
-              (let ((entities (-> lev entity)))
-                (when (and entities (nonzero? entities))
-                  (dotimes (i (-> entities length))
-                    (let ((perm (-> entities data i perm)))
-                      (when (logtest? (-> perm status) (entity-perm-status dead))
-                        (let ((already-in? #f))
-                          (dotimes (j count)
-                            (if (= (-> *multi-info* sync-aids j) (the-as uint (-> perm aid)))
-                                (set! already-in? #t)))
-                          (when (not already-in?)
-                            (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
-                            (+! count 1)
-                            (if (>= count 480) (goto full-buffer))))))))))))
+          ;; 3. Scan the global persistent list
+          (let ((perm-array (-> *game-info* perm-list)))
+            (when perm-array
+              (dotimes (i (-> perm-array length))
+                (let ((perm (-> perm-array data i)))
+                  (when (logtest? (-> perm status) (entity-perm-status dead))
+                    (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
+                    (+! count 1)
+                    (if (>= count 120) (goto full-buffer)))))))
 
-        (label full-buffer)
-        (if (!= count (the-as int (-> *multi-info* sync-aids-count)))
-            (format 0 "[MP-Host] World State changed: ~D dead entities found in paged levels.~%" count))
-        (set! (-> *multi-info* sync-aids-count) (the-as uint count))))
+          ;; 4. Scan all loaded levels (Capture actors that haven't hit the perm-list yet)
+          (dotimes (l 6)
+            (let ((lev (-> *level* level l)))
+              (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+                (let ((entities (-> lev entity)))
+                  (when (and entities (nonzero? entities))
+                    (dotimes (i (-> entities length))
+                      (let ((ent (-> entities data i)))
+                        (let ((perm (-> ent perm))
+                              (proc (-> ent process)))
+                          (when (or (logtest? (-> perm status) (entity-perm-status dead))
+                                    (and proc (nonzero? proc) (type? proc enemy) (logtest? (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))))
+                            (let ((already-in? #f))
+                              (dotimes (j count)
+                                (if (= (-> *multi-info* sync-aids j) (the-as uint (-> ent aid)))
+                                    (set! already-in? #t)))
+                              (when (not already-in?)
+                                (set! (-> *multi-info* sync-aids count) (the-as uint (-> ent aid)))
+                                (+! count 1)
+                                (if (>= count 120) (goto full-buffer)))))))))))))
+
+          (label full-buffer)
+          (if (!= count (the-as int (-> *multi-info* sync-aids-count)))
+              (format 0 "[MP-Host] World State changed: ~D dead entities found in paged levels.~%" count))
+          (set! (-> *multi-info* sync-aids-count) (the-as uint count)))))
 
   (set! (-> *multi-info* local-x) (-> *target* control trans x))
   (set! (-> *multi-info* local-y) (-> *target* control trans y))
   (set! (-> *multi-info* local-z) (-> *target* control trans z))
   (set! (-> *multi-info* local-angle) (quaternion-y-angle (-> *target* control quat)))
-  
+
   ;; Hash the level name
   (set! (-> *multi-info* local-level) (the-as uint 0))
   (let ((lev (-> *level* level 0)))
@@ -230,7 +241,8 @@
     (set! (-> *multi-info* local-anim) local-anim)
     (set! (-> *multi-info* local-anim-frame) local-frame)
     (+! (-> *multi-info* local-packet-id) 1))
-    
+
+  ;; Event Pusher (One per frame to ensure bridge catches it)
   (if (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*)
       (begin
         (let ((idx *mp-event-queue-read-ptr*))
@@ -238,18 +250,21 @@
           (set! (-> *multi-info* out-event-aid) (-> *mp-event-queue* idx aid))
           (1+! (-> *multi-info* out-event-seq))
           (set! *mp-event-queue-read-ptr* (logand (+ idx 1) 31))
-          (format 0 "[MP] Pushed event from queue to bridge: Type ~D, AID ~D (Seq ~D)~%" 
-                  (-> *multi-info* out-event-type) (-> *multi-info* out-event-aid) (-> *multi-info* out-event-seq))))
+          (format 0 "[MP] Pushed event to bridge: Type ~D, AID ~D (Seq ~D). Queue: ~D to ~D~%"
+                  (-> *multi-info* out-event-type) (-> *multi-info* out-event-aid) (-> *multi-info* out-event-seq)
+                  *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*)))
       )
 
   (if (!= (-> *multi-info* in-event-seq) *multi-last-in-event-seq*)
       (begin
+        (format 0 "[MP] Event received! Seq: ~D (Last: ~D), Type: ~D, AID: ~D~%"
+                (-> *multi-info* in-event-seq) *multi-last-in-event-seq* (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))
         (set! *multi-last-in-event-seq* (-> *multi-info* in-event-seq))
         (mp-receive-world-event (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
-        
 
-  (if (and *target* (nonzero? *target*) 
-           (= (-> *multi-info* local-role) 1) 
+
+  (if (and *target* (nonzero? *target*)
+           (= (-> *multi-info* local-role) 1)
            (not (logtest? (-> *target* focus-status) (focus-status indax))))
       (begin
         (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
@@ -257,13 +272,32 @@
 
   (if (= (-> *multi-info* local-role) 1)
       (begin
+        ;; Update player-procs handles for AI targeting
+        (let ((loc-role (-> *multi-info* local-role))
+              (rem-role (if (= (-> *multi-info* local-role) 0) 1 0)))
+          (set! (-> *multi-info* player-procs loc-role) (process->handle *target*))
+          (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
+            (if (and rem-mgr (nonzero? rem-mgr))
+                (set! (-> *multi-info* player-procs rem-role) (-> rem-mgr proxy-proc))
+                (set! (-> *multi-info* player-procs rem-role) (the-as handle #f)))))
+
+        (mp-sync-enemies-client)
         (if (and *target* (-> *target* draw))
             (logclear! (-> *target* draw status) (draw-control-status no-draw))))
       (begin
+        ;; Update player-procs handles for AI targeting
+        (let ((loc-role (-> *multi-info* local-role))
+              (rem-role (if (= (-> *multi-info* local-role) 0) 1 0)))
+          (set! (-> *multi-info* player-procs loc-role) (process->handle *target*))
+          (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
+            (if (and rem-mgr (nonzero? rem-mgr))
+                (set! (-> *multi-info* player-procs rem-role) (-> rem-mgr proxy-proc))
+                (set! (-> *multi-info* player-procs rem-role) (the-as handle #f)))))
+
         (if (and *target* (-> *target* draw))
             (logclear! (-> *target* draw status) (draw-control-status no-draw)))
         ))
-        
+
   (if (= (-> *multi-info* local-role) 1)
       (begin
         (set-setting! 'string-min-length 'abs (meters 3.0) 0)
@@ -273,7 +307,7 @@
         (remove-setting! 'string-min-length)
         (remove-setting! 'string-max-length)
         (remove-setting! 'target-height)))
-        
+
   (cond
     ((= (-> *multi-info* remote-status) 1)
      (begin
@@ -285,12 +319,12 @@
                (vector-copy! *multi-remote-interp-pos* remote-pos)
                (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
                (set! *multi-remote-first-seen?* #f)))
-               
+
          (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
          (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
 
          (let ((mgr-ptr *mp-remote-manager*))
-           (if (or (not mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
+           (if (or (not mgr-ptr) (zero? mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
                (begin
                  (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
                    (if new-mgr
@@ -305,7 +339,7 @@
              (deactivate (-> *mp-remote-manager* 0))
              (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
        (set! *multi-remote-first-seen?* #t))))
-          
+
   ;; 3. Daxter Animation Sync & Visibility for Host (Jak)
   (if (and (= (-> *multi-info* local-role) 0) *target* (nonzero? *target*) (-> *target* sidekick))
       (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
@@ -319,31 +353,31 @@
                   (let ((limit (min (the int (-> skel active-channels)) 4)))
                     (dotimes (i limit)
                       (let ((chan (-> skel channel i)))
-                        (if (and (nonzero? chan) 
-                                 (-> chan frame-group) 
+                        (if (and (nonzero? chan)
+                                 (-> chan frame-group)
                                  (= (-> chan frame-group type) art-joint-anim)
                                  (>= (-> chan frame-interp 0) max-weight))
                             (begin
                               (set! max-weight (-> chan frame-interp 0))
                               (set! best-anim (-> chan frame-group master-art-group-index))
                               (set! best-frame (-> chan frame-num)))))))
-                  
+
                   (if (!= best-anim -1)
                       (begin
                         (set-mp-sidekick-anim! best-anim)
                         (set-mp-sidekick-frame! best-frame)))
-                  
+
                   (logclear! (-> sk draw status) (draw-control-status no-draw)))
                 ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
                 (logior! (-> sk draw status) (draw-control-status no-draw))))))
-          
+
   ;; 4. Debug Draw Overlay
   (when *mp-debug-draw*
     (let ((role (-> *multi-info* local-role))
           (riding? (= (-> *multi-info* riding?) (the-as uint 1))))
       (format *stdcon* "~%--- MP SYNC DEBUG ---~%")
       (format *stdcon* "ROLE: ~S | RIDING: ~S~%" (if (= role 0) "HOST (JAK)" "CLIENT (DAX)") (if riding? "YES" "NO"))
-      
+
       (let ((mgr-ptr *mp-remote-manager*))
         (let ((mp (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
                       (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))
@@ -351,16 +385,16 @@
           (let ((sk (the-as sidekick (if (and *target* (nonzero? *target*) (-> *target* sidekick))
                                         (ppointer->process (-> *target* sidekick))
                                         #f))))
-            
+
             (format *stdcon* "OUT (LOCAL SEND)              IN (REMOTE RECV)~%")
-            
+
             ;; Row 1: Primary Target (Jak for Host, Daxter for Client)
             (let ((loc-anim (-> *multi-info* local-anim))
                   (rem-anim (-> *multi-info* remote-anim)))
-              (format *stdcon* "Targ (Net): ~D (~S)  |  Targ (Net): ~D (~S)~%" 
+              (format *stdcon* "Targ (Net): ~D (~S)  |  Targ (Net): ~D (~S)~%"
                       loc-anim (mp-get-anim-name *target* loc-anim)
                       rem-anim (mp-get-anim-name mp rem-anim)))
-            
+
             ;; Row 2: Sidekick (The Daxter on Jak's shoulder)
             (let ((loc-sk-anim (if (and sk (-> sk skel)) (-> sk skel channel 0 frame-group master-art-group-index) -1))
                   (net-sk-anim (mp-sidekick-anim)))
