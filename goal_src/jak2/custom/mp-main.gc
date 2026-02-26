@@ -136,6 +136,12 @@
   (set! (-> *multi-info* host-gems) (-> *game-info* gem))
   (set! (-> *multi-info* host-skill) (-> *game-info* skill))
 
+  (when (and (= (-> *multi-info* local-role) 1))
+    (if *local-riding?*
+      (set! (-> *multi-info* riding?) (the-as uint 1))
+      (set! (-> *multi-info* riding?) (the-as uint 0)))
+  )
+
   ;; Extraction of dead/collected aids (HOST ONLY)
   (if (= (-> *multi-info* local-role) 0)
       (let ((count 0))

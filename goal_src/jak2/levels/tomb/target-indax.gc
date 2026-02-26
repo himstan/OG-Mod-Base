@@ -918,16 +918,16 @@
                      
                          (else
                            *indax-jump-mods*)))
-                     
+            
                    
             
             (t9-0 arg0 arg1 arg2))
-      
+          
           (set! (-> self control unknown-float35) 0.0))
     
   :exit (behavior ()
-         (target-exit)
-         (target-indax-exit))
+          (target-exit)
+          (target-indax-exit))
     
   :trans (behavior ()
           ((-> target-indax-falling trans))
@@ -941,42 +941,42 @@
              
               (go
                 target-indax-double-jump
-                (-> *TARGET-bank* indax-double-jump-height-min)
+                  (-> *TARGET-bank* indax-double-jump-height-min)
                 (-> *TARGET-bank* indax-double-jump-height-max))))
           
         
-    
+        
   :code (behavior ((arg0 float) (arg1 float) (arg2 surface))
-         (ja-channel-push! 2 (seconds 0.02))
-         (ja :group! daxter-indax-jump-ja :num! min)
-         (ja :chan 1 :group! daxter-indax-jump-forward-ja :num! (chan 0))
-         (suspend)
-         (until (ja-done? 0)
-           (let ((f30-0 (vector-dot (-> self control dynam gravity-normal) (-> self control transv)))
-                 (f0-4 (- 10.0 (ja-aframe-num 0)))
-                 (gp-1 (-> self skel root-channel 0)))
-            
-             (set! (-> gp-1 param 0) (the float (+ (-> gp-1 frame-group frames num-frames) -1)))
-             (let ((v1-26 (and (< 0.0 f30-0) (< 0.0 f0-4))))
-               (set! (-> gp-1 param 1)
-                     (if v1-26
-                         (fmin (fmin 3.0 f0-4) (/ (* 10.0 f0-4) (the float (time-to-apex f30-0 -245760.0))))
-                         1.0)))
-                    
+          (ja-channel-push! 2 (seconds 0.02))
+          (ja :group! daxter-indax-jump-ja :num! min)
+          (ja :chan 1 :group! daxter-indax-jump-forward-ja :num! (chan 0))
+          (suspend)
+          (until (ja-done? 0)
+            (let ((f30-0 (vector-dot (-> self control dynam gravity-normal) (-> self control transv)))
+                  (f0-4 (- 10.0 (ja-aframe-num 0)))
+                  (gp-1 (-> self skel root-channel 0)))
+              
+              (set! (-> gp-1 param 0) (the float (+ (-> gp-1 frame-group frames num-frames) -1)))
+              (let ((v1-26 (and (< 0.0 f30-0) (< 0.0 f0-4))))
+                (set! (-> gp-1 param 1)
+                      (if v1-26
+                          (fmin (fmin 3.0 f0-4) (/ (* 10.0 f0-4) (the float (time-to-apex f30-0 -245760.0))))
+                          1.0)))
+              
                 
           
              (joint-control-channel-group-eval! gp-1 (the-as art-joint-anim #f) num-func-seek!))
-        
-           (let ((a0-8 (-> self skel root-channel 1)))
-             (let ((f0-10 (-> self control unknown-float35)))
-               (set! (-> a0-8 frame-interp 1) f0-10)
-               (set! (-> a0-8 frame-interp 0) f0-10))
-          
-             (set! (-> a0-8 param 0) 0.0)
+              
+            (let ((a0-8 (-> self skel root-channel 1)))
+              (let ((f0-10 (-> self control unknown-float35)))
+                (set! (-> a0-8 frame-interp 1) f0-10)
+                (set! (-> a0-8 frame-interp 0) f0-10))
+              
+              (set! (-> a0-8 param 0) 0.0)
              (joint-control-channel-group-eval! a0-8 (the-as art-joint-anim #f) num-func-chan))
-        
-           (suspend))
-      
+              
+            (suspend))
+          
          (go target-indax-falling #f))
     
   :post target-indax-post)
@@ -1558,10 +1558,8 @@
   :enter (behavior ()
     (set! (-> self control transv quad) (the-as uint128 0))
     (set! (-> self control ctrl-xz-vel) 0.0)
-    (set! (-> *multi-info* riding?) (the-as uint 1))
-    (let ((v1-3 (-> self control root-prim)))
-      (set! (-> v1-3 prim-core collide-as) (collide-spec))
-      (set! (-> v1-3 prim-core collide-with) (collide-spec)))
+    (format 0 "[MP] Setting riding flag to true ~%")
+    (set! *local-riding?* #t)
     (logior! (-> self focus-status) (focus-status indax))
     (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
     (if (and (-> self sidekick) (nonzero? (-> self sidekick)))
@@ -1570,19 +1568,23 @@
           (send-event (ppointer->process (-> self sidekick)) 'matrix #f))))
 
   :exit (behavior ()
-    (set! (-> *multi-info* riding?) (the-as uint 0))
-    (logclear! (-> self focus-status) (focus-status indax))
-    (if (and (-> self sidekick) (nonzero? (-> self sidekick)))
-        (send-event (ppointer->process (-> self sidekick)) 'matrix 'indax))
-    (target-collide-set! 'indax 0.0))
+      (set! *local-riding?* #f)
+    )
 
   :trans (behavior ()
     (if (cpad-pressed? (-> self control cpad number) x)
         (begin
-          (vector-z-quaternion! (-> self control transv) (-> self control quat))
+          (format 0 "[MP] Jumping off Jak...~%")
           (vector-float*! (-> self control transv) (-> self control transv) (meters -4.0))
-          (set! (-> self control transv y) (meters 4.0))
-          (go target-indax-falling #f))))
+          (set! (-> self control transv y) (meters 10.0)) 
+          (format 0 "[MP] Exiting ride along state...~%")
+          (logclear! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
+          (format 0 "[MP] Setting riding flag to false ~%")
+          (set! *local-riding?* #f)
+          (send-event self 'change-mode 'indax #f)
+        )
+    )
+  )
 
   :code (behavior ()
     (until #f

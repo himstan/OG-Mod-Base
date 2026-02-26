@@ -7,6 +7,8 @@
 
 ;; --- Types & Externs ---
 
+(define *local-riding?* #f)
+
 (deftype multiplayer-info (structure)
   ((local-x           float)            ;; 0
    (local-y           float)            ;; 4

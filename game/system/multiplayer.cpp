@@ -305,6 +305,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         
         if (gMultiplayerData.remote_entities.count(other_net_id)) {
             auto& remote = gMultiplayerData.remote_entities[other_net_id];
+            info->riding = remote.riding;
             
             // Safety: If riding, Host ignores movement for Daxter
             if (info->riding && info->local_role == 0 && other_net_id == 1) {
@@ -316,13 +317,12 @@ void pc_multi_sync_data(u32 info_ptr) {
                 info->remote_z = remote.z;
                 info->remote_angle = remote.angle;
                 info->remote_anim = (int32_t)remote.anim;
-                            info->remote_anim_frame = remote.anim_frame;
-                            info->remote_level = remote.level_hash;
-                            info->remote_packet_id = remote.last_sequence_num;
-                            info->riding = remote.riding;
-                            info->sidekick_anim = remote.sidekick_anim;
-                            info->sidekick_frame = remote.sidekick_frame;
-                            info->remote_id = other_net_id;
+                info->remote_anim_frame = remote.anim_frame;
+                info->remote_level = remote.level_hash;
+                info->remote_packet_id = remote.last_sequence_num;
+                info->sidekick_anim = remote.sidekick_anim;
+                info->sidekick_frame = remote.sidekick_frame;
+                info->remote_id = other_net_id;
                 
                 info->remote_role = (int32_t)other_net_id; // NetID 1 = Daxter, NetID 0 = Jak
                 info->remote_status = 1;
