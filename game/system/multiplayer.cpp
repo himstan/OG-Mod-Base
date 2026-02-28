@@ -47,6 +47,7 @@ struct PacketPlayerState {
   uint32_t riding;
   int32_t sidekick_anim;
   float sidekick_frame;
+  uint64_t clock;
 };
 
 struct PacketWorldEvent {
@@ -89,6 +90,7 @@ struct PacketFullSync {
   uint32_t sync_aids[128];  // Reduced to match new struct
   int32_t sidekick_anim;
   float sidekick_frame;
+  uint64_t clock;
 };
 
 #pragma pack(pop)
@@ -101,6 +103,7 @@ struct RemoteEntityState {
   uint32_t riding;
   int32_t sidekick_anim;
   float sidekick_frame;
+  uint64_t clock;
   uint32_t last_sequence_num = 0;
 };
 
@@ -144,7 +147,8 @@ struct MultiplayerInfoGOAL {
   uint32_t sync_aids[128];
   int32_t sidekick_anim;
   float sidekick_frame;
-  uint8_t pad[248];
+  uint64_t sync_clock;
+  uint8_t pad[216];
 };
 
 struct MultiplayerData {
@@ -201,6 +205,7 @@ void pc_multi_sync_data(u32 info_ptr) {
                 entity.riding = state->riding;
                 entity.sidekick_anim = state->sidekick_anim;
                 entity.sidekick_frame = state->sidekick_frame;
+                entity.clock = state->clock;
                 entity.last_sequence_num = state->header.sequenceNum;
               }
             } else if (header->type == PacketType::EVENT_WORLD &&
@@ -242,6 +247,7 @@ void pc_multi_sync_data(u32 info_ptr) {
               info->sync_aids_count = count;
               info->riding = full_sync->riding;
               memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 128);
+              info->sync_clock = full_sync->clock;
               info->client_sync_flag = 1;
             }
           }
@@ -275,6 +281,7 @@ void pc_multi_sync_data(u32 info_ptr) {
             sync.riding = info->riding;
 
             memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 128);
+            sync.clock = info->sync_clock;
 
             ENetPacket* sync_packet =
                 enet_packet_create(&sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
@@ -309,6 +316,7 @@ void pc_multi_sync_data(u32 info_ptr) {
     local_state.riding = info->riding;
     local_state.sidekick_anim = info->sidekick_anim;
     local_state.sidekick_frame = info->sidekick_frame;
+    local_state.clock = info->sync_clock;
 
     ENetPacket* packet =
         enet_packet_create(&local_state, sizeof(PacketPlayerState), ENET_PACKET_FLAG_UNSEQUENCED);
@@ -385,6 +393,7 @@ void pc_multi_sync_data(u32 info_ptr) {
         info->remote_packet_id = remote.last_sequence_num;
         info->sidekick_anim = remote.sidekick_anim;
         info->sidekick_frame = remote.sidekick_frame;
+        info->sync_clock = remote.clock;
         info->remote_id = other_net_id;
 
         info->remote_role = (int32_t)other_net_id;  // NetID 1 = Daxter, NetID 0 = Jak

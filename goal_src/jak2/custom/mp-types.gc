@@ -77,7 +77,8 @@
    (sync-aids         uint32 128)
    (sidekick-anim     int32)
    (sidekick-frame    float)
-   (pad               uint8 224) ;; Reduced from 320 to maintain size assertion
+   (sync-clock        time-frame)
+   (pad               uint8 216) ;; Reduced from 224 to maintain size assertion
    )
 
   :size-assert 2352)
