@@ -75,6 +75,10 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('attack)
+       ;; If we are riding, ignore all attacks on the proxy to prevent Jak from hitting his own passenger
+       (if (= (-> *multi-info* riding?) 1)
+           (return #f))
+       
        ;; Relay damage to the network!
        (let ((mode 'unknown)
              (id (the-as uint 0)))
