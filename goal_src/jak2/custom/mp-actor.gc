@@ -102,9 +102,20 @@
       (('query) #t)))
   :trans (behavior ()
     ;; 1. Position Sync
+    (if (!= (-> *level* loading-level) (-> *level* default-level))
+      (return #f)
+    )
     (cond
-      ((and (= (-> self remote-role) 1) (= (-> *multi-info* riding?) 1) (= (-> *multi-info* local-role) 0) *target*)
-       ;; Remote Daxter is riding local Jak. Snap to shoulder.
+      ((and (= (-> self remote-role) 1) 
+            (= (-> *multi-info* riding?) 1) 
+            (= (-> *multi-info* local-role) 0) 
+            *target*
+            (nonzero? (-> *target* control))
+            (nonzero? (-> *target* node-list))
+            (-> *target* control sidekick-root)
+            (-> *target* control sidekick-root parent)
+            (-> *target* control sidekick-root parent bone))
+       ;; Remote Daxter is riding local Jak. Snap to shoulder SAFELY.
        (set! (-> self root trans quad) (-> *target* control sidekick-root parent bone transform trans quad)))
       (else
         ;; Standard independent position
@@ -241,6 +252,9 @@
   :virtual #t
   :trans (behavior ()
           ;; 1. Sync visual manipy
+          (if (!= (-> *level* loading-level) (-> *level* default-level))
+            (return #f)
+          )
           (let ((m (handle->process (-> self manipy-proc))))
             (if (not m)
                 (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
@@ -256,7 +270,14 @@
                   (cond
                     ((and (= (-> self remote-role) 1) (= (-> *multi-info* riding?) 1))
                      ;; Daxter is riding. Snap to Host Jak's joint if we are the host.
-                     (if (and (= (-> *multi-info* local-role) 0) *target*)
+                     (if (and (= (-> *multi-info* local-role) 0) 
+                              *target*
+                              (nonzero? (-> *target* control))
+                              (nonzero? (-> *target* node-list))
+                              (-> *target* control sidekick-root)
+                              (-> *target* control sidekick-root parent)
+                              (-> *target* control sidekick-root parent bone)
+                              (nonzero? (-> *target* upper-body))) ;; <-- Guard the twist bone!
                          (begin
                            (vector-copy! (-> mp root trans) (-> *target* control sidekick-root parent bone transform trans))
                            (quaternion-copy! (-> mp root quat) (-> *target* control quat))

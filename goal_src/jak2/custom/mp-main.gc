@@ -6,14 +6,18 @@
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
-  "Simple hash function for level name verification"
+  "Simple hash function for level name verification (MEMORY BOUNDED)"
   (if (or (not str) (zero? str))
       (return (the-as uint 0)))
   (let ((hash (the-as uint 0))
-        (ptr (-> str data)))
-    (while (nonzero? (-> ptr 0))
+        (ptr (-> str data))
+        (max-len (-> str allocated-length)) ;; The physical RAM limit of the string!
+        (i 0))
+    ;; Loop until we hit the null terminator OR we hit the RAM limit
+    (while (and (< i max-len) (nonzero? (-> ptr 0)))
       (set! hash (+ (-> ptr 0) (* hash 31)))
-      (set! ptr (&-> ptr 1)))
+      (set! ptr (&-> ptr 1))
+      (+! i 1))
     hash))
 
 (defun mp-get-anim-name ((proc process-drawable) (idx int))

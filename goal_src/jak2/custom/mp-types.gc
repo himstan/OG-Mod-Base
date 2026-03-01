@@ -151,7 +151,7 @@
 (define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
-(define-perm *mp-debug-draw* symbol #t)
+(define-perm *mp-debug-draw* symbol #f)
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
 (define *mp-crimson-guard-lightning-callback* (the-as (function process uint int) #f))

@@ -1,4 +1,5 @@
 (define *old-enemy-method-97* (the-as (function enemy process) #f))
+(define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
 (define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
 
 (defun mp-get-remote-target-process ()
@@ -88,10 +89,14 @@
     (mp-enemy-method-97-hijack this))
 
   ;; Global Visibility Hijack: Ensure AI "sees" the proxy
+  (when (not *old-enemy-method-99*)
+      (set! *old-enemy-method-99* (the-as (function enemy process-focusable symbol) (method-of-type enemy enemy-method-99))))
   (defmethod enemy-method-99 ((this enemy) (arg0 process-focusable))
     (if (type? arg0 mp-target-proxy)
-        #t ;; Always "see" the proxy for now to fix ignoring issue
-        ((method-of-type enemy enemy-method-99) this arg0)))
+        #t ;; Always "see" the proxy
+        (if *old-enemy-method-99*
+            (*old-enemy-method-99* this arg0)
+            #f)))
 
   (when (not *old-enemy-dying*)
     (set! *old-enemy-dying* (the-as (function enemy none) (method-of-type enemy dying))))
@@ -301,14 +306,19 @@
                 (set! (-> slot quat-y) (-> e-proc root quat y))
                 (set! (-> slot quat-z) (-> e-proc root quat z))
                 (set! (-> slot quat-w) (-> e-proc root quat w))
-                (let ((chan (-> e-proc skel channel 0)))
-                  (if (and (nonzero? chan) (-> chan frame-group))
-                      (begin
-                        (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
-                        (set! (-> slot anim-frame) (-> chan frame-num)))
-                      (begin
-                        (set! (-> slot anim-index) -1)
-                        (set! (-> slot anim-frame) 0.0))))
+                (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
+                    (let ((chan (-> e-proc skel channel 0)))
+                      (if (and (nonzero? chan) (-> chan frame-group))
+                          (begin
+                            (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
+                            (set! (-> slot anim-frame) (-> chan frame-num)))
+                          (begin
+                            (set! (-> slot anim-index) -1)
+                            (set! (-> slot anim-frame) 0.0))))
+                    ;; Fallback if skeleton is currently unloaded
+                    (begin
+                      (set! (-> slot anim-index) -1)
+                      (set! (-> slot anim-frame) 0.0)))
                 (set! (-> slot hp) (-> e-proc hit-points))
                 ;; State 1 = Alive, State 2 = Dying
                 (set! (-> slot state) (the-as uint (if is-dying? 2 1)))
@@ -375,9 +385,10 @@
                         (when (and (>= anim-idx 0) (< anim-idx (-> e-proc draw art-group length)))
                           (let ((target-anim (the-as art-joint-anim (-> e-proc draw art-group data anim-idx))))
                             (when (and target-anim (= (-> target-anim type) art-joint-anim))
-                              (if (!= (-> e-proc skel channel 0 frame-group) target-anim)
-                                  (set! (-> e-proc skel channel 0 frame-group) target-anim))
-                              (set! (-> e-proc skel channel 0 frame-num) anim-frame)))))
+                              (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
+                                (if (!= (-> e-proc skel channel 0 frame-group) target-anim)
+                                    (set! (-> e-proc skel channel 0 frame-group) target-anim))
+                                (set! (-> e-proc skel channel 0 frame-num) anim-frame))))))
 
                       (set! (-> e-proc hit-points) (-> slot hp))
 

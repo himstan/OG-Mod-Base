@@ -1308,7 +1308,9 @@
                         (-> self control)
                         (the-as uint 2)
                         )
-                       jakb-pole-cycle-ja
+                       (if (= (-> *multi-info* local-role) 1)
+                          daxter-pole-cycle-ja
+                          jakb-pole-cycle-ja)
                        )
                   (go target-pole-cycle (process->handle arg0))
                   )

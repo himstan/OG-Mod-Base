@@ -1599,43 +1599,56 @@
 
   :post (behavior ()
     (target-no-stick-post)
-    (if (= (-> *multi-info* local-role) 1)
-        (let ((mgr-ptr *mp-remote-manager*))
-          (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
-              (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))
-                (if (and mp (nonzero? mp) (-> mp node-list))
-                    (begin
-                      (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
-                        (if (and sk (nonzero? sk))
-                            (begin
-                              (send-event sk 'matrix 'manipy mp)
-                              (let ((idx (mp-sidekick-anim)))
-                                (if (and (>= idx 0) (< idx (-> sk draw art-group length)))
-                                    (let ((anim-elt (-> sk draw art-group data idx)))
-                                      (if (and anim-elt (nonzero? anim-elt) (= (-> anim-elt type) art-joint-anim))
-                                          (let ((anim (the-as art-joint-anim anim-elt)))
-                                            (begin
-                                              ;; Authoritatively set animation for both sidekick and target shell
-                                              (let ((chan (-> sk skel channel 0)))
-                                                (set! (-> chan frame-group) anim)
-                                                (set! (-> chan frame-num) (mp-sidekick-frame))
-                                                (set! (-> chan num-func) num-func-none))
-                                              (let ((chan (-> self skel channel 0)))
-                                                (set! (-> chan frame-group) anim)
-                                                (set! (-> chan frame-num) (mp-sidekick-frame))
-                                                (set! (-> chan num-func) num-func-none)))))))))))
+    (when (= (-> *level* loading-level) (-> *level* default-level))
+      (if (= (-> *multi-info* local-role) 1)
+          (let ((mgr-ptr *mp-remote-manager*))
+            (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
+                (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))
+                  (if (and mp (nonzero? mp) (-> mp node-list))
+                      (begin
+                        (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
+                          (if (and sk (nonzero? sk))
+                              (begin
+                                (send-event sk 'matrix 'manipy mp)
+                                (let ((idx (mp-sidekick-anim)))
+                                  (if (and (>= idx 0) (< idx (-> sk draw art-group length)))
+                                      (let ((anim-elt (-> sk draw art-group data idx)))
+                                        (if (and anim-elt (nonzero? anim-elt) (= (-> anim-elt type) art-joint-anim))
+                                            (let ((anim (the-as art-joint-anim anim-elt)))
+                                              (begin
+                                                ;; GUARD: Ensure sidekick skeleton exists
+                                                (when (and (-> sk skel) (nonzero? (-> sk skel)))
+                                                  (let ((chan (-> sk skel channel 0)))
+                                                    (set! (-> chan frame-group) anim)
+                                                    (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                    (set! (-> chan num-func) num-func-none)))
+                                                
+                                                ;; GUARD: Ensure local target skeleton exists
+                                                (when (and (-> self skel) (nonzero? (-> self skel)))
+                                                  (let ((chan (-> self skel channel 0)))
+                                                    (set! (-> chan frame-group) anim)
+                                                    (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                    (set! (-> chan num-func) num-func-none))))))))))))
 
-                      ;; Snap *target* root to puppet's shoulder joint (Joint 23)
-                      (quaternion-copy! (-> self control quat) (-> mp root quat))
-                      (if (nonzero? (-> mp node-list data 23 bone transform))
-                          (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
-                          (vector-copy! (-> self control trans) (-> mp root trans)))
+                        ;; Snap *target* root to puppet's shoulder joint (Joint 23)
+                        (quaternion-copy! (-> self control quat) (-> mp root quat))
+                        
+                        ;; GUARD: Check node-list length and bone existence to prevent out-of-bounds crash!
+                        (if (and (nonzero? (-> mp node-list)) 
+                                (> (-> mp node-list length) 23) 
+                                (nonzero? (-> mp node-list data 23 bone)))
+                            (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
+                            (vector-copy! (-> self control trans) (-> mp root trans)))
 
-                      ;; Zero out velocities to prevent the engine from trying to "move" us out of the snap
-                      (vector-zero! (-> self control transv))
-                      (set! (-> self control ctrl-xz-vel) 0.0))))
-              (begin
-                (set! (-> self control trans x) (-> *multi-info* remote-x))
-                (set! (-> self control trans y) (-> *multi-info* remote-y))
-                (set! (-> self control trans z) (-> *multi-info* remote-z))))))
-    ))
+                        ;; Zero out velocities to prevent the engine from trying to "move" us out of the snap
+                        (vector-zero! (-> self control transv))
+                        (set! (-> self control ctrl-xz-vel) 0.0))))
+                (begin
+                  (set! (-> self control trans x) (-> *multi-info* remote-x))
+                  (set! (-> self control trans y) (-> *multi-info* remote-y))
+                  (set! (-> self control trans z) (-> *multi-info* remote-z))))
+        )
+      )
+    )
+  )
+)
