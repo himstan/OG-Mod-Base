@@ -1556,23 +1556,14 @@
 
   :post target-no-stick-post)
 
-
-(defbehavior target-ride-along-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-  (case arg2
-    (('pole-grab 'edge-grab 'swim 'slide 'vehicle-mount 'board-mount)
-     #f)
-    (else
-     (target-indax-handler arg0 arg1 arg2 arg3))))
-
 (defstate target-ride-along (target)
-  :event target-ride-along-event-handler
+  :event target-standard-event-handler
 
   :enter (behavior ()
     (set! (-> self control transv quad) (the-as uint128 0))
     (set! (-> self control ctrl-xz-vel) 0.0)
     (format 0 "[MP] Setting riding flag to true ~%")
     (set! *local-riding?* #t)
-    ;; Disable collision while riding to prevent getting stuck on poles/walls
     (set! (-> self control root-prim prim-core action) (collide-action))
     (logior! (-> self focus-status) (focus-status indax))
     (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
@@ -1583,7 +1574,6 @@
 
   :exit (behavior ()
       (set! *local-riding?* #f)
-      ;; Restore collision
       (set! (-> self control root-prim prim-core action) (collide-action solid stuck-wall-escape))
     )
 

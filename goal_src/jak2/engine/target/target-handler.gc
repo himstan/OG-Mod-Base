@@ -1302,6 +1302,7 @@
         (b! (!= v1-0 'pole-grab) cfg-256 :delay (nop!))
         (set! v0-0
               (if (and (not (focus-test? self dead hit grabbed pole))
+                  (not *local-riding?*)
                        ((method-of-type touching-shapes-entry prims-touching?)
                         (the-as touching-shapes-entry (-> arg3 param 0))
                         (-> self control)
