@@ -248,7 +248,7 @@
         (let ((skel (-> *target* skel)))
           (if (= (-> *multi-info* local-role) 1)
               (let ((chan (-> skel channel 0)))
-                (if (and (nonzero? chan) (-> chan frame-group))
+                (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
                     (begin
                       (set! local-anim (-> chan frame-group master-art-group-index))
                       (set! local-frame (-> chan frame-num)))))
@@ -256,12 +256,12 @@
                     (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
                 (dotimes (i limit)
                   (let ((chan (-> skel channel i)))
-                    (if (and (nonzero? chan) (-> chan frame-group) (>= (-> chan frame-interp 0) max-weight))
+                    (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)) (>= (-> chan frame-interp 0) max-weight))
                         (begin
                           (set! max-weight (-> chan frame-interp 0))
                           (set! local-anim (-> chan frame-group master-art-group-index))
                           (set! local-frame (-> chan frame-num))))))
-                (if (and (= local-anim -1) (-> skel channel 0 frame-group))
+                (if (and (= local-anim -1) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
                     (begin
                       (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
                       (set! local-frame (-> skel channel 0 frame-num))))))))

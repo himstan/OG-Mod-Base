@@ -54,6 +54,9 @@
                            (arg3 touching-shapes-entry)
                            (arg4 (state symbol attack-info target))
                            )
+  (if *local-riding?*
+      (return #f)
+      )
   (let ((s4-0 (if (logtest? (-> arg1 mask) (attack-mask mode))
                   (-> arg1 mode)
                   )

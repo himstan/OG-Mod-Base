@@ -47,6 +47,9 @@
     ;; Use native methods to set masks
     (set-collide-as! cshape (collide-spec jak player-list hit-by-others-list obstacle))
     (set-collide-with! cshape (collide-spec backgnd obstacle jak player-list hit-by-player-list))
+    (set! (-> cshape dynam) (copy *standard-dynamics* 'process))
+    (set! (-> cshape reaction) cshape-reaction-default)
+    (set! (-> cshape no-reaction) (the-as (function collide-shape-moving collide-query vector vector object) nothing))
     (set! (-> self root) cshape))
 
   ;; IMPORTANT: Add to BOTH player list (for AI) and hit-by-player list (for player collision)

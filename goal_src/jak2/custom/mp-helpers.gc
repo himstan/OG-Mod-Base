@@ -330,9 +330,9 @@
                 (set! (-> slot quat-y) (-> e-proc root quat y))
                 (set! (-> slot quat-z) (-> e-proc root quat z))
                 (set! (-> slot quat-w) (-> e-proc root quat w))
-                (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
+                (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)) (nonzero? (-> e-proc draw)))
                     (let ((chan (-> e-proc skel channel 0)))
-                      (if (and (nonzero? chan) (-> chan frame-group))
+                      (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> e-proc draw art-group)))
                           (begin
                             (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
                             (set! (-> slot anim-frame) (-> chan frame-num)))
