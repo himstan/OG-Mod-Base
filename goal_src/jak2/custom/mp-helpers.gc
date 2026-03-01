@@ -82,6 +82,21 @@
       (if *old-enemy-dying* (*old-enemy-dying* this)))
   (none))
 
+(define *old-process-entity-status* (the-as (function process entity-perm-status symbol entity-perm-status) #f))
+
+(defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
+  ;; Detect when an entity is being marked as dead or task-complete locally
+  (when (and arg2 
+             (logtest? (the-as int arg1) (the-as int (logior (entity-perm-status dead) (entity-perm-status subtask-complete))))
+             (not *mp-processing-remote-event*)
+             (-> arg0 entity))
+    (mp-send-world-event MP_EVENT_BREAK (-> arg0 entity aid)))
+  
+  (if *old-process-entity-status*
+      (*old-process-entity-status* arg0 arg1 arg2)
+      (entity-perm-status bit-0)) ;; Safe fallback
+  )
+
 (defun mp-apply-ai-hijacks ()
   (when (not *old-enemy-method-97*)
     (set! *old-enemy-method-97* (the-as (function enemy process) (method-of-type enemy enemy-method-97))))
@@ -120,6 +135,10 @@
 
   (defmethod general-event-handler ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
     (mp-general-event-handler-hijack this arg0 arg1 arg2 arg3))
+
+  (when (not *old-process-entity-status*)
+    (set! *old-process-entity-status* process-entity-status!)
+    (set! process-entity-status! mp-process-entity-status-hijack))
 
   (none))
 
@@ -186,10 +205,15 @@
     ((= evt-type MP_EVENT_BREAK)
      (let ((ent (entity-by-aid aid)))
        (when (and ent (nonzero? ent))
-         (logior! (-> ent extra perm status) (entity-perm-status dead))
-         (let ((proc (-> ent extra process)))
-           (if (and proc (nonzero? proc))
-               (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'generic)))))))))
+         (let ((perm (-> ent extra perm)))
+           (when (not (logtest? (-> perm status) (entity-perm-status dead subtask-complete)))
+             (logior! (-> perm status) (entity-perm-status dead subtask-complete))
+             (let ((proc (-> ent extra process)))
+               (if (and proc (nonzero? proc))
+                   ;; Send a super-attack that breaks almost anything (crates, trapdoors, etc.)
+                   (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) 
+                                                                    (mode 'mp-break) 
+                                                                    (penetrate-using (penetrate generic-attack lunge flop punch spin roll uppercut bonk explode))))))))))))
     ((= evt-type MP_EVENT_ATTACK_ENEMY)
      (let ((proc (find-enemy-by-aid aid)))
        (when (and proc (nonzero? proc))

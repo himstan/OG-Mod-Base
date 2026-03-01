@@ -59,6 +59,10 @@
     (case message
       (('attack)
        (when (logtest? (-> (the-as attack-info (-> block param 1)) penetrate-using) (penetrate flop))
+         (when (not *mp-processing-remote-event*)
+           (let ((attacking-proc (find-offending-process-focusable proc (the-as attack-info (-> block param 1)))))
+             (if (and attacking-proc (= attacking-proc *target*))
+                 (mp-send-world-event MP_EVENT_BREAK (-> self entity aid)))))
          (go-virtual die)
          #f
          )
