@@ -5,8 +5,8 @@
 (defun mp-get-remote-target-process ()
   (let ((remote-role (if (= (-> *multi-info* local-role) 0) 1 0)))
     (let ((remote-h (-> *multi-info* player-procs remote-role)))
-      (if (and (nonzero? remote-h) (handle->process remote-h))
-          (let ((proc (the-as process-focusable (handle->process remote-h))))
+      (if (and (nonzero? remote-h) (handle->process-safe remote-h))
+          (let ((proc (the-as process-focusable (handle->process-safe remote-h))))
             (if (and proc (nonzero? proc) (not (logtest? (-> proc mask) (process-mask sleep))))
                 proc
                 (the-as process-focusable #f)))
@@ -275,10 +275,12 @@
 (defun mp-enemy-sync-post-behavior ()
   (with-pp
     (let ((self (the-as enemy pp)))
-      ;; Prevent local AI/physics from moving the puppet while we sync it
-      (vector-reset! (-> self root transv))
-      (common-post self)
-      (update-transforms (-> self root))))
+      (when (and self (type? self enemy))
+        ;; Prevent local AI/physics from moving the puppet while we sync it
+        (if (nonzero? (-> self root)) (vector-reset! (-> self root transv)))
+        (common-post self)
+        (if (and (nonzero? (-> self root)) (type? (-> self root) collide-shape))
+            (update-transforms (-> self root))))))
   (none))
 
 (defstate mp-enemy-sync-idle (enemy)
@@ -299,7 +301,7 @@
 
 (defun mp-sync-enemies-host-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc process-drawable))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
       (let ((e-proc (the-as enemy proc))
             (aid (the-as uint 0)))
         (if (-> e-proc entity)
@@ -332,7 +334,7 @@
                 (set! (-> slot quat-w) (-> e-proc root quat w))
                 (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)) (nonzero? (-> e-proc draw)))
                     (let ((chan (-> e-proc skel channel 0)))
-                      (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> e-proc draw art-group)))
+                      (if (and (nonzero? chan) (nonzero? (-> chan frame-group)) (nonzero? (-> e-proc draw art-group)))
                           (begin
                             (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
                             (set! (-> slot anim-frame) (-> chan frame-num)))
@@ -354,16 +356,18 @@
                     )
 
                 ;; Sync Focus Target
-                (let ((target-proc (handle->process (-> e-proc focus handle))))
+                (let ((f-handle (-> e-proc focus handle)))
                   (set! (-> slot focus-aid) (the-as uint 0))
-                  (when target-proc
-                    (cond
-                      ((= target-proc (handle->process (-> *multi-info* player-procs 0)))
-                       (set! (-> slot focus-aid) (the-as uint 1))) ;; ID 1 = Player 0 (Jak)
-                      ((= target-proc (handle->process (-> *multi-info* player-procs 1)))
-                       (set! (-> slot focus-aid) (the-as uint 2))) ;; ID 2 = Player 1 (Daxter)
-                      ((-> target-proc entity)
-                       (set! (-> slot focus-aid) (-> target-proc entity aid))))))
+                  (when (and (!= f-handle (the-as handle #f)) (nonzero? (the-as int f-handle)))
+                    (let ((target-proc (handle->process-safe f-handle)))
+                      (when target-proc
+                        (cond
+                          ((= target-proc (handle->process-safe (-> *multi-info* player-procs 0)))
+                           (set! (-> slot focus-aid) (the-as uint 1))) ;; ID 1 = Player 0 (Jak)
+                          ((= target-proc (handle->process-safe (-> *multi-info* player-procs 1)))
+                           (set! (-> slot focus-aid) (the-as uint 2))) ;; ID 2 = Player 1 (Daxter)
+                          ((-> target-proc entity)
+                           (set! (-> slot focus-aid) (-> target-proc entity aid))))))))
 
                 (1+! (-> *multi-info* enemy-count))))))))
   #t)
@@ -375,7 +379,7 @@
 
 (defun mp-sync-enemies-client-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc process-drawable))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
       (let ((e-proc (the-as enemy proc))
             (aid (the-as uint 0)))
         (if (-> e-proc entity)
@@ -435,7 +439,8 @@
                           (set! (-> e-proc draw death-timer-org) (the-as uint 60))
                           (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))))
 
-                      (update-transforms (-> e-proc root))))
+                      (if (type? (-> e-proc root) collide-shape)
+                          (update-transforms (-> e-proc root)))))
                   (return #t))))
 
             ;; 2. If it was hijacked but Host STOPPED syncing it, release it locally
@@ -489,7 +494,7 @@
 
               (if (= (-> *multi-info* local-role) 0)
                   ;; Host: Read native focus
-                  (let ((target (handle->process (-> e-proc focus handle))))
+                  (let ((target (handle->process-safe (-> e-proc focus handle))))
                     (if target (set! target-name (the-as string (format #f "~A" target)))))
                   ;; Client: Read synced focus
                   (dotimes (i (the-as int (-> *multi-info* enemy-count)))

@@ -258,7 +258,7 @@
           (if (!= (-> *level* loading-level) (-> *level* default-level))
             (return #f)
           )
-          (let ((m (handle->process (-> self manipy-proc))))
+          (let ((m (handle->process-safe (-> self manipy-proc))))
             (if (not m)
                 (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
                   (let ((name (if (= (-> self remote-role) 1) "sidekick" "jchar")))
@@ -300,9 +300,9 @@
                       (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp))))))
 
           ;; 2. Sync invisible AI proxy
-          (let ((p (handle->process (-> self proxy-proc))))
+          (let ((p (handle->process-safe (-> self proxy-proc))))
             (if (not p)
-                (when (and (handle->process (-> self manipy-proc)) (time-elapsed? (-> self spawn-timer) (seconds 0.5)))
+                (when (and (handle->process-safe (-> self manipy-proc)) (time-elapsed? (-> self spawn-timer) (seconds 0.5)))
                   (format 0 "MP-LOG: idle-trans: Spawning mp-target-proxy...~%")
                   (let ((new-proxy (process-spawn mp-target-proxy :init mp-target-proxy-init *multi-remote-interp-pos* (-> self remote-role) :to self)))
                     (if new-proxy
