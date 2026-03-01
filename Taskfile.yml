@@ -59,13 +59,6 @@ tasks:
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
       - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -boot -fakeiso"
-  run-game:
-    desc: "Start the game's runtime, to start the game itself the REPL is required"
-    preconditions:
-      - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
-        msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
-    cmds:
-      - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug"
   boot-game-p2:
     desc: "Boots the game as the second player on port 8120, it will fail if it's not already compiled!"
     preconditions:
@@ -73,6 +66,20 @@ tasks:
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_DEBUG_DIR}}/gk'"
     cmds:
       - '{{.GK_BIN_DEBUG_DIR}}/gk --port 8120 -v --game jak2 -- -boot -fakeiso -debug'
+  run-game:
+    desc: "Start the game's runtime, to start the game itself the REPL is required"
+    preconditions:
+      - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
+        msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
+    cmds:
+      - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug"
+  run-game-p2:
+    desc: "Start the game's runtime, to start the game itself the REPL is required"
+    preconditions:
+      - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
+        msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
+    cmds:
+      - "{{.GK_BIN_DEBUG_DIR}}/gk --port 8120 -v --game {{.GAME}} -- -fakeiso -debug"
   # DEVELOPMENT
   gen-cmake:
     desc: "Generate the CMake"
