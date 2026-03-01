@@ -66,6 +66,18 @@ tasks:
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
       - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug"
+  run-game-p1-debug:
+    desc: "Boots Player 2 from Debug bin on port 8112"
+    cmds:
+      - './build/bin/Debug/gk.exe --port 8112 -v --game jak2 -- -boot -fakeiso -debug'
+  run-game-p2-debug:
+    desc: "Boots Player 2 from Debug bin on port 8120"
+    cmds:
+      - './build/bin/Debug/gk.exe --port 8112 -v --game jak2 --port 8120 -- -boot -fakeiso -debug'
+  repl-p2:
+    desc: "Connects REPL to Player 2 on port 8120"
+    cmds:
+      - "{{.GOALC_BIN_RELEASE_DIR}}/goalc --user-auto --game {{.GAME}} --port 8120"
   # DEVELOPMENT
   gen-cmake:
     desc: "Generate the CMake"
@@ -75,6 +87,14 @@ tasks:
     desc: "Build the project using the generated CMake"
     cmds:
       - "cmake --build build --parallel {{.CMAKE_NUM_THREADS}}"
+  build-mi:
+    desc: "Compiles all .gc files using (mi) safely with a delay and user profile"
+    preconditions:
+      - sh: test -f {{.GOALC_BIN_RELEASE_DIR}}/goalc{{.EXE_FILE_EXTENSION}}
+        msg: "Couldn't locate compiler executable in '{{.GOALC_BIN_RELEASE_DIR}}/goalc'"
+    cmds:
+      - |
+        {{.PYTHON}} -c "import time, subprocess, sys; print('>> Starting compiler with user profile...'); p = subprocess.Popen(['{{.GOALC_BIN_RELEASE_DIR}}/goalc{{.EXE_FILE_EXTENSION}}', '--game', '{{.GAME}}', '--user-auto'], stdin=subprocess.PIPE, text=True); time.sleep(2.5); print('>> Sending (mi) and (e)...'); p.stdin.write('(mi)\n(e)\n'); p.stdin.flush(); p.wait(); sys.exit(p.returncode)"
   repl:
     desc: "Start the REPL"
     preconditions:
