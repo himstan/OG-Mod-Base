@@ -1635,6 +1635,9 @@
   )
 
 (defun cspace<-cspace! ((arg0 cspace) (arg1 cspace))
+  ;; MULTIPLAYER GUARD
+  (if (or (not arg1) (not (-> arg1 bone)))
+      (return (the-as matrix #f)))
   (let ((v0-0 (-> arg0 bone transform)))
     (let* ((a2-0 (-> arg1 bone transform))
            (v1-2 (-> a2-0 quad 0))
@@ -1652,6 +1655,9 @@
   )
 
 (defun cspace<-cspace-normalized! ((arg0 cspace) (arg1 cspace))
+  ;; MULTIPLAYER GUARD
+  (if (or (not arg1) (not (-> arg1 bone)))
+      (return (the-as matrix #f)))
   (let ((gp-0 (-> arg0 bone transform)))
     (let* ((a2-0 (-> arg1 bone transform))
            (v1-2 (-> a2-0 quad 0))

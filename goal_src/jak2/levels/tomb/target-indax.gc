@@ -1642,7 +1642,20 @@
 
                         ;; Zero out velocities to prevent the engine from trying to "move" us out of the snap
                         (vector-zero! (-> self control transv))
-                        (set! (-> self control ctrl-xz-vel) 0.0))))
+                        (set! (-> self control ctrl-xz-vel) 0.0))
+                      (begin
+                        ;; MP is gone or invalid, reset sidekick to stop cloning stale memory
+                        (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
+                          (if (and sk (nonzero? sk))
+                              (send-event sk 'matrix #f)
+                              )
+                          )
+                        (set! (-> self control trans x) (-> *multi-info* remote-x))
+                        (set! (-> self control trans y) (-> *multi-info* remote-y))
+                        (set! (-> self control trans z) (-> *multi-info* remote-z))
+                        )
+                      )
+                  )
                 (begin
                   (set! (-> self control trans x) (-> *multi-info* remote-x))
                   (set! (-> self control trans y) (-> *multi-info* remote-y))
