@@ -9,5 +9,7 @@ vars:
   OFFLINETEST_BIN_RELEASE_DIR: './out/build/Release/bin'
   GOALCTEST_BIN_RELEASE_DIR: './out/build/Release/bin'
   FORMATTER_BIN_RELEASE_DIR: './out/build/Release/bin'
+  GK_BIN_DEBUG_DIR: './out/build/Debug/bin'
+  DEBUG_DIR: './out/build'
   EXE_FILE_EXTENSION: '.exe'
   PYTHON: 'python'

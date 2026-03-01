@@ -48,10 +48,10 @@ tasks:
   boot-game:
     desc: "Boots the game, it will fail if it's not already compiled!"
     preconditions:
-      - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
-        msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
+      - sh: test -f {{.GK_BIN_DEBUG_DIR}}/gk{{.EXE_FILE_EXTENSION}}
+        msg: "Couldn't locate runtime executable in '{{.GK_BIN_DEBUG_DIR}}/gk'"
     cmds:
-      - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -boot -fakeiso -debug"
+      - "{{.GK_BIN_DEBUG_DIR}}/gk -v --game {{.GAME}} -- -boot -fakeiso -debug"
   boot-game-retail:
     desc: "Boots the game without debug mode, it will fail if it's not already compiled!"
     preconditions:
@@ -66,27 +66,18 @@ tasks:
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
       - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug"
-  run-game-p1-debug:
-    desc: "Boots Player 2 from Debug bin on port 8112"
+  boot-game-p2:
+    desc: "Boots the game as the second player on port 8120, it will fail if it's not already compiled!"
+    preconditions:
+      - sh: test -f {{.GK_BIN_DEBUG_DIR}}/gk{{.EXE_FILE_EXTENSION}}
+        msg: "Couldn't locate runtime executable in '{{.GK_BIN_DEBUG_DIR}}/gk'"
     cmds:
-      - './build/bin/Debug/gk.exe --port 8112 -v --game jak2 -- -boot -fakeiso -debug'
-  run-game-p2-debug:
-    desc: "Boots Player 2 from Debug bin on port 8120"
-    cmds:
-      - './build/bin/Debug/gk.exe --port 8112 -v --game jak2 --port 8120 -- -boot -fakeiso -debug'
-  repl-p2:
-    desc: "Connects REPL to Player 2 on port 8120"
-    cmds:
-      - "{{.GOALC_BIN_RELEASE_DIR}}/goalc --user-auto --game {{.GAME}} --port 8120"
+      - '{{.GK_BIN_DEBUG_DIR}}/gk --port 8120 -v --game jak2 -- -boot -fakeiso -debug'
   # DEVELOPMENT
   gen-cmake:
     desc: "Generate the CMake"
     cmds:
-      - "cmake -B build --preset={{.CMAKE_PRESET}}"
-  build:
-    desc: "Build the project using the generated CMake"
-    cmds:
-      - "cmake --build build --parallel {{.CMAKE_NUM_THREADS}}"
+    - "cmake -B build --preset={{.CMAKE_PRESET}}"
   build-mi:
     desc: "Compiles all .gc files using (mi) safely with a delay and user profile"
     preconditions:
