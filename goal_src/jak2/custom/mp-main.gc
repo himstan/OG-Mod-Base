@@ -48,7 +48,6 @@
           (set! (-> pp clock frame-counter) host-clock)
           (set! (-> pp clock old-frame-counter) (+ host-clock -1))
           )))
-  )
 
   (when (not *mp-hijacks-applied?*)
     (format 0 "[MP] Applying global AI hijacks...~%")
@@ -93,7 +92,7 @@
 
          ;; Sync AIDs (Orbs, etc.)
          (let ((count (-> *multi-info* sync-aids-count)))
-           (if (> count 486) (set! count (the-as uint 486)))
+           (if (> count 128) (set! count (the-as uint 128)))
            (format 0 "[MP-Client] Marking ~D actors as dead in fresh perm-list...~%" count)
            (dotimes (i (the-as int count))
              (let ((aid (-> *multi-info* sync-aids i)))
@@ -238,7 +237,7 @@
               (set! (-> *multi-info* local-level) (string-crc32 (symbol->string lev-name)))))))
   (let ((local-anim -1)
         (local-frame 0.0))
-    (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)))
+    (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)) (> (-> *target* skel allocated-length) 0))
         (let ((skel (-> *target* skel)))
           (if (= (-> *multi-info* local-role) 1)
               (let ((chan (-> skel channel 0)))
@@ -255,7 +254,7 @@
                           (set! max-weight (-> chan frame-interp 0))
                           (set! local-anim (-> chan frame-group master-art-group-index))
                           (set! local-frame (-> chan frame-num))))))
-                (if (and (= local-anim -1) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
+                (if (and (> (-> skel allocated-length) 0) (= local-anim -1) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
                     (begin
                       (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
                       (set! local-frame (-> skel channel 0 frame-num))))))))
@@ -355,17 +354,29 @@
                (begin
                  (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
                    (if new-mgr
-                       (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr)))))
-                 (let ((mp-mgr (-> mgr-ptr 0)))
-                   (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
-                   (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))))))))
+                       (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                       )
+                   )
+                 )
+               (let ((mp-mgr (-> mgr-ptr 0)))
+                 (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
+                 (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
+                 )
+               )
+           )
+         )
+       )
+     )
     (else
      (begin
        (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) (the-as symbol 'dead)))
            (begin
              (deactivate (-> *mp-remote-manager* 0))
              (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
-       (set! *multi-remote-first-seen?* #t))))
+       (set! *multi-remote-first-seen?* #t)
+       )
+     )
+    )
 
   ;; 3. Daxter Animation Sync & Visibility for Host (Jak)
   (if (and (= (-> *multi-info* local-role) 0) *target* (nonzero? *target*) (-> *target* sidekick))
@@ -431,4 +442,6 @@
             )))
       ))
 
-  (none))
+  (none)
+  )
+)

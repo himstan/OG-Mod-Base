@@ -509,12 +509,20 @@
               #t
               )
              (else
-               (go
-                 target-jump
-                 (-> *TARGET-bank* tube-jump-height-min)
-                 (-> *TARGET-bank* tube-jump-height-max)
-                 (the-as surface #f)
-                 )
+               (if (focus-test? self indax)
+                   (go
+                     target-indax-jump
+                     (-> *TARGET-bank* tube-jump-height-min)
+                     (-> *TARGET-bank* tube-jump-height-max)
+                     (the-as surface #f)
+                     )
+                   (go
+                     target-jump
+                     (-> *TARGET-bank* tube-jump-height-min)
+                     (-> *TARGET-bank* tube-jump-height-max)
+                     (the-as surface #f)
+                     )
+                   )
                )
              )
            )
@@ -661,15 +669,22 @@
       )
     (update-rates! (-> self clock) f30-0)
     )
-  (ja :group! jakb-tube-turn-ja
-      :num! (identity (ja-aframe
-                  (+ (-> self tube turn-anim-frame)
-                     (* 5.0 (sin (* 145.63556 (the float (- (current-time) (-> self state-time))))))
-                     )
-                  0
+  (let ((a1-4 (if (focus-test? self indax)
+                  daxter-tube-turn-ja
+                  jakb-tube-turn-ja
                   )
-                )
-      )
+              )
+        )
+    (ja :group! a1-4
+        :num! (identity (ja-aframe
+                    (+ (-> self tube turn-anim-frame)
+                       (* 5.0 (sin (* 145.63556 (the float (- (current-time) (-> self state-time))))))
+                       )
+                    0
+                    )
+                  )
+        )
+    )
   0
   (none)
   )
@@ -688,13 +703,31 @@
              )
         (go target-tube-jump (-> *TARGET-bank* tube-jump-height-min) (-> *TARGET-bank* tube-jump-height-max))
         )
+    (when (and (not (logtest? (-> self control status) (collide-status on-surface)))
+               (time-elapsed? (-> self control last-time-on-surface) (seconds 0.2))
+               (and (< 4096.0 (target-height-above-ground)) (!= (-> self control gspot-pat-surfce event) 7))
+               )
+      (if (focus-test? self indax)
+          (go target-indax-falling 'tube)
+          (go target-falling 'tube)
+          )
+      )
     )
   :code (behavior ()
     (let ((v1-2 (ja-group)))
       (cond
-        ((and v1-2 (or (= v1-2 jakb-duck-high-jump-ja) (= v1-2 jakb-jump-loop-ja)))
+        ((and (not (focus-test? self indax)) (and v1-2 (or (= v1-2 jakb-duck-high-jump-ja) (= v1-2 jakb-jump-loop-ja))))
          (ja-channel-push! 1 (seconds 0.04))
          (ja-no-eval :group! jakb-tube-jump-land-ja :num! (seek!) :frame-num 0.0)
+         (until (ja-done? 0)
+           (suspend)
+           (ja :num! (seek!))
+           )
+         (set! (-> self tube turn-anim-frame) 0.0)
+         )
+        ((and (focus-test? self indax) (and v1-2 (or (= v1-2 daxter-indax-jump-ja) (= v1-2 daxter-indax-jump-loop-ja))))
+         (ja-channel-push! 1 (seconds 0.04))
+         (ja-no-eval :group! daxter-tube-jump-land-ja :num! (seek!) :frame-num 0.0)
          (until (ja-done? 0)
            (suspend)
            (ja :num! (seek!))
@@ -739,14 +772,25 @@
       )
     )
   :code (behavior ((arg0 float) (arg1 float))
-    (ja-channel-push! 1 (seconds 0.05))
-    (ja :group! jakb-duck-high-jump-ja :num! (identity (ja-aframe 16.0 0)))
-    (let ((f30-0 35.0)
-          (f28-0 1.0)
+    (let ((f28-0 35.0)
+          (f30-0 1.0)
           )
+      (ja-channel-push! 1 (seconds 0.05))
+      (set! f28-0 (cond
+                    ((focus-test? self indax)
+                     (sound-play "dax-effort")
+                     (ja :group! daxter-indax-jump-ja)
+                     10.0
+                     )
+                    (else
+                      (ja :group! jakb-jump-forward-ja)
+                      10.0
+                      )
+                    )
+            )
       (until (ja-done? 0)
         (let* ((f24-0 (vector-dot (-> self control dynam gravity-normal) (-> self control transv)))
-               (f26-0 (- f30-0 (ja-aframe-num 0)))
+               (f26-0 (- f28-0 (ja-aframe-num 0)))
                (f0-8 (fmin (fmin 3.0 f26-0) (/ (* 5.0 f26-0) (the float (time-to-apex f24-0 -245760.0)))))
                (a0-7 (-> self skel root-channel 0))
                )
@@ -754,7 +798,7 @@
           (let ((v1-21 (and (< 0.0 f24-0) (< 0.0 f26-0))))
             (set! (-> a0-7 param 1) (if v1-21
                                         f0-8
-                                        f28-0
+                                        f30-0
                                         )
                   )
             )
@@ -763,10 +807,13 @@
         (suspend)
         )
       )
-    (ja-no-eval :group! jakb-jump-loop-ja :num! (loop!) :frame-num 0.0)
+    (if (focus-test? self indax)
+        (ja-no-eval :group! daxter-indax-jump-loop-ja :num! (loop!) :frame-num 0.0)
+        (ja-no-eval :group! jakb-jump-loop-ja :num! (loop!) :frame-num 0.0)
+        )
     (until #f
       (suspend)
-      (ja :group! jakb-jump-loop-ja :num! (loop!))
+      (ja :num! (loop!))
       )
     #f
     )

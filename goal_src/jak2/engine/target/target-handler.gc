@@ -1094,6 +1094,7 @@
                            (or (logtest? (-> self state-flags) (state-flags sf1))
                                (focus-test? self dead dangerous hit grabbed in-head edge-grab pole flut tube board pilot mech)
                                (>= (the-as time-frame (-> self no-load-wait)) (current-time))
+                               *local-riding?*
                                )
                            )
                        )
@@ -1346,6 +1347,7 @@
         (label cfg-286)
         (b! (!= v1-0 'slide) cfg-290 :delay (nop!))
         (b! (focus-test? self dead hit grabbed on-water under-water) cfg-289 :delay (set! v0-0 #f))
+        ;; We can just go to target-slide-down-to-ground because we updated it to check for indax focus.
         (set! v0-0 (go target-slide-down-to-ground))
         (label cfg-289)
         (b! #t cfg-291 :delay (nop!))

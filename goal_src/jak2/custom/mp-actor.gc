@@ -12,6 +12,12 @@
   (set! (-> self proxy-proc) (the-as handle #f))
   (set! (-> self spawn-timer) 0)
   (set! (-> self last-anim-packet) 0)
+  
+  ;; Initialize root for process-drawable
+  (set! (-> self root) (the-as basic (new 'process 'trsqv)))
+  (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-interp-pos*)
+  (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
+
   (go-virtual idle))
 
 ;; --- MP Target Proxy (Invisible AI Target) ---
@@ -56,8 +62,8 @@
   (add-connection *collide-player-list* self #f (-> self root) #f #f)
   (add-connection *collide-hit-by-player-list* self #f (-> self root) #f #f)
 
-  (set! (-> self root trans quad) (-> pos quad))
-  (quaternion-identity! (-> self root quat))
+  (set! (-> (the-as trsqv (-> self root)) trans quad) (-> pos quad))
+  (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
 
   ;; 2. Process Flags
   ;; Mask must contain 'target' for AI to even consider us
@@ -78,8 +84,8 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('attack)
-       ;; If we are riding, ignore all attacks on the proxy to prevent Jak from hitting his own passenger
-       (if (= (-> *multi-info* riding?) 1)
+       ;; If we are riding, or if any level is loading, ignore all attacks on the proxy
+       (if (or (nonzero? (-> *multi-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
            (return #f))
        
        ;; Relay damage to the network!
@@ -251,10 +257,12 @@
 (defstate idle (mp-manager)
   :virtual #t
   :trans (behavior ()
+          ;; ALWAYS update interpolation from latest info
+          (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-interp-pos*)
+          (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
+          (quaternion-rotate-y! (-> (the-as trsqv (-> self root)) quat) (-> (the-as trsqv (-> self root)) quat) *multi-remote-interp-angle*)
+
           ;; 1. Sync visual manipy
-          (if (!= (-> *level* loading-level) (-> *level* default-level))
-            (return #f)
-          )
           (let ((m (handle->process-safe (-> self manipy-proc))))
             (if (not m)
                 (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))

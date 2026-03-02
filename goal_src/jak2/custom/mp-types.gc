@@ -46,61 +46,63 @@
    (hp         int32)
    (state      uint32)
    (focus-aid  uint32)
-   (attack-flag uint8))
-  :pack-me
+   (attack-flag uint8)
+   (pad         uint8 11))
   )
 
 (deftype multiplayer-info (structure)
-  ((local-x           float)            ;; 0
-   (local-y           float)            ;; 4
-   (local-z           float)            ;; 8
-   (local-angle       float)            ;; 12
-   (remote-x          float)            ;; 16
-   (remote-y          float)            ;; 20
-   (remote-z          float)            ;; 24
-   (remote-angle      float)            ;; 28
-   (remote-id         uint32)           ;; 32
-   (remote-role       int32)            ;; 36
-   (remote-anim       int32)            ;; 40
-   (local-anim        int32)            ;; 44
-   (local-level       uint32)           ;; 48
-   (remote-level      uint32)           ;; 52
-   (remote-status     int32)            ;; 56
-   (local-role        int32)            ;; 60
-   (local-anim-frame  float)            ;; 64
-   (remote-anim-frame float)            ;; 68
-   (local-packet-id   uint32)           ;; 72
-   (remote-packet-id  uint32)           ;; 76
-   (in-event-type     uint32)           ;; 80
-   (in-event-aid      uint32)           ;; 84
-   (in-event-seq      uint32)           ;; 88
-   (out-event-type    uint32)           ;; 92
-   (out-event-aid     uint32)           ;; 96
-   (out-event-seq     uint32)           ;; 100
-   (host-money        float)            ;; 104
-   (host-gems         float)            ;; 108
-   (host-skill        float)            ;; 112
-   (client-sync-money float)            ;; 116
-   (client-sync-gems  float)            ;; 120
-   (client-sync-skill float)            ;; 124
-   (client-sync-flag  uint32)           ;; 128
-   (host-task         uint32)           ;; 132
-   (host-node         uint32)           ;; 136
-   (host-continue     uint8 32)         ;; 140
-   (task-mask         uint8 64)         ;; 172
-   (sync-aids-count   uint32)           ;; 236
-   (riding?           uint32)           ;; 240
-   (enemy-count       uint32)           ;; 244
-   (enemies           mp-enemy-state 24 :inline) ;; 248
-   (player-procs      handle 2)
-   (sync-aids         uint32 128)
-   (sidekick-anim     int32)
-   (sidekick-frame    float)
-   (sync-clock        time-frame)
-   (pad               uint8 216)
+  ((local-x           float                     :offset 0)
+   (local-y           float                     :offset 4)
+   (local-z           float                     :offset 8)
+   (local-angle       float                     :offset 12)
+   (remote-x          float                     :offset 16)
+   (remote-y          float                     :offset 20)
+   (remote-z          float                     :offset 24)
+   (remote-angle      float                     :offset 28)
+   (remote-id         uint32                    :offset 32)
+   (remote-role       int32                     :offset 36)
+   (remote-anim       int32                     :offset 40)
+   (local-anim        int32                     :offset 44)
+   (local-level       uint32                    :offset 48)
+   (remote-level      uint32                    :offset 52)
+   (remote-status     int32                     :offset 56)
+   (local-role        int32                     :offset 60)
+   (local-anim-frame  float                     :offset 64)
+   (remote-anim-frame float :offset 68)
+   (local-packet-id uint32 :offset 72)
+   (remote-packet-id uint32 :offset 76)
+   (in-event-type uint32 :offset 80)
+   (in-event-aid uint32 :offset 84)
+   (in-event-seq uint32 :offset 88)
+   (out-event-type uint32 :offset 92)
+   (out-event-aid uint32 :offset 96)
+   (out-event-seq uint32 :offset 100)
+   (host-money float :offset 104)
+   (host-gems float :offset 108)
+   (host-skill float :offset 112)
+   (client-sync-money float :offset 116)
+   (client-sync-gems float :offset 120)
+   (client-sync-skill float :offset 124)
+   (client-sync-flag uint32 :offset 128)
+   (host-task uint32 :offset 132)
+   (host-node uint32 :offset 136)
+   (host-continue uint8 32 :offset 140)
+   (task-mask uint8 64 :offset 172)
+   (sync-aids-count uint32 :offset 236)
+   (riding? uint32 :offset 240)
+   (enemy-count uint32 :offset 244)
+   (enemies mp-enemy-state 24 :inline :offset 256)
+   (player-procs handle 2 :offset 1792)
+   (sync-aids uint32 128 :offset 1808)
+   (sidekick-anim int32 :offset 2320)
+   (sidekick-frame float :offset 2324)
+   (sync-clock time-frame :offset 2336)
+   (sync-scene-name uint8 32 :offset 2344)
+   (sync-scene-active uint32 :offset 2376)
+   (pad uint8 20 :offset 2380)
    )
 
-  :size-assert 2352)
+  :size-assert 2400)
 
 ;; Helper macros to access sidekick sync data
 (defmacro mp-sidekick-anim ()
@@ -152,16 +154,18 @@
 
 ;; Track the manager via handle to prevent respawn loops
 (declare-type mp-target-proxy process-focusable)
-
 (deftype mp-manager (process)
-  ((remote-id    uint32)
-   (remote-role  int32)
-   (manipy-proc  handle)
-   (proxy-proc   handle)
-   (spawn-timer  time-frame)
-   (last-anim-packet uint32))
+  ((root                basic)
+   (remote-id           uint32)
+   (remote-role         int32)
+   (manipy-proc         handle)
+   (proxy-proc          handle)
+   (spawn-timer         time-frame)
+   (last-anim-packet    uint32)
+   )
   (:state-methods
-    idle))
+    idle)
+  )
 
 (define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
 (define-perm *multi-manager-handle* handle (the-as handle #f))

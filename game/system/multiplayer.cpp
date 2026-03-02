@@ -68,7 +68,7 @@ struct MPEnemyState {
   uint32_t state;
   uint32_t focus_aid;
   uint8_t attack_flag;
-  uint8_t pad[3];
+  uint8_t pad[11];
 };
 
 struct PacketEnemySync {
@@ -148,15 +148,17 @@ struct MultiplayerInfoGOAL {
   uint32_t sync_aids_count;
   uint32_t riding;
   uint32_t enemy_count;
+  uint8_t enemies_pad[8];
   MPEnemyState enemies[24];
   uint64_t player_procs[2];
   uint32_t sync_aids[128];
   int32_t sidekick_anim;
   float sidekick_frame;
+  uint8_t sync_clock_pad[8];
   uint64_t sync_clock;
-  char sync_scene_name[32];
+  uint8_t sync_scene_name[32];
   uint32_t sync_scene_active;
-  uint8_t pad[180];
+  uint8_t pad[20];
 };
 
 struct MultiplayerData {

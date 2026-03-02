@@ -95,6 +95,9 @@
         (('end-mode)
          (go target-stance))
 
+        (('tube)
+         (go target-tube-start (process->handle (the-as process (-> arg3 param 1)))))
+
         (('change-mode)
          (let ((v1-5 (-> arg3 param 0)))
            (cond
@@ -109,9 +112,11 @@
              ((= v1-5 'normal)
               (go target-stance))
 
+             ((= v1-5 'tube)
+              (go target-tube-start (process->handle (the-as process (-> arg3 param 1)))))
+
              ((begin (set! a0-10 'falling) (= v1-5 a0-10))
               (go target-indax-falling a0-10)))))
-
 
 
 
@@ -399,11 +404,16 @@
                                              (= v1-3 'target-wade-stance)
                                              (= v1-3 'target-wade-walk)
                                              (= v1-3 'target-load-wait)
+                                             (= v1-3 'target-tube-start)
+                                             (= v1-3 'target-tube)
+                                             (= v1-3 'target-tube-jump)
+                                             (= v1-3 'target-tube-hit)
+                                             (= v1-3 'target-tube-death)
                                              (= v1-3 'target-indax-long-jump)))))
 
 
 
-
+    (format 0 "[MP] Triggered target-indax-exit. Next state: ~A ~%" (-> self next-state))
     (logclear! (-> self focus-status) (focus-status indax))
     (logclear! (-> self control root-prim prim-core action) (collide-action stuck-wall-escape))
     (set! (-> self control mod-surface) *walk-mods*)
@@ -1573,18 +1583,15 @@
 
 (defbehavior target-ride-along-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
+    (('attack 'attack-or-shove 'attack-invinc 'shove 'touched 'bonk)
+     (the-as object #t))
+    (('tube)
+      (set! *has-ridden-before?* #f)
+      (target-standard-event-handler arg0 arg1 arg2 arg3))
     (('change-mode)
      (let ((mode (-> arg3 param 0)))
-       (if (or (= mode 'indax) (= mode 'normal))
-           (target-standard-event-handler arg0 arg1 arg2 arg3)
-           #f)))
-    (('attack 'attack-or-shove 'attack-invinc)
-     (target-attacked
-       arg2
-       (the-as attack-info (-> arg3 param 1))
-       arg0
-       (the-as touching-shapes-entry (-> arg3 param 0))
-       target-indax-hit))
+      (format 0 "Handling change-mode for mode: ~A ~%" mode)
+      (target-standard-event-handler arg0 arg1 arg2 arg3)))
     (else
      (target-standard-event-handler arg0 arg1 arg2 arg3))))
 
@@ -1594,7 +1601,6 @@
   :enter (behavior ()
     (set! (-> self control transv quad) (the-as uint128 0))
     (set! (-> self control ctrl-xz-vel) 0.0)
-    (format 0 "[MP] Setting riding flag to true ~%")
     (set! *local-riding?* #t)
     (set! (-> self control root-prim prim-core action) (collide-action))
     (logior! (-> self focus-status) (focus-status indax))
@@ -1606,10 +1612,8 @@
 
   :exit (behavior ()
       (when (and (-> self next-state)
-                 (or (= (-> self next-state name) 'target-indax-death)
-                     (= (-> self next-state name) 'target-indax-hit)))
-        (set! *has-ridden-before?* #f)
-        (format 0 "[MP] Death/Hit detected while riding, resetting respawn flag...~%"))
+                 (= (-> self next-state name) 'target-indax-death))
+        (set! *has-ridden-before?* #f))
       (set! *local-riding?* #f)
       (set! (-> self control root-prim prim-core action) (collide-action solid stuck-wall-escape))
       (target-indax-exit)
@@ -1637,68 +1641,58 @@
 
   :post (behavior ()
     (target-no-stick-post)
-    (when (= (-> *level* loading-level) (-> *level* default-level))
-      (if (= (-> *multi-info* local-role) 1)
-          (let ((mgr-ptr *mp-remote-manager*))
-            (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
-                (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))
-                  (if (and mp (nonzero? mp) (-> mp node-list))
-                      (begin
-                        (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
-                          (if (and sk (nonzero? sk))
-                              (begin
-                                (send-event sk 'matrix 'manipy mp)
-                                (let ((idx (mp-sidekick-anim)))
-                                  (if (and (>= idx 0) (< idx (-> sk draw art-group length)))
-                                      (let ((anim-elt (-> sk draw art-group data idx)))
-                                        (if (and anim-elt (nonzero? anim-elt) (= (-> anim-elt type) art-joint-anim))
-                                            (let ((anim (the-as art-joint-anim anim-elt)))
-                                              (begin
-                                                ;; GUARD: Ensure sidekick skeleton exists
-                                                (when (and (-> sk skel) (nonzero? (-> sk skel)))
-                                                  (let ((chan (-> sk skel channel 0)))
-                                                    (set! (-> chan frame-group) anim)
-                                                    (set! (-> chan frame-num) (mp-sidekick-frame))
-                                                    (set! (-> chan num-func) num-func-none)))
-                                                
-                                                ;; GUARD: Ensure local target skeleton exists
-                                                (when (and (-> self skel) (nonzero? (-> self skel)))
-                                                  (let ((chan (-> self skel channel 0)))
-                                                    (set! (-> chan frame-group) anim)
-                                                    (set! (-> chan frame-num) (mp-sidekick-frame))
-                                                    (set! (-> chan num-func) num-func-none))))))))))))
+    (if (= (-> *multi-info* local-role) 1)
+        (let ((mgr-ptr *mp-remote-manager*))
+          (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
+              (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))
+                (if (and mp (nonzero? mp))
+                    (begin
+                      (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
+                        (if (and sk (nonzero? sk))
+                            (begin
+                              (send-event sk 'matrix 'manipy mp)
+                              (let ((idx (mp-sidekick-anim)))
+                                (if (and (>= idx 0) (< idx (-> sk draw art-group length)))
+                                    (let ((anim-elt (-> sk draw art-group data idx)))
+                                      (if (and anim-elt (nonzero? anim-elt) (= (-> anim-elt type) art-joint-anim))
+                                          (let ((anim (the-as art-joint-anim anim-elt)))
+                                            (begin
+                                              ;; GUARD: Ensure skeletons exist before animation sync
+                                              (when (and (-> sk skel) (nonzero? (-> sk skel)))
+                                                (let ((chan (-> sk skel channel 0)))
+                                                  (set! (-> chan frame-group) anim)
+                                                  (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                  (set! (-> chan num-func) num-func-none)))
+                                              
+                                              (when (and (-> self skel) (nonzero? (-> self skel)))
+                                                (let ((chan (-> self skel channel 0)))
+                                                  (set! (-> chan frame-group) anim)
+                                                  (set! (-> chan frame-num) (mp-sidekick-frame))
+                                                  (set! (-> chan num-func) num-func-none))))))))))))
 
-                        ;; Snap *target* root to puppet's shoulder joint (Joint 23)
-                        (quaternion-copy! (-> self control quat) (-> mp root quat))
-                        
-                        ;; GUARD: Check node-list length and bone existence to prevent out-of-bounds crash!
-                        (if (and (nonzero? (-> mp node-list)) 
-                                (> (-> mp node-list length) 23) 
-                                (nonzero? (-> mp node-list data 23 bone)))
-                            (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
-                            (vector-copy! (-> self control trans) (-> mp root trans)))
+                      ;; SNAP LOGIC: Always snap, even during loads, but use a safe fallback
+                      (quaternion-copy! (-> self control quat) (-> mp root quat))
+                      
+                      ;; If we aren't loading, try the precise shoulder joint.
+                      ;; If we ARE loading, or if nodes are missing, snap to Jak's root.
+                      (if (and (= (-> *level* loading-level) (-> *level* default-level))
+                               (nonzero? (-> mp node-list)) 
+                               (> (-> mp node-list length) 23) 
+                               (nonzero? (-> mp node-list data 23 bone)))
+                          (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
+                          (vector-copy! (-> self control trans) (-> mp root trans)))
 
-                        ;; Zero out velocities to prevent the engine from trying to "move" us out of the snap
-                        (vector-zero! (-> self control transv))
-                        (set! (-> self control ctrl-xz-vel) 0.0))
-                      (begin
-                        ;; MP is gone or invalid, reset sidekick to stop cloning stale memory
-                        (let ((sk (the-as sidekick (ppointer->process (-> self sidekick)))))
-                          (if (and sk (nonzero? sk))
-                              (send-event sk 'matrix #f)
-                              )
-                          )
-                        (set! (-> self control trans x) (-> *multi-info* remote-x))
-                        (set! (-> self control trans y) (-> *multi-info* remote-y))
-                        (set! (-> self control trans z) (-> *multi-info* remote-z))
-                        )
+                      ;; Zero out velocities
+                      (vector-zero! (-> self control transv))
+                      (set! (-> self control ctrl-xz-vel) 0.0))
+                    (begin
+                      ;; Fallback to interpolated network position if puppet is missing
+                      (vector-copy! (-> self control trans) *multi-remote-interp-pos*)
                       )
-                  )
-                (begin
-                  (set! (-> self control trans x) (-> *multi-info* remote-x))
-                  (set! (-> self control trans y) (-> *multi-info* remote-y))
-                  (set! (-> self control trans z) (-> *multi-info* remote-z))))
-        )
+                    )
+                )
+              (begin
+                (vector-copy! (-> self control trans) *multi-remote-interp-pos*)))
       )
     )
   )
