@@ -129,8 +129,17 @@
          (vf6 :class vf)
          )
     ;; MULTIPLAYER GUARD: If cloning from another process that might have been deactivated
-    (if (or (not arg1) (not (-> arg1 bone)))
+    (if (or (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 15) (>= (the-as uint arg0) #x70000000)
+            (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000)
+            (not arg2) (zero? (the-as uint arg2)) (logtest? (the-as uint arg2) 15) (>= (the-as uint arg2) #x70000000))
         (return (the-as matrix #f)))
+
+    (let ((b0 (-> arg0 bone))
+          (b1 (-> arg1 bone)))
+      (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000)
+              (not b1) (zero? (the-as uint b1)) (logtest? (the-as uint b1) 15) (>= (the-as uint b1) #x70000000))
+          (return (the-as matrix #f)))
+      )
 
     (init-vf0-vector)
     (let ((s4-0 (-> arg0 bone transform)))

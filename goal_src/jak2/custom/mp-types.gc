@@ -8,10 +8,29 @@
 (defconstant MP_EVENT_ENEMY_DEATH (the-as uint 5))
 (defconstant MP_EVENT_PLAYER_HIT (the-as uint 6))
 (defconstant MP_EVENT_DEBUG (the-as uint 7))
+(defconstant MP_EVENT_SCENE_START (the-as uint 8))
+(defconstant MP_EVENT_SCENE_SKIP (the-as uint 9))
+
+;; --- String Hashing Helper ---
+(defun string-crc32 ((str string))
+  "Simple hash function for level name verification (MEMORY BOUNDED)"
+  (if (or (not str) (zero? str))
+      (return (the-as uint 0)))
+  (let ((hash (the-as uint 0))
+        (ptr (-> str data))
+        (max-len (-> str allocated-length)) ;; The physical RAM limit of the string!
+        (i 0))
+    ;; Loop until we hit the null terminator OR we hit the RAM limit
+    (while (and (< i max-len) (nonzero? (-> ptr 0)))
+      (set! hash (+ (-> ptr 0) (* hash 31)))
+      (set! ptr (&-> ptr 1))
+      (+! i 1))
+    hash))
 
 ;; --- Types & Externs ---
 
 (define *local-riding?* #f)
+(define *mp-processing-remote-event* #f)
 
 (deftype mp-enemy-state (structure)
   ((actor-id    uint32)
@@ -78,7 +97,7 @@
    (sidekick-anim     int32)
    (sidekick-frame    float)
    (sync-clock        time-frame)
-   (pad               uint8 216) ;; Reduced from 224 to maintain size assertion
+   (pad               uint8 216)
    )
 
   :size-assert 2352)

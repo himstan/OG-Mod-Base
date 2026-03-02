@@ -155,6 +155,7 @@
 (defbehavior want-to-gun? process ((arg0 target) (arg1 symbol))
   (local-vars (v1-36 symbol))
   (and (logtest? (-> arg0 game features) (game-feature gun))
+       (nonzero? (-> arg0 gun))
        (time-elapsed? (-> arg0 gun gun-time) (seconds 0.1))
        (not (focus-test? arg0 dead hit board mech dark teleporting))
        (not (logtest? (surface-flag gun-inactive gun-hide gun-off) (-> arg0 control current-surface flags)))
@@ -182,11 +183,11 @@
   )
 
 (defun using-gun? ((arg0 target))
-  (nonzero? (-> arg0 gun gun-type))
+  (and (nonzero? (-> arg0 gun)) (nonzero? (-> arg0 gun gun-type)))
   )
 
 (defun enabled-gun? ((arg0 target))
-  (nonzero? (-> arg0 gun using-gun-type))
+  (and (nonzero? (-> arg0 gun)) (nonzero? (-> arg0 gun using-gun-type)))
   )
 
 (defun gun->ammo ((arg0 pickup-type))

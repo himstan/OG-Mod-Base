@@ -105,9 +105,6 @@
       (('query) #t)))
   :trans (behavior ()
     ;; 1. Position Sync
-    (if (!= (-> *level* loading-level) (-> *level* default-level))
-      (return #f)
-    )
     (cond
       ((and (= (-> self remote-role) 1) 
             (= (-> *multi-info* riding?) 1) 

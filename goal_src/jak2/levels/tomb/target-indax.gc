@@ -336,7 +336,9 @@
 
 
 (defbehavior target-indax-init target ((ride-along? symbol))
-  (logior! (-> self control current-surface flags) (surface-flag gun-fast-exit))
+  (let ((surf (-> self control current-surface)))
+    (if (and surf (not (zero? (the-as uint surf))) (not (logtest? (the-as uint surf) 3)) (< (the-as uint surf) #x70000000))
+        (logior! (-> surf flags) (surface-flag gun-fast-exit))))
   (target-gun-end-mode #t)
   (target-exit)
   (logior! (-> self game features) (game-feature sidekick))
@@ -387,6 +389,16 @@
                                              (= v1-3 'target-indax-hit)
                                              (= v1-3 'target-indax-death)
                                              (= v1-3 'target-indax-high-jump)
+                                             (= v1-3 'target-ride-along)
+                                             (= v1-3 'target-swim-stance)
+                                             (= v1-3 'target-swim-walk)
+                                             (= v1-3 'target-swim-down)
+                                             (= v1-3 'target-swim-up)
+                                             (= v1-3 'target-swim-jump)
+                                             (= v1-3 'target-swim-jump-jump)
+                                             (= v1-3 'target-wade-stance)
+                                             (= v1-3 'target-wade-walk)
+                                             (= v1-3 'target-load-wait)
                                              (= v1-3 'target-indax-long-jump)))))
 
 
@@ -1575,6 +1587,7 @@
   :exit (behavior ()
       (set! *local-riding?* #f)
       (set! (-> self control root-prim prim-core action) (collide-action solid stuck-wall-escape))
+      (target-indax-exit)
     )
 
   :trans (behavior ()

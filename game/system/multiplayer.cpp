@@ -48,6 +48,8 @@ struct PacketPlayerState {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
+  char scene_name[32];
+  uint32_t scene_active;
 };
 
 struct PacketWorldEvent {
@@ -91,6 +93,8 @@ struct PacketFullSync {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
+  char scene_name[32];
+  uint32_t scene_active;
 };
 
 #pragma pack(pop)
@@ -104,6 +108,8 @@ struct RemoteEntityState {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
+  char scene_name[32];
+  uint32_t scene_active;
   uint32_t last_sequence_num = 0;
 };
 
@@ -148,7 +154,9 @@ struct MultiplayerInfoGOAL {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t sync_clock;
-  uint8_t pad[216];
+  char sync_scene_name[32];
+  uint32_t sync_scene_active;
+  uint8_t pad[180];
 };
 
 struct MultiplayerData {

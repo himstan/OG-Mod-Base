@@ -83,6 +83,14 @@
   )
 
 (defun vector<-cspace! ((arg0 vector) (arg1 cspace))
+  ;; MULTIPLAYER GUARD
+  (if (or (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000))
+      (return arg0))
+  (let ((b0 (-> arg1 bone)))
+    (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000))
+        (return arg0))
+    )
+
   (rlet ((Q :class vf)
          (vf0 :class vf)
          (vf2 :class vf)
@@ -397,6 +405,11 @@
   )
 
 (defmethod do-joint-math ((this draw-control) (arg0 cspace-array) (arg1 joint-control))
+  ;; MULTIPLAYER GUARD
+  (if (or (not this) (zero? (the-as uint this)) (logtest? (the-as uint this) 3) (>= (the-as uint this) #x70000000)
+          (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 3) (>= (the-as uint arg0) #x70000000))
+      (return 0))
+
   (with-pp
     (cond
       ((logtest? (-> this status) (draw-control-status no-draw no-draw-temp))

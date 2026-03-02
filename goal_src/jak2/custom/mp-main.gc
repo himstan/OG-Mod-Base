@@ -3,22 +3,9 @@
 
 ;; --- Externs ---
 (define-extern *multi-remote-spawn-time* time-frame)
+(define-extern *has-ridden-before?* symbol)
 
-;; --- String Hashing Helper ---
-(defun string-crc32 ((str string))
-  "Simple hash function for level name verification (MEMORY BOUNDED)"
-  (if (or (not str) (zero? str))
-      (return (the-as uint 0)))
-  (let ((hash (the-as uint 0))
-        (ptr (-> str data))
-        (max-len (-> str allocated-length)) ;; The physical RAM limit of the string!
-        (i 0))
-    ;; Loop until we hit the null terminator OR we hit the RAM limit
-    (while (and (< i max-len) (nonzero? (-> ptr 0)))
-      (set! hash (+ (-> ptr 0) (* hash 31)))
-      (set! ptr (&-> ptr 1))
-      (+! i 1))
-    hash))
+(define *mp-last-scene-player* #f)
 
 (defun mp-get-anim-name ((proc process-drawable) (idx int))
   (if (and proc (nonzero? proc) (-> proc draw) (-> proc draw art-group) (>= idx 0) (< idx (-> proc draw art-group length)))
@@ -160,11 +147,18 @@
           (not *display*)
           (not *target*)
           (not (-> *target* control))
-          (!= (-> *level* loading-level) (-> *level* default-level))
           (focus-test? *target* teleporting))
       (return #f))
 
   ;; 3. Update Local Data
+  (let ((in-scene? (not (not *scene-player*))))
+    (when (and (= (-> *multi-info* local-role) 1)
+               *mp-last-scene-player*
+               (not in-scene?))
+      (format 0 "[MP] Scene ended. Re-entering ride-along...~%")
+      (set! *has-ridden-before?* #f))
+    (set! *mp-last-scene-player* in-scene?))
+
   (set! (-> *multi-info* host-money) (-> *game-info* money))
   (set! (-> *multi-info* host-gems) (-> *game-info* gem))
   (set! (-> *multi-info* host-skill) (-> *game-info* skill))
@@ -292,7 +286,13 @@
 
   (if (and *target* (nonzero? *target*)
            (= (-> *multi-info* local-role) 1)
-           (not (logtest? (-> *target* focus-status) (focus-status indax))))
+           (not (logtest? (-> *target* focus-status) (focus-status indax)))
+           (not (logtest? (-> *target* focus-status) (focus-status teleporting)))
+           (and *level* (nonzero? *level*) (zero? (the-as uint (-> *level* loading-level))))
+           (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-load-wait)))
+           (nonzero? (-> *target* control))
+           (let ((surf (-> *target* control current-surface)))
+             (and surf (not (zero? (the-as uint surf))) (not (logtest? (the-as uint surf) 3)) (< (the-as uint surf) #x70000000))))
       (begin
         (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
         (target-indax-init #t)))

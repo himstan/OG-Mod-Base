@@ -5,6 +5,9 @@
 ;; name in dgo: scene
 ;; dgos: ENGINE, GAME
 
+(define-extern string-crc32 (function string uint))
+(define-extern *mp-processing-remote-event* symbol)
+
 ;; DECOMP BEGINS
 
 (deftype scene-stage (process-hidden)
@@ -368,6 +371,42 @@
        )
       )
     )
+  )
+
+(defun find-scene-by-hash ((hash uint))
+  "Iterate all loaded levels and their art-groups to find a scene with matching CRC32"
+  (dotimes (i (-> *level* length))
+    (let ((lev (-> *level* level i)))
+      (when (and (nonzero? lev) (= (-> lev status) 'active))
+        (let ((lda (-> lev art-group)))
+          (when (and lda (nonzero? lda))
+            (let ((ag-array (-> lda art-group-array)))
+              (when (and ag-array (nonzero? ag-array))
+                (dotimes (j (-> ag-array length))
+                  (let ((ag (-> ag-array j)))
+                    (when (and (nonzero? ag) (type? ag art-group))
+                      (dotimes (k (-> ag length))
+                        (let ((obj (-> ag data k)))
+                          (when (and (nonzero? obj) (type? obj scene))
+                            (let ((s (the-as scene obj)))
+                              (if (= (string-crc32 (-> s name)) hash)
+                                  (return s)
+                                  )
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  (the-as scene #f)
   )
 
 ;; WARN: Return type mismatch basic vs scene.
@@ -1150,6 +1189,9 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('abort)
+       (when (not *mp-processing-remote-event*)
+         (format 0 "[MP-Scene] Broadcasting scene skip~%")
+         (mp-send-world-event MP_EVENT_SCENE_SKIP (the uint 0)))
        (set! (-> self aborted?) #t)
        (set-blackout-frames (seconds 0.2))
        (let ((a0-3 (-> self anim)))
@@ -1635,6 +1677,11 @@
                            )
         )
   (set! *scene-player* (the-as (pointer scene-player) (process->ppointer self)))
+
+  (when (and (not *mp-processing-remote-event*) (-> self scene))
+    (format 0 "[MP-Scene] Broadcasting scene start: ~S (Hash ~D)~%" (-> self scene name) (string-crc32 (-> self scene name)))
+    (mp-send-world-event MP_EVENT_SCENE_START (string-crc32 (-> self scene name))))
+
   (set! *display-entity-errors* #f)
   (set-setting! 'speech-control #f 0.0 0)
   (set-setting! 'allow-progress #f 0.0 0)

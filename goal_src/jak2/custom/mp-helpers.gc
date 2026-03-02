@@ -20,8 +20,6 @@
       (the-as process #f)
       ))
 
-(define *mp-processing-remote-event* #f)
-
 (define *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) #f))
 
 (defun mp-general-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
@@ -177,6 +175,8 @@
     )
   (none))
 
+(define-extern find-scene-by-hash (function uint scene))
+
 (defun mp-receive-world-event ((evt-type uint) (aid uint))
   (set! *mp-processing-remote-event* #t)
   (cond
@@ -238,6 +238,16 @@
              (send-event *target* 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-from-enemy))))))))
     ((= evt-type MP_EVENT_DEBUG)
      (format 0 "[MP-DEBUG-REMOTE] Received debug event AID: ~D~%" aid))
+    ((= evt-type MP_EVENT_SCENE_START)
+     (when (not *scene-player*)
+       (let ((s (find-scene-by-hash aid)))
+         (when s
+           (format 0 "[MP-WorldEvent] Remote started scene: ~S (Hash ~D). Starting locally.~%" (-> s name) aid)
+           (process-spawn scene-player :init scene-player-init s #t #f)))))
+    ((= evt-type MP_EVENT_SCENE_SKIP)
+     (when *scene-player*
+       (format 0 "[MP-WorldEvent] Remote skipped scene. Aborting locally.~%")
+       (send-event (ppointer->process *scene-player*) 'abort)))
     )
   (set! *mp-processing-remote-event* #f)
   (none))
