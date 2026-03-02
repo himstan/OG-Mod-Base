@@ -1458,12 +1458,15 @@
 (defstate target-indax-death (target)
   :event (-> target-death event)
   :exit (behavior ()
-         ((-> target-death exit))
-         (target-indax-exit))
+    ((-> target-death exit))
+    (target-indax-exit))
 
   :trans (-> target-indax-hit trans)
   :code (behavior ((arg0 symbol))
-         (set! (-> self control unknown-word04) (the-as uint #f))
+    (when *local-riding?*
+      (set! *has-ridden-before?* #f))
+    (set! (-> self control unknown-word04) (the-as uint #f))
+
          (set! (-> self control did-move-to-pole-or-max-jump-height)
                (the-as float (send-event (handle->process (-> self attack-info attacker)) 'target 'die arg0)))
 
@@ -1568,8 +1571,25 @@
 
   :post target-no-stick-post)
 
+(defbehavior target-ride-along-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  (case arg2
+    (('change-mode)
+     (let ((mode (-> arg3 param 0)))
+       (if (or (= mode 'indax) (= mode 'normal))
+           (target-standard-event-handler arg0 arg1 arg2 arg3)
+           #f)))
+    (('attack 'attack-or-shove 'attack-invinc)
+     (target-attacked
+       arg2
+       (the-as attack-info (-> arg3 param 1))
+       arg0
+       (the-as touching-shapes-entry (-> arg3 param 0))
+       target-indax-hit))
+    (else
+     (target-standard-event-handler arg0 arg1 arg2 arg3))))
+
 (defstate target-ride-along (target)
-  :event target-standard-event-handler
+  :event target-ride-along-handler
 
   :enter (behavior ()
     (set! (-> self control transv quad) (the-as uint128 0))
@@ -1585,6 +1605,11 @@
           (send-event (ppointer->process (-> self sidekick)) 'matrix #f))))
 
   :exit (behavior ()
+      (when (and (-> self next-state)
+                 (or (= (-> self next-state name) 'target-indax-death)
+                     (= (-> self next-state name) 'target-indax-hit)))
+        (set! *has-ridden-before?* #f)
+        (format 0 "[MP] Death/Hit detected while riding, resetting respawn flag...~%"))
       (set! *local-riding?* #f)
       (set! (-> self control root-prim prim-core action) (collide-action solid stuck-wall-escape))
       (target-indax-exit)
