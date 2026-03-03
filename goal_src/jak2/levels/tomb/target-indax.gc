@@ -562,6 +562,31 @@
   (none))
 
 
+(defbehavior target-indax-ride-along-check target ()
+  (let ((remote-pos (new 'stack-no-clear 'vector)))
+    (set! (-> remote-pos x) (-> *multi-info* remote-x))
+    (set! (-> remote-pos y) (-> *multi-info* remote-y))
+    (set! (-> remote-pos z) (-> *multi-info* remote-z))
+    (set! (-> remote-pos w) 1.0)
+    (let ((dist (vector-vector-distance (-> self control trans) remote-pos)))
+      (when (< dist (meters 2.0))
+        (let ((s3-1 (new 'stack 'font-context *font-default-matrix* 32 320 0.0 (font-color default) (font-flags shadow kerning))))
+          (set-width! s3-1 440)
+          (set-height! s3-1 80)
+          (set-scale! s3-1 0.5)
+          (set! (-> s3-1 flags) (font-flags shadow kerning large))
+          (print-game-text (lookup-text! *common-text* (text-id press-triangle-to-hop-on) #f) s3-1 #f 44 (bucket-id progress))
+          )
+        (if (recently-pressed? triangle)
+            (go target-ride-along)
+            )
+        )
+      )
+    )
+  (none)
+  )
+
+
 (defstate target-indax-start (target)
   :event target-standard-event-handler
   :code (behavior ((arg0 handle))
@@ -631,19 +656,12 @@
 
               (go target-indax-running-attack))
 
+          (target-indax-ride-along-check)       
+
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
-
-              (begin
-                (let ((remote-pos (new 'stack-no-clear 'vector)))
-                  (set! (-> remote-pos x) (-> *multi-info* remote-x))
-                  (set! (-> remote-pos y) (-> *multi-info* remote-y))
-                  (set! (-> remote-pos z) (-> *multi-info* remote-z))
-                  (set! (-> remote-pos w) 1.0)
-                  (if (< (vector-vector-xz-distance (-> self control trans) remote-pos) (meters 2.0))
-                      (go target-ride-along)
-                      (go target-indax-attack)))))
+              (go target-indax-attack))
 
           (fall-test target-indax-falling -4096000.0))
 
@@ -753,19 +771,12 @@
 
               (go target-indax-running-attack))
 
+          (target-indax-ride-along-check)
+
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
-
-              (begin
-                (let ((remote-pos (new 'stack-no-clear 'vector)))
-                  (set! (-> remote-pos x) (-> *multi-info* remote-x))
-                  (set! (-> remote-pos y) (-> *multi-info* remote-y))
-                  (set! (-> remote-pos z) (-> *multi-info* remote-z))
-                  (set! (-> remote-pos w) 1.0)
-                  (if (< (vector-vector-xz-distance (-> self control trans) remote-pos) (meters 2.0))
-                      (go target-ride-along)
-                      (go target-indax-attack)))))
+              (go target-indax-attack))
 
           (fall-test target-indax-falling -4096000.0))
 

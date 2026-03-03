@@ -853,6 +853,7 @@
   (pad-circle #x2001)
   (pad-x #x2002)
   (pad-square #x2003)
+  (press-triangle-to-hop-on #x2004)
 
   ;; destination names text
   (caspad-name #x10000)
