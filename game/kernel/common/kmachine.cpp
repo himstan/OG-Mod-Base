@@ -3,9 +3,9 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
-#include <list>
 #include <random>
 #include <thread>
+#include <list>
 
 #define MINIAUDIO_IMPLEMENTATION
 // NOTE - this is needed, because on macOS, there is a file called `MacTypes.h`
@@ -195,22 +195,22 @@ std::vector<std::string> getPlayingFileNames() {
 u64 playMP3_internal(u32 filePathu32, u32 volume, bool isMainMusic) {
   std::string filePath = Ptr<String>(filePathu32).c()->data();
   std::string fullFilePath = fs::path(file_util::get_jak_project_dir() / "custom_assets" /
-                                      game_version_names[g_game_version] / "audio" / filePath)
-                                 .string();
-
+                                  game_version_names[g_game_version] / "audio" / filePath).string();
+  
   if (!file_util::file_exists(fullFilePath)) {
     // file doesn't exist, let GOAL side know we didn't find it
     return bool_to_symbol(false);
   }
 
   std::thread thread([=]() {
+
     std::cout << "Playing file: " << filePath << std::endl;
 
     MiniAudioLib::ma_result result;
     MiniAudioLib::ma_sound sound;
 
     result = MiniAudioLib::ma_sound_init_from_file(&maEngine, fullFilePath.c_str(), 0, NULL, NULL,
-                                                   &sound);
+                                                    &sound);
     if (result != MiniAudioLib::MA_SUCCESS) {
       std::cout << "Failed to load: " << filePath << std::endl;
       return;

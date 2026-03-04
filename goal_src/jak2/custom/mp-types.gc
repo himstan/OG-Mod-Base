@@ -104,34 +104,28 @@
 
   :size-assert 2400)
 
-;; Helper macros to access sidekick sync data
+;; Helper macros to access sidekick sync data stored in the tail of sync-aids
+;; This avoids "Inconsistent type definition" errors while keeping C++ alignment.
 (defmacro mp-sidekick-anim ()
-  `(-> *multi-info* sidekick-anim)
+  `(the-as int (-> *multi-info* sync-aids 483))
   )
 
 (defmacro mp-sidekick-frame ()
-  `(-> *multi-info* sidekick-frame)
+  `(the-as float (-> *multi-info* sync-aids 484))
   )
 
 (defmacro set-mp-sidekick-anim! (val)
-  `(set! (-> *multi-info* sidekick-anim) ,val)
+  `(set! (-> *multi-info* sync-aids 483) (the-as uint ,val))
   )
 
 (defmacro set-mp-sidekick-frame! (val)
-  `(set! (-> *multi-info* sidekick-frame) ,val)
+  `(set! (-> *multi-info* sync-aids 484) (the-as uint ,val))
   )
 
 
 (define-extern pc-multi-sync-data (function uint none))
 (define-extern mp-send-world-event (function uint uint none))
-(define-extern mp-receive-world-event (function uint uint none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
-(define-extern *kernel-context* kernel-context)
-(declare-type enemy process-focusable)
-(define-extern iterate-process-tree (function process-tree (function object object) kernel-context object))
-(define-extern mp-sync-enemies-host (function none))
-(define-extern mp-sync-enemies-client (function none))
-(define-extern mp-enemy-sync-idle (state enemy))
 
 (deftype mp-event (structure)
   ((etype uint32)
@@ -159,7 +153,6 @@
    (remote-id           uint32)
    (remote-role         int32)
    (manipy-proc         handle)
-   (proxy-proc          handle)
    (spawn-timer         time-frame)
    (last-anim-packet    uint32)
    )
@@ -175,6 +168,3 @@
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #f)
-(define-perm *mp-hijacks-applied?* symbol #f)
-(define *mp-daxter-damage-mult* 2.0)
-(define *mp-crimson-guard-lightning-callback* (the-as (function process uint int) #f))

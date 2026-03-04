@@ -105,7 +105,7 @@
 ;; just an empty array. leave it at is.
 ;; used as a fallback when an entity doesn't have a defined data.
 (define *empty-airlock-data* (new 'static 'boxed-array :type airlock-data
-              (static-airlock-data
+              (static-airlock-data 
                 :airlock-name #f
                 :on-notice #f
                 :on-activate #f
