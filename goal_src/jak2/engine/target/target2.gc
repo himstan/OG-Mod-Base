@@ -578,7 +578,7 @@
           )
     (let ((v1-8 (ja-group)))
       (cond
-        ((and v1-8 (or (= v1-8 jakb-pole-jump-loop-ja) 
+        ((and v1-8 (or (= v1-8 jakb-pole-jump-loop-ja)
                        (= v1-8 daxter-pole-jump-loop-ja)))
          (while (not (-> self control did-move-to-pole-or-max-jump-height))
            (ja :num! (seek!))

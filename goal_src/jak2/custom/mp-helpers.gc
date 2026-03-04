@@ -85,12 +85,12 @@
 
 (defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
   ;; Detect when an entity is being marked as dead or task-complete locally
-  (when (and arg2 
+  (when (and arg2
              (logtest? (the-as int arg1) (the-as int (logior (entity-perm-status dead) (entity-perm-status subtask-complete))))
              (not *mp-processing-remote-event*)
              (-> arg0 entity))
     (mp-send-world-event MP_EVENT_BREAK (-> arg0 entity aid)))
-  
+
   (if *old-process-entity-status*
       (*old-process-entity-status* arg0 arg1 arg2)
       (entity-perm-status bit-0)) ;; Safe fallback
@@ -212,8 +212,8 @@
              (let ((proc (-> ent extra process)))
                (if (and proc (nonzero? proc))
                    ;; Send a super-attack that breaks almost anything (crates, trapdoors, etc.)
-                   (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) 
-                                                                    (mode 'mp-break) 
+                   (send-event proc 'attack #f (static-attack-info ((id (new-attack-id))
+                                                                    (mode 'mp-break)
                                                                     (penetrate-using (penetrate generic-attack lunge flop punch spin roll uppercut bonk explode))))))))))))
     ((= evt-type MP_EVENT_ATTACK_ENEMY)
      (let ((proc (find-enemy-by-aid aid)))
@@ -234,8 +234,8 @@
     ((= evt-type MP_EVENT_PLAYER_HIT)
      (let ((local-aid (the uint (+ (-> *multi-info* local-role) 1))))
        (when (= aid local-aid)
-         (if (and *target* (nonzero? *target*) 
-                  (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-ride-along))) 
+         (if (and *target* (nonzero? *target*)
+                  (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-ride-along)))
                   (not (= (-> *target* state name) 'target-ride-along)))
              (begin
                (format 0 "[MP-WorldEvent] Local player hit! Applying authoritative damage.~%")
@@ -439,7 +439,7 @@
                           (*mp-crimson-guard-lightning-callback* e-proc (the-as uint (if (= (-> slot attack-flag) 1) (-> slot focus-aid) 0))))
 
                       ;; Focus is deliberately NOT set here on the Client!
-                      ;; Setting the focus handle to the remote player (a manipy) causes the engine's 
+                      ;; Setting the focus handle to the remote player (a manipy) causes the engine's
                       ;; native AI (common-post) to crash because manipy lacks 'focus-status'.
                       ;; Debug drawing now reads directly from the sync slot.
 

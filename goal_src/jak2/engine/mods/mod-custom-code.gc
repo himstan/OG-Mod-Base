@@ -1,7 +1,5 @@
-;;-*-Lisp-*-
+    ;;-*-Lisp-*-
     (in-package goal)
-
-    (require "custom/mp-main.gc")
 
     ;; name: mod-custom-code.gc
     ;; name in dgo: mod-custom-code
@@ -42,10 +40,7 @@
       (when *debug-segment*
         (orb-placer-maintenance)
         )
-
-      ;; (format 0 "Tick~%")
       (multiplayer-sync-tick)
-
       (none)
       )
 

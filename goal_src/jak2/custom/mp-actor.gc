@@ -12,7 +12,7 @@
   (set! (-> self proxy-proc) (the-as handle #f))
   (set! (-> self spawn-timer) 0)
   (set! (-> self last-anim-packet) 0)
-  
+
   ;; Initialize root for process-drawable
   (set! (-> self root) (the-as basic (new 'process 'trsqv)))
   (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-interp-pos*)
@@ -32,7 +32,7 @@
   (stack-size-set! (-> self main-thread) 512)
   (set! (-> self remote-role) role)
   (set-time! (-> self spawn-time))
-  
+
   ;; 1. Collide Shape (For AI Targeting/LOS)
   ;; IMPORTANT: In Jak 2, 'player' list enum is NOT supported in the constructor.
   ;; We MUST use 'hit-by-others' to be added to *collide-player-list*.
@@ -87,7 +87,7 @@
        ;; If we are riding, or if any level is loading, ignore all attacks on the proxy
        (if (or (nonzero? (-> *multi-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
            (return #f))
-       
+
        ;; Relay damage to the network!
        (let ((mode 'unknown)
              (id (the-as uint 0)))
@@ -99,7 +99,7 @@
                    (set! mode (-> info mode))
                    (set! id (-> info id))
                    ))))
-         (format 0 "MP-LOG: Proxy hit! (mode: ~S, id: ~D) -> Relaying HIT event to network for player ~D~%" 
+         (format 0 "MP-LOG: Proxy hit! (mode: ~S, id: ~D) -> Relaying HIT event to network for player ~D~%"
                  mode id (if (= (-> self remote-role) 1) 2 1))
          ;; We need to know which remote player this proxy represents.
          ;; remote-role 1 = Client Daxter, 0 = Host Jak
@@ -112,9 +112,9 @@
   :trans (behavior ()
     ;; 1. Position Sync
     (cond
-      ((and (= (-> self remote-role) 1) 
-            (= (-> *multi-info* riding?) 1) 
-            (= (-> *multi-info* local-role) 0) 
+      ((and (= (-> self remote-role) 1)
+            (= (-> *multi-info* riding?) 1)
+            (= (-> *multi-info* local-role) 0)
             *target*
             (nonzero? (-> *target* control))
             (nonzero? (-> *target* node-list))
@@ -132,12 +132,12 @@
 
     ;; 3. Dynamic Collision: Disable solid if riding or if representation of same team
     (let ((cshape (the-as collide-shape-moving (-> self root))))
-      (if (or (= (-> *multi-info* riding?) 1) 
+      (if (or (= (-> *multi-info* riding?) 1)
               (and (= (-> *multi-info* local-role) 1) (= (-> self remote-role) 1)))
           (set! (-> cshape root-prim prim-core action) (collide-action)) ;; Non-solid
           (set! (-> cshape root-prim prim-core action) (collide-action solid)) ;; Solid
           ))
-    
+
     ;; Keep focus status clean
     (logclear! (-> self focus-status) (focus-status disable dead ignore grabbed)))
   :code (behavior ()
@@ -278,7 +278,7 @@
                   (cond
                     ((and (= (-> self remote-role) 1) (= (-> *multi-info* riding?) 1))
                      ;; Daxter is riding. Snap to Host Jak's joint if we are the host.
-                     (if (and (= (-> *multi-info* local-role) 0) 
+                     (if (and (= (-> *multi-info* local-role) 0)
                               *target*
                               (nonzero? (-> *target* control))
                               (nonzero? (-> *target* node-list))

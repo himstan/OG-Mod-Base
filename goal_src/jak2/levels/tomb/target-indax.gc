@@ -1,8 +1,6 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-(require "custom/mp-types.gc")
-
 ;; name: target-indax.gc
 ;; name in dgo: target-indax
 ;; dgos: TOE
@@ -45,29 +43,29 @@
 (deftype indax-info (basic)
   ((indax-start-time  time-frame)
    (indax-time        time-frame)
-   (art-group-backup  art-group)))
-
-
+   (art-group-backup  art-group)
+   )
+  )
 
 
 (let ((v1-2 (copy *walk-mods* 'loading-level)))
   (set! (-> v1-2 flags) (surface-flag gun-off gun-fast-exit))
   (set! (-> v1-2 target-speed) 32768.0)
   (set! (-> v1-2 transv-max) 32768.0)
-  (set! *indax-walk-mods* v1-2))
-
+  (set! *indax-walk-mods* v1-2)
+  )
 
 (let ((v1-4 (copy *jump-mods* 'loading-level)))
   (set! (-> v1-4 target-speed) 32768.0)
   (set! (-> v1-4 transv-max) 32768.0)
-  (set! *indax-jump-mods* v1-4))
-
+  (set! *indax-jump-mods* v1-4)
+  )
 
 (let ((v1-6 (copy *double-jump-mods* 'loading-level)))
   (set! (-> v1-6 target-speed) 32768.0)
   (set! (-> v1-6 transv-max) 32768.0)
-  (set! *indax-double-jump-mods* v1-6))
-
+  (set! *indax-double-jump-mods* v1-6)
+  )
 
 (let ((v1-8 (copy *jump-mods* 'loading-level)))
   (set! (-> v1-8 target-speed) 49152.0)
@@ -75,7 +73,8 @@
   (set! (-> v1-8 seek0) 0.7)
   (set! (-> v1-8 seek90) 0.7)
   (set! (-> v1-8 seek180) 0.7)
-  (set! *indax-bounce-mods* v1-8))
+  (set! *indax-bounce-mods* v1-8)
+  )
 
 
 (let* ((v1-10 (copy *jump-mods* 'loading-level)))
@@ -91,15 +90,15 @@
   (local-vars (a0-10 symbol))
   (cond
     ((and (= arg2 'query) (= (-> arg3 param 0) 'mode))
-     'indax)
+     'indax
+     )
     (else
       (case arg2
         (('end-mode)
-         (go target-stance))
-
+         (go target-stance)
+         )
         (('tube)
          (go target-tube-start (process->handle (the-as process (-> arg3 param 1)))))
-
         (('change-mode)
          (let ((v1-5 (-> arg3 param 0)))
            (cond
@@ -107,68 +106,68 @@
               (when (not (focus-test? self dead))
                 (if (not (-> arg3 param 1))
                     #t
-                    (go target-grab 'stance))))
-
-
-
+                    (go target-grab 'stance)
+                    )
+                )
+              )
              ((= v1-5 'normal)
-              (go target-stance))
-
+              (go target-stance)
+              )
              ((= v1-5 'tube)
               (go target-tube-start (process->handle (the-as process (-> arg3 param 1)))))
-
              ((begin (set! a0-10 'falling) (= v1-5 a0-10))
-              (go target-indax-falling a0-10)))))
-
-
-
+              (go target-indax-falling a0-10)
+              )
+             )
+           )
+         )
         (('trip)
          (if (not (or (focus-test? self dead hit grabbed)
-                      (and (-> self next-state) (= (-> self next-state name) 'target-indax-trip))))
-
-
-             (go target-indax-trip)))
-
-
+                      (and (-> self next-state) (= (-> self next-state name) 'target-indax-trip))
+                      )
+                  )
+             (go target-indax-trip)
+             )
+         )
         (('swim 'slide 'edge-grab 'vehicle-mount 'board-mount)
-         #f)
-
+         #f
+         )
         (('flop 'uppercut 'spin)
-         #f)
-
+         #f
+         )
         (('clone-anim)
-         (go target-clone-anim (process->handle (the-as process (-> arg3 param 0)))))
-
+         (go target-clone-anim (process->handle (the-as process (-> arg3 param 0))))
+         )
         (('attack 'attack-or-shove 'attack-invinc)
          (target-attacked
            arg2
            (the-as attack-info (-> arg3 param 1))
            arg0
            (the-as touching-shapes-entry (-> arg3 param 0))
-           target-indax-hit))
-
-
+           target-indax-hit
+           )
+         )
         (('shove)
          (when (not (and (-> self next-state) (let ((v1-25 (-> self next-state name)))
-                                                (or (= v1-25 'target-indax-hit) (= v1-25 'target-hit)))))
-
-
-
+                                                (or (= v1-25 'target-indax-hit) (= v1-25 'target-hit))
+                                                )
+                         )
+                    )
            (mem-copy! (the-as pointer (-> self attack-info-rec)) (the-as pointer (-> arg3 param 1)) 160)
            (when (not (logtest? (-> self attack-info-rec mask) (attack-mask attacker)))
              (set! (-> self attack-info-rec attacker) (process->handle arg0))
-             (logior! (-> self attack-info-rec mask) (attack-mask attacker)))
-
-           (go target-indax-hit 'shove (-> self attack-info-rec))))
-
-
+             (logior! (-> self attack-info-rec mask) (attack-mask attacker))
+             )
+           (go target-indax-hit 'shove (-> self attack-info-rec))
+           )
+         )
         (else
-          (target-standard-event-handler arg0 arg1 arg2 arg3))))))
-
-
-
-
-
+          (target-standard-event-handler arg0 arg1 arg2 arg3)
+          )
+        )
+      )
+    )
+  )
 
 (defbehavior target-indax-dangerous-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
@@ -183,49 +182,49 @@
                                        (the-as touching-shapes-entry (-> arg3 param 0))
                                        (the-as int (-> self fact shield-attack-id))
                                        0
-                                       (-> self control penetrate-using)))))
-
-
-
-
+                                       (-> self control penetrate-using)
+                                       )
+                              )
+                      )
+                )
             (set! (-> self control penetrate-using) s4-1)
-            v0-0)))
-
-
-
+            v0-0
+            )
+          )
+        )
        (((method-of-type touching-shapes-entry prims-touching?)
          (the-as touching-shapes-entry (-> arg3 param 0))
          (-> self control)
-         (the-as uint 1920))
-
+         (the-as uint 1920)
+         )
         (target-send-attack
           arg0
           (-> self control danger-mode)
           (the-as touching-shapes-entry (-> arg3 param 0))
           (the-as int (-> self control target-attack-id))
           (the-as int (-> self control attack-count))
-          (-> self control penetrate-using)))
-
-
+          (-> self control penetrate-using)
+          )
+        )
        (else
-         (target-indax-handler arg0 arg1 arg2 arg3))))
-
-
-
+         (target-indax-handler arg0 arg1 arg2 arg3)
+         )
+       )
+     )
     (('attack 'attack-or-shove 'attack-invinc)
      (target-attacked
        arg2
        (the-as attack-info (-> arg3 param 1))
        arg0
        (the-as touching-shapes-entry (-> arg3 param 0))
-       target-indax-hit))
-
-
+       target-indax-hit
+       )
+     )
     (else
-      (target-indax-handler arg0 arg1 arg2 arg3))))
-
-
-
+      (target-indax-handler arg0 arg1 arg2 arg3)
+      )
+    )
+  )
 
 (defbehavior target-indax-jump-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (let ((s2-0 (new 'stack-no-clear 'vector)))
@@ -234,26 +233,26 @@
             ((method-of-type touching-shapes-entry prims-touching?)
              (the-as touching-shapes-entry (-> arg3 param 0))
              (-> self control)
-             (the-as uint 6))
-
+             (the-as uint 6)
+             )
             (< (* 16384.0 (-> self clock time-adjust-ratio))
                (vector-dot
                  (-> self control dynam gravity-normal)
-                 (vector-! (new 'stack-no-clear 'vector) (-> self control transv) (-> self control last-transv))))
-
-
+                 (vector-! (new 'stack-no-clear 'vector) (-> self control transv) (-> self control last-transv))
+                 )
+               )
             (begin
               (vector-normalize!
                 (vector-!
                   s2-0
                   (the-as vector (-> self control collision-spheres 0 prim-core))
-                  (-> self control actor-contact-pt))
-
-                1.0)
-
-              (< 0.01 (-> s2-0 y))))
-
-
+                  (-> self control actor-contact-pt)
+                  )
+                1.0
+                )
+              (< 0.01 (-> s2-0 y))
+              )
+            )
        (if (< 0.75 (-> s2-0 y))
            (send-event
              arg0
@@ -261,27 +260,27 @@
              (-> arg3 param 0)
              (fmax
                (-> self control ground-impact-vel)
-               (- (vector-dot (-> self control transv) (-> self control dynam gravity-normal))))))
-
-
-
-       (target-indax-handler arg0 arg1 arg2 arg3))
-
+               (- (vector-dot (-> self control transv) (-> self control dynam gravity-normal)))
+               )
+             )
+           )
+       (target-indax-handler arg0 arg1 arg2 arg3)
+       )
       ((= arg2 'jump)
        (sound-play "jump-long")
        (go
          target-indax-jump
          (the-as float (-> arg3 param 0))
          (the-as float (-> arg3 param 1))
-         (the-as surface (-> arg3 param 2))))
-
-
+         (the-as surface (-> arg3 param 2))
+         )
+       )
       (else
-        (target-indax-handler arg0 arg1 arg2 arg3)))))
-
-
-
-
+        (target-indax-handler arg0 arg1 arg2 arg3)
+        )
+      )
+    )
+  )
 
 (defstate target-indax-high-jump (target)
   :event target-indax-jump-event-handler
@@ -320,9 +319,6 @@
               (if (< f0-0 40960.0)
                   (vector-xz-normalize! v1-7 40960.0)))))
 
-
-
-
   :exit (behavior ()
          (target-exit)
          (target-indax-exit))
@@ -341,7 +337,7 @@
 
   :post target-indax-post)
 
-
+;; WARN: Return type mismatch object vs none.
 (defbehavior target-indax-init target ((ride-along? symbol))
   (let ((surf (-> self control current-surface)))
     (if (and surf (not (zero? (the-as uint surf))) (not (logtest? (the-as uint surf) 3)) (< (the-as uint surf) #x70000000))
@@ -351,8 +347,8 @@
   (logior! (-> self game features) (game-feature sidekick))
   (target-sidekick-setup #t)
   (if (zero? (-> self indax))
-      (set! (-> self indax) (new 'process 'indax-info)))
-
+      (set! (-> self indax) (new 'process 'indax-info))
+      )
   (set! (-> self control reaction) target-collision-reaction)
   (set! (-> self control transv quad) (the-as uint128 0))
   (set! (-> self control ctrl-xz-vel) 0.0)
@@ -659,7 +655,7 @@
 
               (go target-indax-running-attack))
 
-          (target-indax-ride-along-check)       
+          (target-indax-ride-along-check)
 
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? circle)
@@ -1677,7 +1673,7 @@
                                                   (set! (-> chan frame-group) anim)
                                                   (set! (-> chan frame-num) (mp-sidekick-frame))
                                                   (set! (-> chan num-func) num-func-none)))
-                                              
+
                                               (when (and (-> self skel) (nonzero? (-> self skel)))
                                                 (let ((chan (-> self skel channel 0)))
                                                   (set! (-> chan frame-group) anim)
@@ -1686,12 +1682,12 @@
 
                       ;; SNAP LOGIC: Always snap, even during loads, but use a safe fallback
                       (quaternion-copy! (-> self control quat) (-> mp root quat))
-                      
+
                       ;; If we aren't loading, try the precise shoulder joint.
                       ;; If we ARE loading, or if nodes are missing, snap to Jak's root.
                       (if (and (= (-> *level* loading-level) (-> *level* default-level))
-                               (nonzero? (-> mp node-list)) 
-                               (> (-> mp node-list length) 23) 
+                               (nonzero? (-> mp node-list))
+                               (> (-> mp node-list length) 23)
                                (nonzero? (-> mp node-list data 23 bone)))
                           (vector-copy! (-> self control trans) (-> mp node-list data 23 bone transform trans))
                           (vector-copy! (-> self control trans) (-> mp root trans)))
@@ -1744,10 +1740,10 @@
                  (vector-copy! target-pos *multi-remote-interp-pos*)
                  )
              )
-           
+
            (vector-lerp! (-> self control trans) (-> self alt-cam-pos) target-pos progress)
            (+! (-> self control trans y) (* 4096.0 (sin (* 32768.0 progress))))
-           
+
            (let ((dir (vector-! (new 'stack-no-clear 'vector) target-pos (-> self alt-cam-pos))))
              (set! (-> dir y) 0.0)
              (if (< 409.6 (vector-length dir))

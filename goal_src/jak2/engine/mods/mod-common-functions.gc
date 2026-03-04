@@ -338,8 +338,8 @@ if the result of rand-vu-int-range is 1, then DANCE! if it is not 1, then Don't 
 ;; Helper functions for handle resolution
 
 (defun handle->process-safe ((h handle))
-  (if (and (nonzero? (the-as int h)) 
-           (!= h (the-as handle #f)) 
+  (if (and (nonzero? (the-as int h))
+           (!= h (the-as handle #f))
            (zero? (logand (the-as int h) 3))) ;; Pointers must be 4-byte aligned
       (handle->process h)
       (the-as process #f)

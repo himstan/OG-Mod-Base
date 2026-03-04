@@ -127,7 +127,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         -Wsign-promo \
         -fdiagnostics-color=always"
         )
-    
+
     # pin to AVX for macOS, hopefully all macOS runners have atleast this architecture
     # technically speaking, SSE4 is the cutoff for Apple Silicon so...only a matter of time!
     if(NOT CMAKE_CXX_COMPILER_TARGET STREQUAL "arm64-apple-darwin")

@@ -122,13 +122,13 @@ extractor_iso_database() {
               "jak2",
               {}}}}},
           // Jak 3 NTSC-U
-          {"SCUS-97330",           // serial from ELF name
+          {"SCUS-97330",            // serial from ELF name
            {{4975852519304227343,  // hash of ELF
              {"Jak 3",             // canonical name
               GAME_TERRITORY_SCEA,
-              749,                    // number of files
+              749,                     // number of files
               {1197801364027358161},  // iso hash
-              "ntsc_v1",              // decompiler config
+              "ntsc_v1",                    // decompiler config
               "jak3",
               {}}}}},
       };

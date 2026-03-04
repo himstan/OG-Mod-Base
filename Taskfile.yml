@@ -85,6 +85,10 @@ tasks:
     desc: "Generate the CMake"
     cmds:
     - "cmake -B build --preset={{.CMAKE_PRESET}}"
+  build:
+    desc: "Build the project using the generated CMake"
+    cmds:
+      - "cmake --build build --parallel {{.CMAKE_NUM_THREADS}}"
   build-mi:
     desc: "Compiles all .gc files using (mi) safely with a delay and user profile"
     preconditions:

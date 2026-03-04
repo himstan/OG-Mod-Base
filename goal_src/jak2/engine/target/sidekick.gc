@@ -247,7 +247,7 @@
           (let ((mp (the-as manipy (-> block param 1))))
             (set! v0-0 (-> self node-list data))
             (if (or (!= (-> *level* loading-level) (-> *level* default-level))
-                    (zero? (-> mp node-list)) 
+                    (zero? (-> mp node-list))
                     (<= (-> mp node-list length) 23))
                 (begin
                   ;; Fallback: Snap to root if nodes aren't safe
