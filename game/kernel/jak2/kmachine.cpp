@@ -38,12 +38,12 @@
 #include "game/kernel/jak2/kscheme.h"
 #include "game/kernel/jak2/ksound.h"
 #include "game/overlord/jak2/iso.h"
-#include "game/system/multiplayer.h"
 #include "game/sce/deci2.h"
 #include "game/sce/libdma.h"
 #include "game/sce/libgraph.h"
 #include "game/sce/sif_ee.h"
 #include "game/sce/stubs.h"
+#include "game/system/multiplayer.h"
 
 using namespace ee;
 
