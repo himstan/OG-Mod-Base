@@ -2755,6 +2755,11 @@
       (let ((f0-3 (fill-and-probe-using-line-sphere *collide-cache* s3-0))
             (s2-1 (new 'stack-no-clear 'vector))
             )
+        (if (>= f0-3 0.0)
+            (let ((hit-proc (if (-> s3-0 best-other-tri collide-ptr) (-> (the-as collide-shape-prim (-> s3-0 best-other-tri collide-ptr)) cshape process) #f)))
+              (format 0 "MP-LOG: Guard probe hit! Dist: ~f, Proc: ~A~%" f0-3 hit-proc)
+              )
+            )
         (cond
           ((>= f0-3 0.0)
            (vector-float*! s1-0 (-> s3-0 move-dist) f0-3)
@@ -2777,11 +2782,17 @@
            (set-point! (-> this l-control) 1 s5-0)
            (set! (-> this l-control spec) (-> *lightning-spec-id-table* 13))
            (+! (-> this l-control state points-to-draw) 2)
-           (let ((v1-43 (the-as basic (as-type (-> s3-0 best-other-tri collide-ptr) collide-shape-prim)))
+           (let ((v1-43 (the-as collide-shape-prim (as-type (-> s3-0 best-other-tri collide-ptr) collide-shape-prim)))
                  (s1-5 #t)
                  )
              (when v1-43
                (set! s1-5 #f)
+               (if (and (-> v1-43 cshape process) (type? (-> v1-43 cshape process) mp-target-proxy))
+                   (begin
+                     (format 0 "MP-LOG: Guard lightning probe hit Daxter! (Proxy: ~A)~%" (-> v1-43 cshape process name))
+                     (send-event (-> v1-43 cshape process) 'attack #f (static-attack-info ((id (-> this attack-id)) (mode 'shock))))
+                     )
+                   )
                (let ((s0-1 (new 'stack-no-clear 'projectile-init-by-other-params)))
                  (set! (-> s0-1 ent) (-> this entity))
                  (set! (-> s0-1 charge) 1.0)
@@ -3678,3 +3689,35 @@
   0
   (none)
   )
+
+(defun mp-crimson-guard-lightning-callback ((this crimson-guard) (focus-aid uint))
+  (if (zero? focus-aid)
+      (return (if (and (nonzero? (-> this l-control)) (= (-> this l-control state mode) 1)) 1 0)))
+
+  (let ((target (the-as process-focusable #f)))
+    (cond
+      ((= focus-aid 1) (set! target (the-as process-focusable (handle->process (-> *multi-info* player-procs 0)))))
+      ((= focus-aid 2) (set! target (the-as process-focusable (handle->process (-> *multi-info* player-procs 1)))))
+      )
+    (if target
+      (let* ((s4-0 (vector<-cspace! (new 'stack-no-clear 'vector) (-> this node-list data 14)))
+             (s5-0 (get-trans target 3))
+             )
+        (set! (-> this l-control state mode) (the-as lightning-mode 1))
+        (set-point! (-> this l-control) 0 s4-0)
+        (set-point! (-> this l-control) 1 s5-0)
+        (set! (-> this l-control spec) (-> *lightning-spec-id-table* 13))
+        (set! (-> this l-control state points-to-draw) 2)
+        (part-tracker-spawn :to this :group part-crimson-lightning-glow :mat-joint s4-0)
+        (part-tracker-spawn :to this :group part-crimson-lightning-glow :mat-joint s5-0)
+        )
+      (if (nonzero? (-> this l-control))
+          (set! (-> this l-control state mode) (the-as lightning-mode 0)))
+      )
+    )
+  0
+  )
+
+;; Set the global callback
+(set! *mp-crimson-guard-lightning-callback* (the-as (function process uint int) mp-crimson-guard-lightning-callback))
+

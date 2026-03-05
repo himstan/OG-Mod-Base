@@ -5,6 +5,8 @@
 ;; name in dgo: target-indax
 ;; dgos: TOE
 
+(define *has-ridden-before?* #f)
+
 (define-extern *indax-walk-mods* surface)
 (define-extern *indax-jump-mods* surface)
 (define-extern *indax-double-jump-mods* surface)
@@ -73,6 +75,7 @@
   (set! (-> v1-8 seek180) 0.7)
   (set! *indax-bounce-mods* v1-8)
   )
+
 
 (let* ((v1-10 (copy *jump-mods* 'loading-level)))
   (set! (-> v1-10 target-speed) 73728.0)
@@ -315,6 +318,7 @@
             (let ((f0-0 (vector-xz-length v1-7)))
               (if (< f0-0 40960.0)
                   (vector-xz-normalize! v1-7 40960.0)))))
+
   :exit (behavior ()
          (target-exit)
          (target-indax-exit))
@@ -369,9 +373,7 @@
 
 
   (remove-exit)
-  (if ride-along?
-      (go target-ride-along)
-      (go target-indax-stance))
+  (go target-indax-stance)
   (none))
 
 
@@ -546,6 +548,11 @@
   (joint-points)
   (do-target-gspot)
   (target-powerup-process)
+  (when (not *has-ridden-before?*)
+            (begin
+              (go target-ride-along)
+            )
+  )
   (none))
 
 
@@ -649,6 +656,7 @@
               (go target-indax-running-attack))
 
           (target-indax-ride-along-check)
+
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
@@ -763,6 +771,7 @@
               (go target-indax-running-attack))
 
           (target-indax-ride-along-check)
+
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? circle)
                    (can-feet? #t))
@@ -1621,6 +1630,7 @@
     )
 
   :trans (behavior ()
+    (set! *has-ridden-before?* #t)
     (if (cpad-pressed? (-> self control cpad number) x)
         (begin
           (format 0 "[MP] Jumping off Jak...~%")

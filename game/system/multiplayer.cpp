@@ -26,7 +26,8 @@ enum class PacketType : uint8_t {
   EVENT_JOIN = 1,
   EVENT_LEAVE = 2,
   EVENT_WORLD = 3,
-  FULL_SYNC = 4
+  FULL_SYNC = 4,
+  ENEMY_SYNC = 5
 };
 
 #pragma pack(push, 1)
@@ -88,7 +89,7 @@ struct PacketFullSync {
   uint8_t task_mask[64];
   uint32_t sync_aids_count;
   uint32_t riding;
-  uint32_t sync_aids[483];
+  uint32_t sync_aids[128];  // Reduced to match new struct
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
@@ -223,6 +224,13 @@ void pc_multi_sync_data(u32 info_ptr) {
               lg::info("[Multiplayer] Received World Event: Type {}, AID {}",
                        world_event->event_type, world_event->actor_id);
               gMultiplayerData.inbound_events.push_back(*world_event);
+            } else if (header->type == PacketType::ENEMY_SYNC &&
+                       event.packet->dataLength == sizeof(PacketEnemySync)) {
+              PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
+              if (gMultiplayerData.local_role == 1) {  // Only Client processes Host's enemy sync
+                info->enemy_count = enemy_sync->count;
+                memcpy(info->enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
+              }
             } else if (header->type == PacketType::FULL_SYNC &&
                        event.packet->dataLength == sizeof(PacketFullSync)) {
               PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
@@ -243,12 +251,12 @@ void pc_multi_sync_data(u32 info_ptr) {
 
               // Safety check: Clamp count to new buffer size
               uint32_t count = full_sync->sync_aids_count;
-              if (count > 485)
-                count = 485;
+              if (count > 128)
+                count = 128;
 
               info->sync_aids_count = count;
               info->riding = full_sync->riding;
-              memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 485);
+              memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 128);
               info->sync_clock = full_sync->clock;
               info->client_sync_flag = 1;
             }
@@ -277,12 +285,12 @@ void pc_multi_sync_data(u32 info_ptr) {
             memcpy(sync.task_mask, info->task_mask, 64);
 
             uint32_t count = info->sync_aids_count;
-            if (count > 485)
-              count = 485;
+            if (count > 128)
+              count = 128;
             sync.sync_aids_count = count;
             sync.riding = info->riding;
 
-            memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 485);
+            memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 128);
             sync.clock = info->sync_clock;
 
             ENetPacket* sync_packet =
@@ -347,6 +355,19 @@ void pc_multi_sync_data(u32 info_ptr) {
         enet_peer_send(gMultiplayerData.server_peer, 1, event_packet);
       }
       gMultiplayerData.last_out_event_seq = info->out_event_seq;
+    }
+
+    // 2c. Enemy Sync (Channel 0, Unsequenced) - HOST ONLY
+    if (gMultiplayerData.local_role == 0 && info->enemy_count > 0) {
+      PacketEnemySync enemy_packet;
+      enemy_packet.header.type = PacketType::ENEMY_SYNC;
+      enemy_packet.header.sequenceNum = gMultiplayerData.sequence_num;
+      enemy_packet.count = info->enemy_count;
+      memcpy(enemy_packet.enemies, info->enemies, sizeof(MPEnemyState) * 24);
+
+      ENetPacket* enet_enemy_packet =
+          enet_packet_create(&enemy_packet, sizeof(PacketEnemySync), ENET_PACKET_FLAG_UNSEQUENCED);
+      enet_host_broadcast(gMultiplayerData.host, 0, enet_enemy_packet);
     }
 
     // --- 3. GOAL Sync (Mapping remote_entities back to legacy pointer) ---

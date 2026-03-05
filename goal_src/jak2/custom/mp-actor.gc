@@ -9,6 +9,7 @@
   (set! (-> self remote-id) id)
   (set! (-> self remote-role) role)
   (set! (-> self manipy-proc) (the-as handle #f))
+  (set! (-> self proxy-proc) (the-as handle #f))
   (set! (-> self spawn-timer) 0)
   (set! (-> self last-anim-packet) 0)
 
@@ -201,11 +202,27 @@
   (stack-size-set! (-> self main-thread) 2048)
   (logior! (-> self mask) (process-mask heap-shrunk))
 
-  (set! (-> self root) (the-as collide-shape (new 'process 'trsqv)))
+  ;; Use a proper collide-shape so AI targeting (LOS) works, but make it NON-SOLID
+  ;; so it doesn't interfere with the local player's physics.
+  (let ((cshape (new 'process 'collide-shape self (collide-list-enum hit-by-others))))
+    (let ((v1-6 (new 'process 'collide-shape-prim-sphere cshape (the-as uint 0))))
+      (set! (-> v1-6 prim-core collide-as) (collide-spec player-list))
+      (set! (-> v1-6 prim-core collide-with) (collide-spec backgnd obstacle hit-by-others-list))
+      (set! (-> v1-6 prim-core action) (collide-action)) ;; Empty = Non-solid
+      (set-vector! (-> v1-6 local-sphere) 0.0 (meters 1.0) 0.0 (meters 1.0))
+      (set! (-> cshape total-prims) (the-as uint 1))
+      (set! (-> cshape root-prim) v1-6))
+    (set! (-> cshape nav-radius) (meters 1.0))
+    (let ((v1-9 (-> cshape root-prim)))
+      (set! (-> cshape backup-collide-as) (-> v1-9 prim-core collide-as))
+      (set! (-> cshape backup-collide-with) (-> v1-9 prim-core collide-with)))
+    (set! (-> self root) cshape))
+
   (vector-copy! (-> self root trans) pos)
   (quaternion-identity! (-> self root quat))
   (process-entity-set! self (the-as entity #f))
   (initialize-skeleton-by-name self skel-name)
+  (logior! (-> self mask) (process-mask target))
   ;; --------------------------------------
 
   (if (-> self draw)

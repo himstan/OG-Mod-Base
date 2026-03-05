@@ -437,6 +437,7 @@
   "blocking-plane.o"
   "idle-control.o"
   "dark-eco-pool.o"
+  "joint-exploder.o" ;; moved up for vehicle-h
   "enemy-h.o"
   "nav-enemy-h.o"
   "rigid-body-h.o"
@@ -444,6 +445,10 @@
   "statistics.o" ;; added
   "enemy.o"
   "nav-enemy.o"
+  "nav-graph-h.o" ;; added for traffic-engine-h
+  "traffic-engine-h.o" ;; added for vehicle-h
+  "vehicle-h.o" ;; added for citizen-h
+  "citizen-h.o" ;; added for mp-helpers
   "base-plat.o"
   "plat.o"
   "basebutton.o"
@@ -452,10 +457,8 @@
   "elevator.o"
   "rigid-body.o"
   "rigid-body-queue.o"
-  "rigid-body-plat.o"
-  "joint-exploder.o"
-  "simple-focus.o"
-  "simple-nav-sphere.o"
+      "rigid-body-plat.o"
+      "simple-focus.o"  "simple-nav-sphere.o"
   "process-taskable.o"
   "scene-actor.o"
   "scene-looper.o"
