@@ -257,11 +257,6 @@
 (defstate idle (mp-manager)
   :virtual #t
   :trans (behavior ()
-          ;; ALWAYS update interpolation from latest info
-          (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-interp-pos*)
-          (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
-          (quaternion-rotate-y! (-> (the-as trsqv (-> self root)) quat) (-> (the-as trsqv (-> self root)) quat) *multi-remote-interp-angle*)
-
           ;; 1. Sync visual manipy
           (let ((m (handle->process-safe (-> self manipy-proc))))
             (if (not m)
