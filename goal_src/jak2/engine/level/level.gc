@@ -2243,7 +2243,7 @@ into 7 sections, which might explain the weird sizes in the center.
   (start-debug "PLAY: starting dproc~%")
   (on #t)
   (if arg1
-      (initialize! *game-info* 'game (the-as game-save #f) (the-as string #f))
+      (initialize! *game-info* 'game (the-as game-save #f) (the-as string *kernel-boot-continue*))
       )
   (kmemclose)
   (kmemclose)

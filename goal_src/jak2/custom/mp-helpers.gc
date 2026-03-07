@@ -363,12 +363,6 @@
                 ;; State 1 = Alive, State 2 = Dying
                 (set! (-> slot state) (the-as uint (if is-dying? 2 1)))
 
-                ;; Sync Attack Flag (for lightning effects)
-                (set! (-> slot attack-flag) 0)
-                (if (and (nonzero? e-proc) (= (-> e-proc type) 'crimson-guard) *mp-crimson-guard-lightning-callback*)
-                    (set! (-> slot attack-flag) (the-as uint (if (nonzero? (the-as int (*mp-crimson-guard-lightning-callback* e-proc (the-as uint 0)))) 1 0)))
-                    )
-
                 ;; Sync Focus Target
                 (let ((f-handle (-> e-proc focus handle)))
                   (set! (-> slot focus-aid) (the-as uint 0))
@@ -433,10 +427,6 @@
                                 (set! (-> e-proc skel channel 0 frame-num) anim-frame))))))
 
                       (set! (-> e-proc hit-points) (-> slot hp))
-
-                      ;; Lightning Attack Visuals (Step 2)
-                      (if (and (= (-> e-proc type) 'crimson-guard) *mp-crimson-guard-lightning-callback*)
-                          (*mp-crimson-guard-lightning-callback* e-proc (the-as uint (if (= (-> slot attack-flag) 1) (-> slot focus-aid) 0))))
 
                       ;; Focus is deliberately NOT set here on the Client!
                       ;; Setting the focus handle to the remote player (a manipy) causes the engine's

@@ -38,6 +38,9 @@ extern char DebugBootLevel[64];
 // Pass to GOAL kernel on boot
 extern char DebugBootMessage[64];
 
+// Continue point to load on boot
+extern char DebugBootContinue[64];
+
 // Added in PC port, option to run listener functions without the kernel for debugging
 extern u32 MasterUseKernel;
 

@@ -3687,37 +3687,4 @@
   (set! (-> this move-index) -1)
   (ja-channel-set! 0)
   0
-  (none)
-  )
-
-(defun mp-crimson-guard-lightning-callback ((this crimson-guard) (focus-aid uint))
-  (if (zero? focus-aid)
-      (return (if (and (nonzero? (-> this l-control)) (= (-> this l-control state mode) 1)) 1 0)))
-
-  (let ((target (the-as process-focusable #f)))
-    (cond
-      ((= focus-aid 1) (set! target (the-as process-focusable (handle->process (-> *multi-info* player-procs 0)))))
-      ((= focus-aid 2) (set! target (the-as process-focusable (handle->process (-> *multi-info* player-procs 1)))))
-      )
-    (if target
-      (let* ((s4-0 (vector<-cspace! (new 'stack-no-clear 'vector) (-> this node-list data 14)))
-             (s5-0 (get-trans target 3))
-             )
-        (set! (-> this l-control state mode) (the-as lightning-mode 1))
-        (set-point! (-> this l-control) 0 s4-0)
-        (set-point! (-> this l-control) 1 s5-0)
-        (set! (-> this l-control spec) (-> *lightning-spec-id-table* 13))
-        (set! (-> this l-control state points-to-draw) 2)
-        (part-tracker-spawn :to this :group part-crimson-lightning-glow :mat-joint s4-0)
-        (part-tracker-spawn :to this :group part-crimson-lightning-glow :mat-joint s5-0)
-        )
-      (if (nonzero? (-> this l-control))
-          (set! (-> this l-control state mode) (the-as lightning-mode 0)))
-      )
-    )
-  0
-  )
-
-;; Set the global callback
-(set! *mp-crimson-guard-lightning-callback* (the-as (function process uint int) mp-crimson-guard-lightning-callback))
-
+  (none))

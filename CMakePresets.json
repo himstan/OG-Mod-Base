@@ -15,7 +15,7 @@
         "STATICALLY_LINK": "OFF",
         "ZYDIS_BUILD_SHARED_LIB": "ON",
         "CODE_COVERAGE": "OFF",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {

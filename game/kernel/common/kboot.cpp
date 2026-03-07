@@ -22,6 +22,9 @@ char DebugBootLevel[64];
 // Pass to GOAL kernel on boot
 char DebugBootMessage[64];
 
+// Continue point to load on boot
+char DebugBootContinue[64];
+
 // game configuration
 MasterConfig masterConfig;
 
@@ -31,7 +34,8 @@ void kboot_init_globals_common() {
   MasterDebug = 1;
   DebugSegment = 1;
   MasterUseKernel = 1;
-  strcpy(DebugBootLevel, "#f");      // no specified level
-  strcpy(DebugBootMessage, "play");  // play mode, the default retail mode
+  strcpy(DebugBootLevel, "#f");         // no specified level
+  strcpy(DebugBootMessage, "play");     // play mode, the default retail mode
+  strcpy(DebugBootContinue, "#f");      // no specified continue point
   memset(&masterConfig, 0, sizeof(MasterConfig));
 }

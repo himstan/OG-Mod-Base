@@ -177,4 +177,3 @@
 (define-perm *mp-debug-draw* symbol #f)
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
-(define *mp-crimson-guard-lightning-callback* (the-as (function process uint int) #f))

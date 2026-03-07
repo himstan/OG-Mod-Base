@@ -50,7 +50,11 @@ std::optional<json> go_to_definition(Workspace& workspace, int /*id*/, json raw_
     }
 
     LSPSpec::Location location;
-    location.m_uri = def_loc->file_path;
+    #ifdef _WIN32
+        location.m_uri = fmt::format("file:///{}", def_loc->file_path);
+    #else
+        location.m_uri = fmt::format("file://{}", def_loc->file_path);
+    #endif
     location.m_range.m_start = {(uint32_t)def_loc->line_idx, (uint32_t)def_loc->char_idx};
     location.m_range.m_end = {(uint32_t)def_loc->line_idx, (uint32_t)def_loc->char_idx};
     locations.push_back(location);

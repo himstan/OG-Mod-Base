@@ -342,6 +342,7 @@
 (define-extern kmalloc (function kheap int kmalloc-flags string pointer))
 
 (define-extern *kernel-boot-message* symbol)
+(define-extern *kernel-boot-continue* object)
 (define-extern *user* symbol)
 
 (define-extern new-dynamic-structure (function symbol type int structure))

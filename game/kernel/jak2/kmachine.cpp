@@ -157,6 +157,15 @@ void InitParms(int argc, const char* const* argv) {
       kstrcpy(DebugBootLevel, levelName.c_str());
     }
 
+    // the "-continue [continue-point]" mode is used to inform the game to boot at a specific continue point
+    // the default continue point is "#f".
+    if (arg == "-continue") {
+      i++;
+      std::string continuePoint = argv[i];
+      Msg(6, "dkernel: continue %s\n", continuePoint.c_str());
+      kstrcpy(DebugBootContinue, continuePoint.c_str());
+    }
+
     // new for jak 2
     if (arg == "-user") {
       i++;
@@ -691,6 +700,11 @@ void InitMachineScheme() {
     intern_from_c("*kernel-boot-mode*")->value() = intern_from_c("boot").offset;
   }
   intern_from_c("*kernel-boot-level*")->value() = intern_from_c(DebugBootLevel).offset;
+  if (!strcmp(DebugBootContinue, "#f")) {
+    intern_from_c("*kernel-boot-continue*")->value() = offset_of_s7() + jak2_symbols::FIX_SYM_FALSE;
+  } else {
+    intern_from_c("*kernel-boot-continue*")->value() = make_string_from_c(DebugBootContinue);
+  }
   intern_from_c("*kernel-boot-art-group*")->value() = make_string_from_c(DebugBootArtGroup);
   if (DiskBoot) {
     *EnableMethodSet = *EnableMethodSet + 1;

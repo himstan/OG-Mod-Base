@@ -33,6 +33,7 @@
 ;; Boot options
 (define *kernel-boot-mode* 'listener)
 (define *kernel-boot-level* #f)
+(define *kernel-boot-continue* #f)
 (define *use-old-listener-print* #f)
 
 ;; Stats
