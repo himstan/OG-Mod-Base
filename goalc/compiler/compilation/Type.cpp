@@ -78,6 +78,7 @@ RegVal* Compiler::compile_get_method_of_object(const goos::Object& form,
                                                const std::string& method_name,
                                                Env* env,
                                                bool error_message_function_or_method) {
+  m_symbol_info.add_reference(method_name, form);
   auto& compile_time_type = object->type();
   MethodInfo method_info;
   if (!m_ts.try_lookup_method(compile_time_type.base_type(), method_name, &method_info)) {
@@ -469,6 +470,20 @@ Val* Compiler::compile_deftype(const goos::Object& form, const goos::Object& res
   }
 
   m_symbol_info.add_type(result.type.base_type(), result.type_info, form);
+
+  // Store field metadata for LSP
+  for_each_in_list(result.field_list_obj, [&](const goos::Object& field_def) {
+    const auto& field_info = m_goos.reader.db.get_short_info_for(field_def);
+    if (field_info) {
+      DefinitionMetadata meta;
+      meta.definition_info = field_info;
+      // Use the first symbol in the field definition as the name
+      if (field_def.is_pair() && field_def.as_pair()->car.is_symbol()) {
+        std::string f_name = symbol_string(field_def.as_pair()->car);
+        result.type_info->m_field_metadata[f_name] = meta;
+      }
+    }
+  });
 
   // return none, making the value of (deftype..) unusable
   return get_none();

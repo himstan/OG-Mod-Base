@@ -918,6 +918,7 @@ DeftypeResult parse_deftype(const goos::Object& deftype,
 
   result.type = ts->make_typespec(name);
   result.type_info = ts->lookup_type(result.type);
+  result.field_list_obj = field_list_obj;
 
   if (structure_result) {
     result.type_info->m_state_definition_meta = structure_result->state_definitions;

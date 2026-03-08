@@ -52,6 +52,7 @@ class WorkspaceOGFile {
   void parse_content(const std::string& new_content);
   void update_symbols(const std::vector<symbol_info::SymbolInfo*>& symbol_infos);
   std::optional<std::string> get_symbol_at_position(const LSPSpec::Position position) const;
+  TSNode get_node_at_position(const LSPSpec::Position position) const;
   std::vector<OpenGOALFormResult> search_for_forms_that_begin_with(
       std::vector<std::string> prefix) const;
 
@@ -148,6 +149,14 @@ class Workspace {
   std::optional<symbol_info::DefinitionLocation> get_symbol_def_location(
       const WorkspaceOGFile& file,
       const symbol_info::SymbolInfo* symbol_info);
+  std::vector<symbol_info::ReferenceLocation> get_symbol_references(
+      const WorkspaceOGFile& file,
+      const std::string& symbol_name);
+  std::vector<symbol_info::FieldInfo> get_field_suggestions(const WorkspaceOGFile& file,
+                                                            const std::string& type_name);
+  std::optional<symbol_info::FieldInfo> get_field_info(const WorkspaceOGFile& file,
+                                                      const std::string& type_name,
+                                                      const std::string& field_name);
   std::vector<std::tuple<std::string, std::string, Docs::DefinitionLocation>>
   get_symbols_parent_type_path(const std::string& symbol_name, const GameVersion game_version);
   std::vector<std::tuple<std::string, std::string, Docs::DefinitionLocation>> get_types_subtypes(

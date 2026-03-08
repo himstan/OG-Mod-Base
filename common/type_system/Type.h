@@ -122,6 +122,7 @@ class Type {
   bool gen_inspect() const { return m_generate_inspect; }
 
   DefinitionMetadata m_metadata;
+  std::unordered_map<std::string, DefinitionMetadata> m_field_metadata = {};
   std::unordered_map<std::string, std::unordered_map<std::string, DefinitionMetadata>>
       m_virtual_state_definition_meta = {};
   std::unordered_map<std::string, std::unordered_map<std::string, DefinitionMetadata>>

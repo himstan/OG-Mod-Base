@@ -41,7 +41,6 @@ struct DefinitionLocation {
   std::string file_path;
   uint32_t line_idx;
   uint32_t char_idx;
-  // TODO - store the extent of the symbol definition as well
 };
 
 struct ArgumentInfo {
@@ -58,7 +57,7 @@ struct ArgumentInfo {
 
 struct FieldInfo {
   std::string name;
-  // TODO - DefinitionLocation def_location;
+  std::optional<DefinitionLocation> m_def_location;
   std::string description = "";
   std::string type;
   // ?? TODO
@@ -121,6 +120,13 @@ struct SymbolInfo {
   void set_definition_location(const goos::TextDb* textdb);
 };
 
+struct SymbolInfo;
+struct ReferenceLocation {
+  std::string file_path;
+  uint32_t line_idx;
+  uint32_t char_idx;
+};
+
 /*!
  * A map of symbol info. It internally stores the info in a prefix tree so you can quickly get
  * a list of all symbols starting with a given prefix.
@@ -132,6 +138,11 @@ class SymbolInfoMap {
   // This allows us to not only efficiently retrieve symbols by file, but also allows us to
   // cleanup symbols when files are re-compiled.
   std::unordered_map<std::string, std::vector<SymbolInfo*>> m_file_symbol_index;
+
+  // Indexes references to symbols by the file they occur within
+  // This allows us to cleanup references when files are re-compiled.
+  std::unordered_map<std::string, std::unordered_map<std::string, std::vector<ReferenceLocation>>>
+      m_file_reference_index;
 
   void add_symbol_to_file_index(const std::string& file_path, SymbolInfo* symbol);
 
@@ -172,6 +183,8 @@ class SymbolInfoMap {
   void add_enum(EnumType* enum_info,
                 const goos::Object& defining_form,
                 const std::string& docstring = "");
+  void add_reference(const std::string& name, const goos::Object& form);
+  std::vector<ReferenceLocation> lookup_references(const std::string& name) const;
   std::vector<SymbolInfo*> lookup_symbols_by_file(const std::string& file_path) const;
   std::vector<SymbolInfo*> lookup_exact_name(const std::string& name) const;
   std::vector<SymbolInfo*> lookup_exact_name(const std::string& name, const Kind sym_kind) const;

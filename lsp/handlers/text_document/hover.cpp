@@ -1,5 +1,7 @@
 #include "hover.h"
 
+#include "common/util/ast_util.h"
+
 bool is_number(const std::string& s) {
   return !s.empty() && std::find_if(s.begin(), s.end(),
                                     [](unsigned char c) { return !std::isdigit(c); }) == s.end();
@@ -182,6 +184,83 @@ std::optional<json> hover(Workspace& workspace, int /*id*/, json raw_params) {
     }
     const auto& tracked_file = maybe_tracked_file.value().get();
     const auto symbol = tracked_file.get_symbol_at_position(params.m_position);
+
+    // Check if we are on a field in a (-> ...) form
+    TSNode node = tracked_file.get_node_at_position(params.m_position);
+    if (!ts_node_is_null(node) && std::string(ts_node_type(node)) == "sym_name") {
+      TSNode parent = ts_node_parent(node);
+      if (!ts_node_is_null(parent) && std::string(ts_node_type(parent)) == "list") {
+        TSNode first_child = ts_node_child(parent, 1);
+        if (!ts_node_is_null(first_child)) {
+          std::string first_elt = ast_util::get_source_code(tracked_file.m_content, first_child);
+          if (first_elt == "->") {
+            // Find our index in the list
+            int my_idx = -1;
+            for (uint32_t i = 0; i < ts_node_child_count(parent); i++) {
+              if (ts_node_eq(ts_node_child(parent, i), node)) {
+                my_idx = i;
+                break;
+              }
+            }
+
+            if (my_idx >= 2) {
+              // The object or field providing our type is at my_idx - 1
+              TSNode prev_node = ts_node_child(parent, my_idx - 1);
+              std::string prev_name = ast_util::get_source_code(tracked_file.m_content, prev_node);
+
+              std::string parent_type_name;
+              if (my_idx == 2) {
+                // Direct access from a global/local variable
+                auto type_info = workspace.get_symbol_typeinfo(tracked_file, prev_name);
+                if (type_info) {
+                  parent_type_name = type_info->first.base_type();
+                }
+              } else {
+                // Nested access: (-> obj f1 f2 ... prev node)
+                // We need to resolve the chain up to prev_node
+                TSNode obj_node = ts_node_child(parent, 2);
+                std::string obj_name = ast_util::get_source_code(tracked_file.m_content, obj_node);
+                auto type_info = workspace.get_symbol_typeinfo(tracked_file, obj_name);
+                if (type_info) {
+                  parent_type_name = type_info->first.base_type();
+                  for (int i = 3; i < my_idx; i++) {
+                    TSNode step_node = ts_node_child(parent, i);
+                    std::string step_name =
+                        ast_util::get_source_code(tracked_file.m_content, step_node);
+                    auto step_field = workspace.get_field_info(tracked_file, parent_type_name, step_name);
+                    if (step_field) {
+                      parent_type_name = step_field->type;
+                    } else {
+                      parent_type_name = "";
+                      break;
+                    }
+                  }
+                }
+              }
+
+              if (!parent_type_name.empty()) {
+                std::string field_name = ast_util::get_source_code(tracked_file.m_content, node);
+                auto field_info = workspace.get_field_info(tracked_file, parent_type_name, field_name);
+                if (field_info) {
+                  LSPSpec::MarkupContent markup;
+                  markup.m_kind = "markdown";
+                  std::string body = fmt::format("### (field) {}.{} : `{}`\n", parent_type_name,
+                                                 field_info->name, field_info->type);
+                  if (!field_info->description.empty()) {
+                    body += fmt::format("---\n{}", field_info->description);
+                  }
+                  markup.m_value = body;
+                  LSPSpec::Hover hover_resp;
+                  hover_resp.m_contents = markup;
+                  return hover_resp;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (!symbol) {
       lg::debug("hover - no symbol");
       return {};

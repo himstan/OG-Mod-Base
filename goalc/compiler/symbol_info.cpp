@@ -302,6 +302,49 @@ void SymbolInfoMap::add_enum(EnumType* enum_info,
   }
 }
 
+void SymbolInfoMap::add_reference(const std::string& name, const goos::Object& form) {
+  const auto& goos_info = m_textdb->get_short_info_for(form);
+  if (goos_info) {
+    ReferenceLocation ref_loc;
+    ref_loc.line_idx = goos_info->line_idx_to_display;
+    ref_loc.char_idx = goos_info->pos_in_line;
+    ref_loc.file_path = file_util::convert_to_unix_path_separators(goos_info->filename);
+
+    if (m_file_reference_index.find(ref_loc.file_path) == m_file_reference_index.end()) {
+      m_file_reference_index[ref_loc.file_path] = {};
+    }
+    auto& file_refs = m_file_reference_index[ref_loc.file_path];
+    if (file_refs.find(name) == file_refs.end()) {
+      file_refs[name] = {};
+    }
+
+    // Deduplicate: don't add if it's the exact same location
+    bool duplicate = false;
+    for (const auto& existing : file_refs[name]) {
+      if (existing.line_idx == ref_loc.line_idx && existing.char_idx == ref_loc.char_idx) {
+        duplicate = true;
+        break;
+      }
+    }
+
+    if (!duplicate) {
+      file_refs[name].push_back(ref_loc);
+    }
+  }
+}
+
+std::vector<ReferenceLocation> SymbolInfoMap::lookup_references(const std::string& name) const {
+  std::vector<ReferenceLocation> all_references = {};
+  for (const auto& [file_path, file_refs] : m_file_reference_index) {
+    if (file_refs.find(name) != file_refs.end()) {
+      for (const auto& ref : file_refs.at(name)) {
+        all_references.push_back(ref);
+      }
+    }
+  }
+  return all_references;
+}
+
 std::vector<SymbolInfo*> SymbolInfoMap::lookup_symbols_by_file(const std::string& file_path) const {
   if (m_file_symbol_index.find(file_path) != m_file_symbol_index.end()) {
     return m_file_symbol_index.at(file_path);
@@ -388,5 +431,6 @@ void SymbolInfoMap::evict_symbols_using_file_index(const std::string& file_path)
     }
     m_file_symbol_index.erase(standardized_path);
   }
+  m_file_reference_index.erase(standardized_path);
 }
 }  // namespace symbol_info

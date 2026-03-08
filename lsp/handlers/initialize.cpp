@@ -33,7 +33,7 @@ std::optional<json> initialize(Workspace& /*workspace*/, int /*id*/, json /*para
                    {"signatureHelpProvider", signature_help_provider},
                    {"definitionProvider", true},
                    {"colorProvider", true},
-                   {"referencesProvider", false},
+                   {"referencesProvider", true},
                    {"documentHighlightProvider", false},
                    {"documentSymbolProvider",
                     document_symbol_provder},  // TODO - there is another selectionRangeProvider i

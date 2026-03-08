@@ -3,6 +3,7 @@
 #include "common/log/log.h"
 
 #include "lsp/handlers/initialize.h"
+#include "lsp/handlers/text_document/references.h"
 #include "lsp/handlers/text_document/type_hierarchy.h"
 #include "lsp/protocol/error_codes.h"
 #include "text_document/completion.h"
@@ -61,6 +62,7 @@ void LSPRouter::init_routes() {
   m_routes["textDocument/willSave"] = LSPRoute(lsp_handlers::will_save);
   m_routes["textDocument/hover"] = LSPRoute(lsp_handlers::hover);
   m_routes["textDocument/definition"] = LSPRoute(lsp_handlers::go_to_definition);
+  m_routes["textDocument/references"] = LSPRoute(lsp_handlers::references);
   m_routes["textDocument/completion"] = LSPRoute(lsp_handlers::get_completions);
   m_routes["textDocument/documentColor"] = LSPRoute(lsp_handlers::document_color);
   m_routes["textDocument/formatting"] = LSPRoute(lsp_handlers::formatting);

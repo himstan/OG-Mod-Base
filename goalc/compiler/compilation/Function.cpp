@@ -321,6 +321,9 @@ Val* Compiler::compile_function_or_method_call(const goos::Object& form, Env* en
 
   const auto args = get_va(form, form);
   const auto& uneval_head = args.unnamed.at(0);
+  if (uneval_head.is_symbol()) {
+    m_symbol_info.add_reference(uneval_head.as_symbol().name_ptr, form);
+  }
   if (m_settings.check_for_requires) {
     const auto& symbol_info = m_symbol_info.lookup_exact_name(uneval_head.print());
     if (!symbol_info.empty()) {

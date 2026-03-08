@@ -108,6 +108,7 @@ class Compiler {
   std::set<std::string> lookup_symbol_names_starting_with(const std::string& prefix,
                                                           int max_count = -1) const;
   std::vector<symbol_info::SymbolInfo*> lookup_exact_name_info(const std::string& name) const;
+  std::vector<symbol_info::ReferenceLocation> lookup_references(const std::string& name) const;
   std::optional<TypeSpec> lookup_typespec(const std::string& symbol_name);
   TypeSystem& type_system() { return m_ts; };
   // TODO - rename these types / namespaces -- consolidate with SymbolInfo and whatever else tries

@@ -627,6 +627,11 @@ std::vector<symbol_info::SymbolInfo*> Compiler::lookup_exact_name_info(
   return m_symbol_info.lookup_exact_name(name);
 }
 
+std::vector<symbol_info::ReferenceLocation> Compiler::lookup_references(
+    const std::string& name) const {
+  return m_symbol_info.lookup_references(name);
+}
+
 std::optional<TypeSpec> Compiler::lookup_typespec(const std::string& symbol_name) {
   const auto it = m_symbol_types.lookup(m_goos.intern_ptr(symbol_name));
   if (it) {

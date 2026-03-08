@@ -138,4 +138,17 @@ struct TextEdit {
 };
 void to_json(json& j, const TextEdit& obj);
 void from_json(const json& j, TextEdit& obj);
+
+struct ReferenceContext {
+  /// @brief Include the declaration of the symbol in the results.
+  bool m_includeDeclaration;
+};
+void to_json(json& j, const ReferenceContext& obj);
+void from_json(const json& j, ReferenceContext& obj);
+
+struct ReferenceParams : public TextDocumentPositionParams {
+  ReferenceContext m_context;
+};
+void to_json(json& j, const ReferenceParams& obj);
+void from_json(const json& j, ReferenceParams& obj);
 }  // namespace LSPSpec

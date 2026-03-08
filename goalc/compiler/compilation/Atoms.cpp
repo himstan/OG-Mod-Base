@@ -328,12 +328,14 @@ Val* Compiler::compile_pair(const goos::Object& code, Env* env) {
     // first try as a macro
     goos::Object macro_obj;
     if (try_getting_macro_from_goos(head, &macro_obj)) {
+      m_symbol_info.add_reference(head_sym.name_ptr, code);
       return compile_goos_macro(code, macro_obj, rest, head, env);
     }
 
     // next try as a goal compiler form
     auto kv_gfs = g_goal_forms.find(head_sym.name_ptr);
     if (kv_gfs != g_goal_forms.end()) {
+      m_symbol_info.add_reference(head_sym.name_ptr, code);
       auto& goal_form = kv_gfs->second;
       return ((*this).*(goal_form.form_function))(code, rest, env);
     }
@@ -341,6 +343,7 @@ Val* Compiler::compile_pair(const goos::Object& code, Env* env) {
     // next try as an enum
     auto enum_type = m_ts.try_enum_lookup(head_sym.name_ptr);
     if (enum_type) {
+      m_symbol_info.add_reference(head_sym.name_ptr, code);
       return compile_enum_lookup(code, enum_type, rest, env);
     }
   }
@@ -397,6 +400,7 @@ SymbolVal* Compiler::compile_get_sym_obj(const std::string& name, Env* env) {
 Val* Compiler::compile_get_symbol_value(const goos::Object& form,
                                         const std::string& name,
                                         Env* env) {
+  m_symbol_info.add_reference(name, form);
   auto existing_symbol = m_symbol_types.lookup(m_goos.intern_ptr(name));
   if (!existing_symbol) {
     throw_compiler_error(

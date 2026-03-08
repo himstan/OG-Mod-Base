@@ -8,6 +8,7 @@ add_executable(lsp
   handlers/text_document/formatting.cpp
   handlers/text_document/go_to.cpp
   handlers/text_document/hover.cpp
+  handlers/text_document/references.cpp
   handlers/text_document/type_hierarchy.cpp
   main.cpp
   protocol/common_types.cpp

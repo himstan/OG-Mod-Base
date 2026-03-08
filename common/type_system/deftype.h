@@ -15,6 +15,7 @@ struct DeftypeResult {
   TypeSpec type;
   Type* type_info = nullptr;
   bool create_runtime_type = true;
+  goos::Object field_list_obj;
 };
 
 DeftypeResult parse_deftype(const goos::Object& deftype,

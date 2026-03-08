@@ -105,3 +105,21 @@ void LSPSpec::from_json(const json& j, TextEdit& obj) {
   json_deserialize_if_exists(range);
   json_deserialize_if_exists(newText);
 }
+
+void LSPSpec::to_json(json& j, const ReferenceContext& obj) {
+  j = json{{"includeDeclaration", obj.m_includeDeclaration}};
+}
+
+void LSPSpec::from_json(const json& j, ReferenceContext& obj) {
+  j.at("includeDeclaration").get_to(obj.m_includeDeclaration);
+}
+
+void LSPSpec::to_json(json& j, const ReferenceParams& obj) {
+  to_json(j, (const TextDocumentPositionParams&)obj);
+  j["context"] = obj.m_context;
+}
+
+void LSPSpec::from_json(const json& j, ReferenceParams& obj) {
+  from_json(j, (TextDocumentPositionParams&)obj);
+  j.at("context").get_to(obj.m_context);
+}

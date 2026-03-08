@@ -162,6 +162,60 @@ std::optional<symbol_info::DefinitionLocation> Workspace::get_symbol_def_locatio
   return def_loc;
 }
 
+std::vector<symbol_info::FieldInfo> Workspace::get_field_suggestions(
+    const WorkspaceOGFile& file,
+    const std::string& type_name) {
+  if (m_compiler_instances.find(file.m_game_version) == m_compiler_instances.end()) {
+    return {};
+  }
+  const auto& compiler = m_compiler_instances[file.m_game_version].get();
+  const auto type_info = compiler->type_system().lookup_type_no_throw(type_name);
+  if (!type_info) {
+    return {};
+  }
+
+  std::vector<symbol_info::FieldInfo> suggestions;
+  auto struct_type = dynamic_cast<StructureType*>(type_info);
+  if (struct_type) {
+    // Structure fields
+    const auto symbol_infos = compiler->lookup_exact_name_info(type_name);
+    if (!symbol_infos.empty()) {
+      const auto& symbol = symbol_infos.at(0);
+      for (const auto& field : symbol->m_type_fields) {
+        suggestions.push_back(field);
+      }
+    }
+  }
+
+  auto bitfield_type = dynamic_cast<BitFieldType*>(type_info);
+  if (bitfield_type) {
+    // TODO - add bitfield fields to SymbolInfo and use them here
+  }
+
+  return suggestions;
+}
+
+std::optional<symbol_info::FieldInfo> Workspace::get_field_info(const WorkspaceOGFile& file,
+                                                              const std::string& type_name,
+                                                              const std::string& field_name) {
+  const auto fields = get_field_suggestions(file, type_name);
+  for (const auto& field : fields) {
+    if (field.name == field_name) {
+      return field;
+    }
+  }
+  return {};
+}
+
+std::vector<symbol_info::ReferenceLocation> Workspace::get_symbol_references(
+    const WorkspaceOGFile& file,
+    const std::string& symbol_name) {
+  if (m_compiler_instances.find(file.m_game_version) != m_compiler_instances.end()) {
+    return m_compiler_instances.at(file.m_game_version)->lookup_references(symbol_name);
+  }
+  return {};
+}
+
 std::vector<std::tuple<std::string, std::string, Docs::DefinitionLocation>>
 Workspace::get_symbols_parent_type_path(const std::string& symbol_name,
                                         const GameVersion game_version) {
@@ -519,6 +573,15 @@ std::optional<std::string> WorkspaceOGFile::get_symbol_at_position(
     }
   }
   return {};
+}
+
+TSNode WorkspaceOGFile::get_node_at_position(const LSPSpec::Position position) const {
+  if (m_ast) {
+    TSNode root_node = ts_tree_root_node(m_ast.get());
+    return ts_node_descendant_for_point_range(root_node, {position.m_line, position.m_character},
+                                              {position.m_line, position.m_character});
+  }
+  return {{0, 0, 0, 0}};
 }
 
 std::vector<OpenGOALFormResult> WorkspaceOGFile::search_for_forms_that_begin_with(
