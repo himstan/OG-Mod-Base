@@ -66,19 +66,6 @@ std::optional<std::reference_wrapper<WorkspaceIRFile>> Workspace::get_tracked_ir
   return std::ref(it->second);
 }
 
-std::optional<DefinitionMetadata> Workspace::get_definition_info_from_all_types(
-    const std::string& symbol_name,
-    const LSPSpec::DocumentUri& all_types_uri) {
-  if (m_tracked_all_types_files.count(all_types_uri) == 0) {
-    return {};
-  }
-  const auto& dts = m_tracked_all_types_files[all_types_uri]->m_dts;
-  if (dts->symbol_metadata_map.count(symbol_name) == 0) {
-    return {};
-  }
-  return dts->symbol_metadata_map.at(symbol_name);
-}
-
 // TODO - a gross hack that should go away when the language isn't so tightly coupled to the jak
 // games
 //
@@ -142,13 +129,12 @@ std::optional<std::pair<TypeSpec, Type*>> Workspace::get_symbol_typeinfo(
   const auto& compiler = m_compiler_instances[file.m_game_version].get();
   const auto typespec = compiler->lookup_typespec(symbol_name);
   if (typespec) {
-    // NOTE - for some reason calling with the symbol's typespec and the symbol itself produces
-    // different results!
-    const auto full_type_info = compiler->type_system().lookup_type_no_throw(symbol_name);
+    const auto full_type_info = compiler->type_system().lookup_type_no_throw(typespec->base_type());
     if (full_type_info != nullptr) {
       return std::make_pair(typespec.value(), full_type_info);
     }
   }
+
   return {};
 }
 
@@ -177,19 +163,61 @@ std::vector<symbol_info::FieldInfo> Workspace::get_field_suggestions(
   std::vector<symbol_info::FieldInfo> suggestions;
   auto struct_type = dynamic_cast<StructureType*>(type_info);
   if (struct_type) {
-    // Structure fields
-    const auto symbol_infos = compiler->lookup_exact_name_info(type_name);
-    if (!symbol_infos.empty()) {
-      const auto& symbol = symbol_infos.at(0);
-      for (const auto& field : symbol->m_type_fields) {
-        suggestions.push_back(field);
+    for (const auto& field : struct_type->fields()) {
+      symbol_info::FieldInfo field_info;
+      field_info.name = field.name();
+      field_info.type = field.type().print();
+      field_info.is_array = field.is_array();
+      field_info.is_dynamic = field.is_dynamic();
+      field_info.is_inline = field.is_inline();
+
+      // Try to find the source location for this field
+      // We look at the type where the field was actually DEFINED
+      const auto defining_type_info = compiler->type_system().lookup_type_no_throw(type_name);
+      if (defining_type_info && defining_type_info->m_field_metadata.count(field.name())) {
+        const auto& meta = defining_type_info->m_field_metadata.at(field.name());
+        symbol_info::DefinitionLocation def_loc;
+        def_loc.file_path =
+            file_util::convert_to_unix_path_separators(meta.definition_info->filename);
+        def_loc.line_idx = meta.definition_info->line_idx_to_display;
+        def_loc.char_idx = meta.definition_info->pos_in_line;
+        field_info.m_def_location = def_loc;
+      } else {
+        // If not in the current type, it might be in a parent.
+        std::string current_search_type = type_name;
+        int hierarchy_depth = 0;
+        while (!current_search_type.empty() && current_search_type != "none" && hierarchy_depth < 32) {
+          const auto t = compiler->type_system().lookup_type_no_throw(current_search_type);
+          if (t && t->m_field_metadata.count(field.name())) {
+            const auto& meta = t->m_field_metadata.at(field.name());
+            symbol_info::DefinitionLocation def_loc;
+            def_loc.file_path =
+                file_util::convert_to_unix_path_separators(meta.definition_info->filename);
+            def_loc.line_idx = meta.definition_info->line_idx_to_display;
+            def_loc.char_idx = meta.definition_info->pos_in_line;
+            field_info.m_def_location = def_loc;
+            break;
+          }
+          if (t) {
+            std::string next_type = t->get_parent();
+            if (next_type == current_search_type) {
+              break;
+            }
+            current_search_type = next_type;
+          } else {
+            break;
+          }
+          hierarchy_depth++;
+        }
       }
+
+      suggestions.push_back(field_info);
     }
   }
 
   auto bitfield_type = dynamic_cast<BitFieldType*>(type_info);
   if (bitfield_type) {
-    // TODO - add bitfield fields to SymbolInfo and use them here
+    // TODO - handle bitfield suggestions
   }
 
   return suggestions;
@@ -319,14 +347,6 @@ void Workspace::start_tracking_file(const LSPSpec::DocumentUri& file_uri,
     lg::debug("new ir file - {}", file_uri);
     WorkspaceIRFile file(content);
     m_tracked_ir_files[file_uri] = file;
-    if (!file.m_all_types_uri.empty()) {
-      if (m_tracked_all_types_files.count(file.m_all_types_uri) == 0) {
-        lg::debug("new all-types file - {}", file.m_all_types_uri);
-        m_tracked_all_types_files[file.m_all_types_uri] = std::make_unique<WorkspaceAllTypesFile>(
-            file.m_all_types_uri, file.m_game_version, file.m_all_types_file_path);
-        m_tracked_all_types_files[file.m_all_types_uri]->parse_type_system();
-      }
-    }
   } else if (language_id == "opengoal") {
     if (m_tracked_og_files.find(file_uri) != m_tracked_og_files.end()) {
       lg::debug("Already tracking - {}", file_uri);
@@ -344,6 +364,10 @@ void Workspace::start_tracking_file(const LSPSpec::DocumentUri& file_uri,
           version_to_game_name(*game_version));
       const auto project_path =
           file_util::try_get_project_path_from_path(lsp_util::uri_to_path(file_uri));
+      if (!project_path) {
+        lg::debug("unable to find project path, not initializing a compiler");
+        return;
+      }
       lg::debug("Detected project path - {}", project_path.value());
       if (!file_util::setup_project_path(project_path)) {
         lg::debug("unable to setup project path, not initializing a compiler");
@@ -355,16 +379,10 @@ void Workspace::start_tracking_file(const LSPSpec::DocumentUri& file_uri,
       m_compiler_instances.emplace(game_version.value(),
                                    std::make_unique<Compiler>(game_version.value()));
       try {
-        // TODO - this should happen on a separate thread so the LSP is not blocking during this
-        // lengthy step
-        // TODO - make this a setting (disable indexing)
-        // TODO - ask water if there is a fancy way to reduce memory usage (disabling coloring,
-        // etc?)
         m_compiler_instances.at(*game_version)
             ->run_front_end_on_string("(make-group \"all-code\")");
         m_requester.send_progress_finish_request(progress_title, "indexed");
       } catch (std::exception& e) {
-        // TODO - If it fails, annotate errors (DIAGNOSTIC TODO)
         m_requester.send_progress_finish_request(progress_title, "failed");
         lg::debug("error when {}", progress_title);
       }
@@ -385,21 +403,6 @@ void Workspace::update_tracked_file(const LSPSpec::DocumentUri& file_uri,
     lg::debug("updating tracked IR file - {}", file_uri);
     WorkspaceIRFile file(content);
     m_tracked_ir_files[file_uri] = file;
-    // There is the potential for the all-types to have changed, albeit this is probably never going
-    // to happen
-    if (!file.m_all_types_uri.empty() &&
-        m_tracked_all_types_files.count(file.m_all_types_uri) == 0) {
-      auto& all_types_file = m_tracked_all_types_files[file.m_all_types_uri];
-      all_types_file->m_file_path = file.m_all_types_file_path;
-      all_types_file->m_uri = file.m_all_types_uri;
-      all_types_file->m_game_version = file.m_game_version;
-      all_types_file->update_type_system();
-    }
-  } else if (m_tracked_all_types_files.find(file_uri) != m_tracked_all_types_files.end()) {
-    lg::debug("updating tracked all types file - {}", file_uri);
-    // If the all-types file has changed, re-parse it
-    // NOTE - this assumes its still for the same game version!
-    m_tracked_all_types_files[file_uri]->update_type_system();
   } else if (m_tracked_og_files.find(file_uri) != m_tracked_og_files.end()) {
     lg::debug("updating tracked OG file - {}", file_uri);
     m_tracked_og_files[file_uri].parse_content(content);
@@ -441,7 +444,6 @@ void Workspace::update_global_index(const GameVersion game_version) {
 
 void Workspace::stop_tracking_file(const LSPSpec::DocumentUri& file_uri) {
   m_tracked_ir_files.erase(file_uri);
-  m_tracked_all_types_files.erase(file_uri);
   m_tracked_og_files.erase(file_uri);
 }
 
@@ -578,8 +580,19 @@ std::optional<std::string> WorkspaceOGFile::get_symbol_at_position(
 TSNode WorkspaceOGFile::get_node_at_position(const LSPSpec::Position position) const {
   if (m_ast) {
     TSNode root_node = ts_tree_root_node(m_ast.get());
-    return ts_node_descendant_for_point_range(root_node, {position.m_line, position.m_character},
-                                              {position.m_line, position.m_character});
+    TSNode node = ts_node_descendant_for_point_range(
+        root_node, {position.m_line, position.m_character}, {position.m_line, position.m_character});
+
+    // If we are on a paren or space, look slightly to the left
+    if (std::string(ts_node_type(node)) != "sym_name" && position.m_character > 0) {
+      TSNode left_node = ts_node_descendant_for_point_range(
+          root_node, {position.m_line, position.m_character - 1},
+          {position.m_line, position.m_character - 1});
+      if (std::string(ts_node_type(left_node)) == "sym_name") {
+        return left_node;
+      }
+    }
+    return node;
   }
   return {{0, 0, 0, 0}};
 }
@@ -789,15 +802,4 @@ std::optional<std::string> WorkspaceIRFile::get_symbol_at_position(
   }
 
   return {};
-}
-
-void WorkspaceAllTypesFile::parse_type_system() {
-  lg::debug("DTS Loading - '{}'", m_file_path.string());
-  m_dts->parse_type_defs({m_file_path.string()});
-  lg::debug("DTS Loaded At - '{}'", m_file_path.string());
-}
-
-void WorkspaceAllTypesFile::update_type_system() {
-  m_dts = std::make_unique<decompiler::DecompilerTypeSystem>(m_game_version);
-  parse_type_system();
 }

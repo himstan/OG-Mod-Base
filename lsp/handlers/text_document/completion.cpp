@@ -1,5 +1,7 @@
 #include "completion.h"
 
+#include "common/util/ast_util.h"
+
 namespace lsp_handlers {
 
 std::unordered_map<symbol_info::Kind, LSPSpec::CompletionItemKind> completion_item_kind_map = {
@@ -43,30 +45,52 @@ std::optional<json> get_completions(Workspace& workspace, int /*id*/, json param
       if (std::string(ts_node_type(node)) == "list") {
         TSNode first_child = ts_node_child(node, 1);  // index 0 is '(', index 1 is first element
         if (!ts_node_is_null(first_child) && std::string(ts_node_type(first_child)) == "sym_name") {
-          uint32_t start = ts_node_start_byte(first_child);
-          uint32_t end = ts_node_end_byte(first_child);
-          std::string first_elt = tracked_file.m_content.substr(start, end - start);
+          std::string first_elt = ast_util::get_source_code(tracked_file.m_content, first_child);
           if (first_elt == "->") {
             // We are in a (-> ...) form!
-            // Try to find the object being accessed
-            TSNode second_child = ts_node_child(node, 2);
-            if (!ts_node_is_null(second_child) &&
-                std::string(ts_node_type(second_child)) == "sym_name") {
-              uint32_t s2 = ts_node_start_byte(second_child);
-              uint32_t e2 = ts_node_end_byte(second_child);
-              std::string obj_name = tracked_file.m_content.substr(s2, e2 - s2);
+            // Find which argument we are typing
+            int arg_idx = -1;
+            TSNode cursor_node = tracked_file.get_node_at_position(new_position);
+            // If we are at a space, the node might be the list itself or a sibling
+            for (uint32_t i = 0; i < ts_node_child_count(node); i++) {
+              TSNode child = ts_node_child(node, i);
+              if (ts_node_start_byte(child) >= ts_node_start_byte(cursor_node)) {
+                arg_idx = i;
+                break;
+              }
+            }
+            if (arg_idx == -1) {
+              arg_idx = ts_node_child_count(node);
+            }
 
-              // Try to get type of obj_name
+            if (arg_idx >= 3) {
+              // We are typing a field. We need to resolve the type of the thing at arg_idx - 1
+              TSNode obj_node = ts_node_child(node, 2);
+              std::string obj_name = ast_util::get_source_code(tracked_file.m_content, obj_node);
               auto type_info = workspace.get_symbol_typeinfo(tracked_file, obj_name);
               if (type_info) {
-                const auto fields =
-                    workspace.get_field_suggestions(tracked_file, type_info->first.base_type());
-                for (const auto& field : fields) {
-                  LSPSpec::CompletionItem item;
-                  item.label = field.name;
-                  item.kind = LSPSpec::CompletionItemKind::Field;
-                  item.detail = field.type;
-                  items.push_back(item);
+                std::string current_type = type_info->first.base_type();
+                for (int i = 3; i < arg_idx; i++) {
+                  TSNode step_node = ts_node_child(node, i);
+                  std::string step_name = ast_util::get_source_code(tracked_file.m_content, step_node);
+                  auto step_field = workspace.get_field_info(tracked_file, current_type, step_name);
+                  if (step_field) {
+                    current_type = step_field->type;
+                  } else {
+                    current_type = "";
+                    break;
+                  }
+                }
+
+                if (!current_type.empty()) {
+                  const auto fields = workspace.get_field_suggestions(tracked_file, current_type);
+                  for (const auto& field : fields) {
+                    LSPSpec::CompletionItem item;
+                    item.label = field.name;
+                    item.kind = LSPSpec::CompletionItemKind::Field;
+                    item.detail = field.type;
+                    items.push_back(item);
+                  }
                 }
               }
             }

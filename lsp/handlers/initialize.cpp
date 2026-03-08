@@ -12,7 +12,7 @@ std::optional<json> initialize(Workspace& /*workspace*/, int /*id*/, json /*para
 
   json completion_provider{
       {"resolveProvider", false},
-      {"triggerCharacters", {}},
+      {"triggerCharacters", {" "}},
   };
   json signature_help_provider{{"triggerCharacters", ""}};
   json code_lens_provider{{"resolveProvider", false}};

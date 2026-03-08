@@ -10,146 +10,9 @@ bool is_number(const std::string& s) {
 std::vector<std::string> og_method_names = {"new",      "delete", "print",    "inspect",  "length",
                                             "asize-of", "copy",   "relocate", "mem-usage"};
 
-std::optional<LSPSpec::Hover> hover_handler_ir(Workspace& workspace,
-                                               const LSPSpec::TextDocumentPositionParams& params,
-                                               const WorkspaceIRFile& tracked_file) {
-  // See if it's an OpenGOAL symbol or a MIPS mnemonic
-  auto symbol_name = tracked_file.get_symbol_at_position(params.m_position);
-  auto token_at_pos = tracked_file.get_mips_instruction_at_position(params.m_position);
-  if (!symbol_name && !token_at_pos) {
-    return {};
-  }
-
-  LSPSpec::MarkupContent markup;
-  markup.m_kind = "markdown";
-
-  // TODO - try specifying the range so it highlights everything, ie. `c.lt.s`
-  // Prefer symbols
-  if (symbol_name) {
-    lg::debug("hover - symbol match - {}", symbol_name.value());
-    auto symbol_info = workspace.get_definition_info_from_all_types(symbol_name.value(),
-                                                                    tracked_file.m_all_types_uri);
-    if (symbol_info && symbol_info.value().docstring.has_value()) {
-      std::string docstring = symbol_info.value().docstring.value();
-      lg::debug("hover - symbol has docstring - {}", docstring);
-      // A docstring exists, print it!
-      // By convention, docstrings are assumed to be markdown, they support code-blocks everything
-      // the only thing extra we do, is replace [[<symbol>]] with links if available
-      std::unordered_map<std::string, std::string> symbol_replacements = {};
-      std::smatch match;
-
-      std::string::const_iterator searchStart(docstring.cbegin());
-      while (
-          std::regex_search(searchStart, docstring.cend(), match, std::regex("\\[{2}(.*)\\]{2}"))) {
-        // Have we already accounted for this symbol?
-        const auto& name = match[1].str();
-        if (symbol_replacements.count(name) != 0) {
-          continue;
-        }
-        // Get this symbols info
-        auto symbol_info =
-            workspace.get_definition_info_from_all_types(name, tracked_file.m_all_types_uri);
-        if (!symbol_info) {
-          symbol_replacements[name] = fmt::format("_{}_", name);
-        } else {
-          // Construct path
-          auto symbol_uri =
-              fmt::format("{}#L{}%2C{}", tracked_file.m_all_types_uri,
-                          symbol_info.value().definition_info->line_idx_to_display + 1,
-                          symbol_info.value().definition_info->pos_in_line);
-          symbol_replacements[name] = fmt::format("[{}]({})", name, symbol_uri);
-        }
-        searchStart = match.suffix().first;
-      }
-      // Replace all symbol occurences
-      for (const auto& [key, val] : symbol_replacements) {
-        docstring = std::regex_replace(docstring, std::regex("\\[{2}" + key + "\\]{2}"), val);
-      }
-
-      markup.m_value = docstring;
-      LSPSpec::Hover hover_resp;
-      hover_resp.m_contents = markup;
-      return hover_resp;
-    } else if (!token_at_pos) {
-      // Check if it's a number, and if so we'll do some numeric conversions
-      if (!is_number(symbol_name.value())) {
-        return {};
-      }
-      lg::debug("hover - numeric match - {}", symbol_name.value());
-      // Construct the body
-      std::string body = "";
-      uint32_t num = std::atoi(symbol_name.value().data());
-      // Assuming it comes in as Decimal
-      body += "| Base    | Value |\n";
-      body += "|---------|-------|\n";
-      body += fmt::format("| Decimal        | `{:d}` |\n", num);
-      body += fmt::format("| Hex            | `{:X}` |\n", num);
-      // TODO - would be nice to format as groups of 4
-      body += fmt::format("| Binary         | `{:b}` |\n", num);
-      if (num >= 16 && (num - 16) % 4 == 0) {
-        uint32_t method_id = (num - 16) / 4;
-        std::string method_name = "not built-in";
-        if (method_id <= 8) {
-          method_name = og_method_names.at(method_id);
-        }
-        body += fmt::format("| Method ID   | `{}` - `{}` |\n", method_id, method_name);
-      }
-      body += fmt::format("| Octal          | `{:o}` |\n", num);
-
-      markup.m_value = body;
-      LSPSpec::Hover hover_resp;
-      hover_resp.m_contents = markup;
-      return hover_resp;
-    }
-  }
-
-  // Otherwise, maybe it's a MIPS instruction
-  if (token_at_pos) {
-    lg::debug("hover - token match - {}", token_at_pos.value());
-    auto& token = token_at_pos.value();
-    std::transform(token.begin(), token.end(), token.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    // Find the instruction, there are some edge-cases here where they could be multiple
-    // TODO - havn't addressed `bc` and such instructions!  Those need to be prefixed matched
-    std::vector<std::string> ee_instructions = {};
-    std::vector<std::string> vu_instructions = {};
-    for (const auto& instr : LSPData::MIPS_INSTRUCTION_LIST) {
-      auto mnemonic_lower = instr.mnemonic;
-      std::transform(mnemonic_lower.begin(), mnemonic_lower.end(), mnemonic_lower.begin(),
-                     [](unsigned char c) { return std::tolower(c); });
-      if (mnemonic_lower == token) {
-        if (instr.type == "ee") {
-          ee_instructions.push_back(fmt::format("- _{}_\n\n", instr.description));
-        } else {
-          vu_instructions.push_back(fmt::format("- _{}_\n\n", instr.description));
-        }
-      }
-    }
-
-    // Construct the body
-    std::string body = "";
-    if (!ee_instructions.empty()) {
-      body += "**EE Instructions**\n\n";
-      for (const auto& instr : ee_instructions) {
-        body += instr;
-      }
-      body += "___\n\n";
-    }
-
-    if (!vu_instructions.empty()) {
-      body += "**VU Instructions**\n\n";
-      for (const auto& instr : vu_instructions) {
-        body += instr;
-      }
-      body += "___\n\n";
-    }
-
-    markup.m_value = body;
-    LSPSpec::Hover hover_resp;
-    hover_resp.m_contents = markup;
-    return hover_resp;
-  }
-
+std::optional<LSPSpec::Hover> hover_handler_ir(Workspace& /*workspace*/,
+                                               const LSPSpec::TextDocumentPositionParams& /*params*/,
+                                               const WorkspaceIRFile& /*tracked_file*/) {
   return {};
 }
 
@@ -187,50 +50,78 @@ std::optional<json> hover(Workspace& workspace, int /*id*/, json raw_params) {
 
     // Check if we are on a field in a (-> ...) form
     TSNode node = tracked_file.get_node_at_position(params.m_position);
+    
+    // Normalize: if we are on a sym_name, move up to sym_lit if it exists
     if (!ts_node_is_null(node) && std::string(ts_node_type(node)) == "sym_name") {
       TSNode parent = ts_node_parent(node);
-      if (!ts_node_is_null(parent) && std::string(ts_node_type(parent)) == "list") {
-        TSNode first_child = ts_node_child(parent, 1);
-        if (!ts_node_is_null(first_child)) {
-          std::string first_elt = ast_util::get_source_code(tracked_file.m_content, first_child);
+      if (!ts_node_is_null(parent) && std::string(ts_node_type(parent)) == "sym_lit") {
+        node = parent;
+      }
+    }
+
+    TSNode curr = node;
+    int depth = 0;
+    while (!ts_node_is_null(curr) && depth < 3) {
+      std::string curr_type = ts_node_type(curr);
+      lg::debug("hover - climbing depth {}: type={}", depth, curr_type);
+      if (curr_type == "list" || curr_type == "form" || curr_type == "list_lit" || curr_type == "form_lit") {
+        TSNode first_symbol = {{0, 0, 0, 0}};
+        uint32_t search_limit = std::min(ts_node_child_count(curr), (uint32_t)3);
+        for (uint32_t i = 0; i < search_limit; i++) {
+          TSNode child = ts_node_child(curr, i);
+          std::string c_type = ts_node_type(child);
+          if (c_type == "sym_name" || c_type == "sym_lit") {
+            first_symbol = child;
+            break;
+          }
+        }
+
+        if (!ts_node_is_null(first_symbol)) {
+          std::string first_elt = ast_util::get_source_code(tracked_file.m_content, first_symbol);
+          lg::debug("hover - first element in form: {}", first_elt);
           if (first_elt == "->") {
-            // Find our index in the list
-            int my_idx = -1;
-            for (uint32_t i = 0; i < ts_node_child_count(parent); i++) {
-              if (ts_node_eq(ts_node_child(parent, i), node)) {
-                my_idx = i;
-                break;
+            lg::debug("hover - found -> operator");
+            std::vector<TSNode> sym_nodes;
+            int my_sym_idx = -1;
+            for (uint32_t i = 0; i < ts_node_child_count(curr); i++) {
+              TSNode child = ts_node_child(curr, i);
+              std::string c_type = ts_node_type(child);
+              if (c_type == "sym_name" || c_type == "sym_lit") {
+                if (ts_node_eq(child, node)) {
+                  my_sym_idx = (int)sym_nodes.size();
+                }
+                sym_nodes.push_back(child);
               }
             }
+            lg::debug("hover - my symbol index in form: {}", my_sym_idx);
 
-            if (my_idx >= 2) {
-              // The object or field providing our type is at my_idx - 1
-              TSNode prev_node = ts_node_child(parent, my_idx - 1);
-              std::string prev_name = ast_util::get_source_code(tracked_file.m_content, prev_node);
-
+            if (my_sym_idx >= 2) { // 0 is ->, 1 is obj, 2+ are fields
               std::string parent_type_name;
-              if (my_idx == 2) {
-                // Direct access from a global/local variable
-                auto type_info = workspace.get_symbol_typeinfo(tracked_file, prev_name);
-                if (type_info) {
-                  parent_type_name = type_info->first.base_type();
-                }
-              } else {
-                // Nested access: (-> obj f1 f2 ... prev node)
-                // We need to resolve the chain up to prev_node
-                TSNode obj_node = ts_node_child(parent, 2);
+              if (my_sym_idx == 2) {
+                TSNode obj_node = sym_nodes[1];
                 std::string obj_name = ast_util::get_source_code(tracked_file.m_content, obj_node);
+                lg::debug("hover - resolving root object: {}", obj_name);
                 auto type_info = workspace.get_symbol_typeinfo(tracked_file, obj_name);
                 if (type_info) {
                   parent_type_name = type_info->first.base_type();
-                  for (int i = 3; i < my_idx; i++) {
-                    TSNode step_node = ts_node_child(parent, i);
-                    std::string step_name =
-                        ast_util::get_source_code(tracked_file.m_content, step_node);
+                  lg::debug("hover - root object type: {}", parent_type_name);
+                }
+              } else {
+                TSNode obj_node = sym_nodes[1];
+                std::string obj_name = ast_util::get_source_code(tracked_file.m_content, obj_node);
+                lg::debug("hover - resolving nested chain starting at: {}", obj_name);
+                auto type_info = workspace.get_symbol_typeinfo(tracked_file, obj_name);
+                if (type_info) {
+                  parent_type_name = type_info->first.base_type();
+                  for (int i = 2; i < my_sym_idx; i++) {
+                    std::string step_name = ast_util::get_source_code(tracked_file.m_content, sym_nodes[i]);
+                    lg::debug("hover - resolving step {}: {} in type {}", i-1, step_name, parent_type_name);
                     auto step_field = workspace.get_field_info(tracked_file, parent_type_name, step_name);
                     if (step_field) {
                       parent_type_name = step_field->type;
+                      lg::debug("hover - step {} resolved to type: {}", i-1, parent_type_name);
                     } else {
+                      lg::debug("hover - step {} FAILED", i-1);
                       parent_type_name = "";
                       break;
                     }
@@ -240,6 +131,15 @@ std::optional<json> hover(Workspace& workspace, int /*id*/, json raw_params) {
 
               if (!parent_type_name.empty()) {
                 std::string field_name = ast_util::get_source_code(tracked_file.m_content, node);
+                if (std::string(ts_node_type(node)) == "sym_lit" && ts_node_child_count(node) > 0) {
+                   for(uint32_t k=0; k < ts_node_child_count(node); k++) {
+                      if(std::string(ts_node_type(ts_node_child(node, k))) == "sym_name") {
+                         field_name = ast_util::get_source_code(tracked_file.m_content, ts_node_child(node, k));
+                         break;
+                      }
+                   }
+                }
+
                 auto field_info = workspace.get_field_info(tracked_file, parent_type_name, field_name);
                 if (field_info) {
                   LSPSpec::MarkupContent markup;
@@ -256,9 +156,12 @@ std::optional<json> hover(Workspace& workspace, int /*id*/, json raw_params) {
                 }
               }
             }
+            break;
           }
         }
       }
+      curr = ts_node_parent(curr);
+      depth++;
     }
 
     if (!symbol) {
@@ -308,7 +211,7 @@ std::optional<json> hover(Workspace& workspace, int /*id*/, json raw_params) {
             fmt::format(": {}", symbol_info.value()->m_method_info.type.last_arg().base_type());
       }
     } else if (type_info) {
-      signature += fmt::format(": {}", type_info->second->get_parent());
+      signature += fmt::format(": {}", type_info->first.print());
     }
 
     std::string body = fmt::format("```opengoal\n{}\n```\n\n", signature);

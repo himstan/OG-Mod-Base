@@ -143,6 +143,15 @@ void SymbolInfoMap::add_type(const std::string& name,
           .is_dynamic = field.is_dynamic(),
           .is_inline = field.is_inline(),
       };
+      if (type_info->m_field_metadata.count(field.name())) {
+        const auto& meta = type_info->m_field_metadata.at(field.name());
+        DefinitionLocation def_loc;
+        def_loc.file_path =
+            file_util::convert_to_unix_path_separators(meta.definition_info->filename);
+        def_loc.line_idx = meta.definition_info->line_idx_to_display;
+        def_loc.char_idx = meta.definition_info->pos_in_line;
+        field_info.m_def_location = def_loc;
+      }
       info.m_type_fields.push_back(field_info);
     }
   }
