@@ -22,52 +22,72 @@ struct RemoteEntityState {
   uint32_t last_sequence_num = 0;
 };
 
-struct MultiplayerInfoGOAL {
-  float local_x, local_y, local_z, local_angle;
-  float remote_x, remote_y, remote_z, remote_angle;
-  uint32_t remote_id;
-  int32_t remote_role;
-  int32_t remote_anim;
-  int32_t local_anim;
-  uint32_t local_level;
-  uint32_t remote_level;
-  int32_t remote_status;
-  int32_t local_role;
-  float local_anim_frame;
-  float remote_anim_frame;
-  uint32_t local_packet_id;
-  uint32_t remote_packet_id;
-  uint32_t in_event_type;
-  uint32_t in_event_aid;
-  uint32_t in_event_seq;
-  uint32_t out_event_type;
-  uint32_t out_event_aid;
-  uint32_t out_event_seq;
-  float host_money;
-  float host_gems;
-  float host_skill;
-  float client_sync_money;
-  float client_sync_gems;
-  float client_sync_skill;
-  uint32_t client_sync_flag;
-  uint32_t host_task;
-  uint32_t host_node;
-  char host_continue[32];
-  uint8_t task_mask[64];
-  uint32_t sync_aids_count;
+struct MPEvent {
+  uint32_t etype;
+  uint32_t aid;
+  uint8_t pad[8];
+};
+
+struct MPEventBufferGOAL {
+  uint32_t out_count;
+  uint8_t pad1[12];
+  MPEvent out_events[16];
+  uint32_t in_count;
+  uint8_t pad2[12];
+  MPEvent in_events[16];
+};
+
+struct RemotePlayerInfoGOAL {
+  float x, y, z, angle;
+  uint32_t id;
+  int32_t role;
+  int32_t anim;
+  float anim_frame;
+  uint32_t level;
+  int32_t status;
+  uint32_t packet_id;
   uint32_t riding;
-  uint32_t enemy_count;
-  uint8_t enemies_pad[8];
-  MPEnemyState enemies[24];
-  uint64_t player_procs[2];
-  uint32_t sync_aids[128];
   int32_t sidekick_anim;
   float sidekick_frame;
-  uint8_t sync_clock_pad[8];
-  uint64_t sync_clock;
-  uint8_t sync_scene_name[32];
-  uint32_t sync_scene_active;
-  uint8_t pad[20];
+  uint64_t clock;
+  uint8_t scene_name[32];
+  uint32_t scene_active;
+  uint8_t pad[12];
+};
+
+struct LocalPlayerInfoGOAL {
+  float x, y, z, angle;
+  int32_t role;
+  int32_t anim;
+  float anim_frame;
+  uint32_t level;
+  uint32_t packet_id;
+  uint32_t riding;
+  int32_t sidekick_anim;
+  float sidekick_frame;
+  uint64_t clock;
+  // Padding for legacy event fields (24 bytes)
+  uint8_t pad_events[24];
+  // Global World Sync (Outgoing)
+  float money;
+  float gems;
+  float skill;
+  // Global World Sync (Incoming)
+  float sync_money;
+  float sync_gems;
+  float sync_skill;
+  uint32_t sync_flag;
+  uint32_t host_task;
+  uint32_t host_node;
+  uint8_t host_continue[32];
+  uint8_t task_mask[64];
+  uint32_t sync_aids_count;
+  uint32_t sync_aids[128];
+  // AI / Enemy Sync
+  uint32_t enemy_count;
+  uint8_t pad_enemy[12];
+  MPEnemyState enemies[24];
+  uint64_t player_procs[2];
 };
 
 struct MultiplayerData {

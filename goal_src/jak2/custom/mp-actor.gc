@@ -85,7 +85,7 @@
     (case message
       (('attack)
        ;; If we are riding, or if any level is loading, ignore all attacks on the proxy
-       (if (or (nonzero? (-> *multi-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
+       (if (or (nonzero? (-> *remote-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
            (return #f))
 
        ;; Relay damage to the network!
@@ -113,8 +113,8 @@
     ;; 1. Position Sync
     (cond
       ((and (= (-> self remote-role) 1)
-            (= (-> *multi-info* riding?) 1)
-            (= (-> *multi-info* local-role) 0)
+            (= (-> *remote-info* riding?) 1)
+            (mp-is-jak?)
             *target*
             (nonzero? (-> *target* control))
             (nonzero? (-> *target* node-list))
@@ -132,8 +132,9 @@
 
     ;; 3. Dynamic Collision: Disable solid if riding or if representation of same team
     (let ((cshape (the-as collide-shape-moving (-> self root))))
-      (if (or (= (-> *multi-info* riding?) 1)
-              (and (= (-> *multi-info* local-role) 1) (= (-> self remote-role) 1)))
+      (if (or (= (-> *remote-info* riding?) 1)
+              (and (mp-is-daxter?) (= (-> self remote-role) 1)))
+
           (set! (-> cshape root-prim prim-core action) (collide-action)) ;; Non-solid
           (set! (-> cshape root-prim prim-core action) (collide-action solid)) ;; Solid
           ))
@@ -155,9 +156,9 @@
            (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
 
            ;; 2. Animation Logic
-           (let ((anim-idx (-> *multi-info* remote-anim))
-                 (anim-frame (-> *multi-info* remote-anim-frame))
-                 (packet-id (-> *multi-info* remote-packet-id))
+           (let ((anim-idx (-> *remote-info* anim))
+                 (anim-frame (-> *remote-info* anim-frame))
+                 (packet-id (-> *remote-info* packet-id))
                  (parent-proc (the-as mp-manager (ppointer->process (-> self parent)))))
 
              (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
@@ -180,9 +181,9 @@
 
            ;; 2. Logic for Ride-Along model visibility
            (cond
-             ((= (-> *multi-info* local-role) 0)
+             ((mp-is-jak?)
               ;; I am Jak (Host):
-              (if (= (-> *multi-info* riding?) 1)
+              (if (= (-> *remote-info* riding?) 1)
                   ;; Hide the remote Daxter puppet (using local sidekick instead)
                   (logior! (-> self draw status) (draw-control-status no-draw))
                   ;; Show the remote Daxter puppet
@@ -271,9 +272,9 @@
                 ;; Update existing manipy
                 (let ((mp (the-as manipy m)))
                   (cond
-                    ((and (= (-> self remote-role) 1) (= (-> *multi-info* riding?) 1))
+                    ((and (= (-> self remote-role) 1) (= (-> *remote-info* riding?) 1))
                      ;; Daxter is riding. Snap to Host Jak's joint if we are the host.
-                     (if (and (= (-> *multi-info* local-role) 0)
+                     (if (and (mp-is-jak?)
                               *target*
                               (nonzero? (-> *target* control))
                               (nonzero? (-> *target* node-list))

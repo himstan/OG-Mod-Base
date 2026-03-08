@@ -79,7 +79,7 @@ tasks:
       - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
-      - "{{.GK_BIN_RELEASE_DIR}}/gk --port 8120 -v --game {{.GAME}} -- -fakeiso -debug"
+      - "{{.GK_BIN_RELEASE_DIR}}/gk --port 8120 -v --game {{.GAME}} -- -fakeiso -debug -mp-client 127.0.0.1"
   # DEVELOPMENT
   gen-cmake:
     desc: "Generate the CMake"

@@ -378,7 +378,7 @@
         )
 
       ;; MULTIPLAYER OVERRIDE
-      (if (and *multi-info* (= (-> *multi-info* local-role) 1) (= (-> *multi-info* riding?) (the-as uint 1)))
+      (if (and *local-info* (= (-> *local-info* role) 1) (= (-> *local-info* riding?) (the-as uint 1)))
           (let ((idx (mp-sidekick-anim)))
             (if (and (>= idx 0) (< idx (-> self draw art-group length)))
                 (let ((anim-elt (-> self draw art-group data idx)))

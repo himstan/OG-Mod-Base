@@ -283,7 +283,6 @@
      )
     (('waiting-for-daxter) ;; This state is now bypassed
      (pc-multi-setup-host)
-     (set! (-> *multi-info* local-role) 0)
      (set! (-> obj current-options) *waiting-for-daxter-options-pc*)
      )
     (('title-options)

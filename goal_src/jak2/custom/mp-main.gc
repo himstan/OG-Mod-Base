@@ -24,18 +24,35 @@
         (return #f))
     (set! *multi-last-sync-frame* now))
 
-  ;; 0. ALWAYS Receive from C++ bridge (60FPS for low latency)
-  (pc-multi-sync-data (the-as uint *multi-info*) (the-as uint 1))
+  ;; GLOBAL GUARD: Ensure all MP data structures are initialized
+  (if (or (not *local-info*) (not *remote-info*) (not *mp-event-buffer*))
+      (return #f))
+
+  ;; 0. ALWAYS Poll and Receive (60FPS for low latency) - GUARDED
+  (let ((status (pc-multi-get-status)))
+    (if (or (= status 3) (= status 4)) ;; Connecting or Connected
+        (begin
+          (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
+          (pc-multi-receive-state (the-as uint *remote-info*))
+          (pc-multi-receive-events (the-as uint *mp-event-buffer*))
+          (set! (-> *local-info* role) (pc-multi-get-role))
+          )
+        (begin
+          (set! (-> *local-info* role) -1)
+          (return #f)
+          )
+        )
+    )
 
   ;; Update Host Clock BEFORE sync
-  (if (= (-> *multi-info* local-role) 0)
-      (set! (-> *multi-info* sync-clock) (current-time)))
+  (if (mp-is-jak?)
+      (set! (-> *local-info* clock) (current-time)))
 
   ;; Update Client Clock AFTER sync - GUARDED to avoid black screen during load
-  (if (and (= (-> *multi-info* local-role) 1)
-           (zero? (-> *multi-info* client-sync-flag))
+  (if (and (mp-is-daxter?)
+           (zero? (-> *local-info* sync-flag))
            *target*)
-      (let ((host-clock (-> *multi-info* sync-clock)))
+      (let ((host-clock (-> *local-info* clock)))
         ;; Only sync if Host clock is AHEAD of local clock to avoid jittering/stalling
         (when (and (nonzero? host-clock) (> host-clock (current-time)))
           ;; Synchronize display clocks
@@ -54,17 +71,17 @@
     (set! *mp-hijacks-applied?* #t))
 
   ;; 1. Handle Full Sync State Machine (MUST BE ABOVE GUARDS)
-  (when (and (= (-> *multi-info* local-role) 1) (nonzero? (-> *multi-info* client-sync-flag)))
-    (case (-> *multi-info* client-sync-flag)
+  (when (and (mp-is-daxter?) (nonzero? (-> *local-info* sync-flag)))
+    (case (-> *local-info* sync-flag)
       ((1) ;; Phase 1: Request Hard Load
        (format 0 "[MP-Client] Starting Full Sync Hard Load...~%")
        (let ((dst (-> *mp-continue-name* data))
-             (src (-> *multi-info* host-continue)))
+             (src (-> *local-info* host-continue)))
          (dotimes (i 32) (set! (-> dst i) (-> src i))))
        (when (nonzero? (length *mp-continue-name*))
          (set-continue! *game-info* *mp-continue-name* #t)
          (initialize! *game-info* 'game (the-as game-save #f) *mp-continue-name*)
-         (set! (-> *multi-info* client-sync-flag) (the-as uint 2))
+         (set! (-> *local-info* sync-flag) (the-as uint 2))
          )
        )
       ((2) ;; Phase 2: Wait for Load & Level Paging
@@ -72,7 +89,7 @@
          (when cont
            (let ((lev (level-get *level* (-> cont level))))
              (when (and lev (nonzero? lev) (= (-> lev status) 'active) (= (-> *level* loading-level) (-> *level* default-level)))
-               (set! (-> *multi-info* client-sync-flag) (the-as uint 3))
+               (set! (-> *local-info* sync-flag) (the-as uint 3))
                )
              )
            )
@@ -81,20 +98,20 @@
       ((3) ;; Phase 3: Apply Data (Once target exists and levels are active)
        (when (and *target* (-> *target* control))
          (format 0 "[MP-Client] Paging Complete. Applying World State for Level ~S...~%" *mp-continue-name*)
-         (set! (-> *game-info* money) (-> *multi-info* client-sync-money))
-         (set! (-> *game-info* gem) (-> *multi-info* client-sync-gems))
-         (set! (-> *game-info* skill) (-> *multi-info* client-sync-skill))
+         (set! (-> *game-info* money) (-> *local-info* sync-money))
+         (set! (-> *game-info* gem) (-> *local-info* sync-gems))
+         (set! (-> *game-info* skill) (-> *local-info* sync-skill))
 
-         (let ((h-task (-> *multi-info* host-task)))
+         (let ((h-task (-> *local-info* host-task)))
            (if (nonzero? h-task)
                (task-node-close! (the-as game-task-node h-task))))
 
          ;; Sync AIDs (Orbs, etc.)
-         (let ((count (-> *multi-info* sync-aids-count)))
+         (let ((count (-> *local-info* sync-aids-count)))
            (if (> count 128) (set! count (the-as uint 128)))
            (format 0 "[MP-Client] Marking ~D actors as dead in fresh perm-list...~%" count)
            (dotimes (i (the-as int count))
-             (let ((aid (-> *multi-info* sync-aids i)))
+             (let ((aid (-> *local-info* sync-aids i)))
                ;; 1. Inject into Global Perm-List
                (let ((perm (actor-perm *game-info* (the-as actor-id aid))))
                  (cond
@@ -127,13 +144,13 @@
                                        (deactivate proc)))))))))))))))
 
          ;; FINAL TELEPORT: Snap to Host's exact position
-         (format 0 "[MP-Client] Snap-Teleport to Host: ~F ~F ~F~%" (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z))
-         (set! (-> *target* control trans x) (-> *multi-info* remote-x))
-         (set! (-> *target* control trans y) (-> *multi-info* remote-y))
-         (set! (-> *target* control trans z) (-> *multi-info* remote-z))
+         (format 0 "[MP-Client] Snap-Teleport to Host: ~F ~F ~F~%" (-> *remote-info* x) (-> *remote-info* y) (-> *remote-info* z))
+         (set! (-> *target* control trans x) (-> *remote-info* x))
+         (set! (-> *target* control trans y) (-> *remote-info* y))
+         (set! (-> *target* control trans z) (-> *remote-info* z))
          (set-setting! 'allow-recharge #f 0.0 0)
 
-         (set! (-> *multi-info* client-sync-flag) (the-as uint 0))
+         (set! (-> *local-info* sync-flag) (the-as uint 0))
          (format 0 "[MP-Client] Join Handshake & Level Alignment Successful!~%")
          )
        )
@@ -150,36 +167,36 @@
 
   ;; 3. Update Local Data
   (let ((in-scene? (not (not *scene-player*))))
-    (when (and (= (-> *multi-info* local-role) 1)
+    (when (and (mp-is-daxter?)
                *mp-last-scene-player*
                (not in-scene?))
       (format 0 "[MP] Scene ended. Re-entering ride-along...~%")
       (set! *has-ridden-before?* #f))
     (set! *mp-last-scene-player* in-scene?))
 
-  (set! (-> *multi-info* host-money) (-> *game-info* money))
-  (set! (-> *multi-info* host-gems) (-> *game-info* gem))
-  (set! (-> *multi-info* host-skill) (-> *game-info* skill))
+  (set! (-> *local-info* money) (-> *game-info* money))
+  (set! (-> *local-info* gems) (-> *game-info* gem))
+  (set! (-> *local-info* skill) (-> *game-info* skill))
 
-  (when (and (= (-> *multi-info* local-role) 1))
+  (when (and (mp-is-daxter?))
     (if *local-riding?*
-      (set! (-> *multi-info* riding?) (the-as uint 1))
-      (set! (-> *multi-info* riding?) (the-as uint 0)))
+      (set! (-> *local-info* riding?) (the-as uint 1))
+      (set! (-> *local-info* riding?) (the-as uint 0)))
   )
 
-  ;; Only prepare and SEND data if timer expired (10TPS)
-  (when (>= (- (current-time) *multi-last-send-time*) (seconds 0.1))
+  ;; Only prepare and SEND data if timer expired
+  (when (>= (- (current-time) *multi-last-send-time*) (/ (seconds 1) *multi-sync-tps*))
     (set! *multi-last-send-time* (current-time))
     
     ;; Extraction of dead/collected aids (HOST ONLY)
-    (if (= (-> *multi-info* local-role) 0)
+    (if (mp-is-jak?)
         (begin
           (mp-sync-enemies-host)
           (let ((count 0))
             ;; 1. Global Task State (Shelved)
 
             ;; 2. Continue Point Sync
-            (let ((dst (-> *multi-info* host-continue)))
+            (let ((dst (-> *local-info* host-continue)))
               (dotimes (i 32) (set! (-> dst i) (the-as uint 0))) ;; Clear first
               (let ((cont (-> *game-info* current-continue)))
                 (if (and cont (nonzero? cont))
@@ -196,7 +213,7 @@
                 (dotimes (i (-> perm-array length))
                   (let ((perm (-> perm-array data i)))
                     (when (logtest? (-> perm status) (entity-perm-status dead))
-                      (set! (-> *multi-info* sync-aids count) (the-as uint (-> perm aid)))
+                      (set! (-> *local-info* sync-aids count) (the-as uint (-> perm aid)))
                       (+! count 1)
                       (if (>= count 120) (goto full-buffer)))))))
 
@@ -214,33 +231,33 @@
                                       (and proc (nonzero? proc) (type? proc enemy) (logtest? (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))))
                               (let ((already-in? #f))
                                 (dotimes (j count)
-                                  (if (= (-> *multi-info* sync-aids j) (the-as uint (-> ent aid)))
+                                  (if (= (-> *local-info* sync-aids j) (the-as uint (-> ent aid)))
                                       (set! already-in? #t)))
                                 (when (not already-in?)
-                                  (set! (-> *multi-info* sync-aids count) (the-as uint (-> ent aid)))
+                                  (set! (-> *local-info* sync-aids count) (the-as uint (-> ent aid)))
                                   (+! count 1)
                                   (if (>= count 120) (goto full-buffer)))))))))))))
 
             (label full-buffer)
-            (set! (-> *multi-info* sync-aids-count) (the-as uint count)))))
+            (set! (-> *local-info* sync-aids-count) (the-as uint count)))))
 
-    (set! (-> *multi-info* local-x) (-> *target* control trans x))
-    (set! (-> *multi-info* local-y) (-> *target* control trans y))
-    (set! (-> *multi-info* local-z) (-> *target* control trans z))
-    (set! (-> *multi-info* local-angle) (quaternion-y-angle (-> *target* control quat)))
+    (set! (-> *local-info* x) (-> *target* control trans x))
+    (set! (-> *local-info* y) (-> *target* control trans y))
+    (set! (-> *local-info* z) (-> *target* control trans z))
+    (set! (-> *local-info* angle) (quaternion-y-angle (-> *target* control quat)))
 
     ;; Hash the level name
-    (set! (-> *multi-info* local-level) (the-as uint 0))
+    (set! (-> *local-info* level) (the-as uint 0))
     (let ((lev (-> *level* level 0)))
       (if (and lev (nonzero? lev) (= (-> lev status) 'active))
           (let ((lev-name (-> lev name)))
             (if (and lev-name (nonzero? lev-name))
-                (set! (-> *multi-info* local-level) (string-crc32 (symbol->string lev-name)))))))
+                (set! (-> *local-info* level) (string-crc32 (symbol->string lev-name)))))))
     (let ((local-anim -1)
           (local-frame 0.0))
       (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)) (> (-> *target* skel allocated-length) 0))
           (let ((skel (-> *target* skel)))
-            (if (= (-> *multi-info* local-role) 1)
+            (if (mp-is-daxter?)
                 (let ((chan (-> skel channel 0)))
                   (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
                       (begin
@@ -259,33 +276,36 @@
                       (begin
                         (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
                         (set! local-frame (-> skel channel 0 frame-num))))))))
-      (set! (-> *multi-info* local-anim) local-anim)
-      (set! (-> *multi-info* local-anim-frame) local-frame)
-      (+! (-> *multi-info* local-packet-id) 1))
+      (set! (-> *local-info* anim) local-anim)
+      (set! (-> *local-info* anim-frame) local-frame)
+      (+! (-> *local-info* packet-id) 1))
 
-    ;; Event Pusher (One per frame to ensure bridge catches it)
-    (if (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*)
-        (begin
-          (let ((idx *mp-event-queue-read-ptr*))
-            (set! (-> *multi-info* out-event-type) (-> *mp-event-queue* idx etype))
-            (set! (-> *multi-info* out-event-aid) (-> *mp-event-queue* idx aid))
-            (1+! (-> *multi-info* out-event-seq))
-            (set! *mp-event-queue-read-ptr* (logand (+ idx 1) 31)))))
+    ;; Event Pusher (Batch all queued events into the bridge buffer)
+    (let ((out-idx 0))
+      (while (and (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*) (< out-idx 16))
+        (let ((q-idx *mp-event-queue-read-ptr*))
+          (set! (-> *mp-event-buffer* out-events out-idx etype) (-> *mp-event-queue* q-idx etype))
+          (set! (-> *mp-event-buffer* out-events out-idx aid) (-> *mp-event-queue* q-idx aid))
+          (set! *mp-event-queue-read-ptr* (logand (+ q-idx 1) 31))
+          (1+! out-idx)))
+      (if (> out-idx 0) (format 0 "[MP] Sending ~D batched events to bridge~%" out-idx))
+      (set! (-> *mp-event-buffer* out-count) (the-as uint out-idx)))
 
     ;; ACTUALLY SEND
-    (pc-multi-sync-data (the-as uint *multi-info*) (the-as uint 2))
+    (pc-multi-send-state (the-as uint *local-info*))
+    (pc-multi-send-events (the-as uint *mp-event-buffer*))
     ) ;; End of 10TPS Send Block
 
-  (if (!= (-> *multi-info* in-event-seq) *multi-last-in-event-seq*)
-      (begin
-        (format 0 "[MP] Event received! Seq: ~D (Last: ~D), Type: ~D, AID: ~D~%"
-                (-> *multi-info* in-event-seq) *multi-last-in-event-seq* (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))
-        (set! *multi-last-in-event-seq* (-> *multi-info* in-event-seq))
-        (mp-receive-world-event (-> *multi-info* in-event-type) (-> *multi-info* in-event-aid))))
+  ;; Process Inbound Events (Batch)
+  (dotimes (i (the-as int (-> *mp-event-buffer* in-count)))
+    (let ((evt (-> *mp-event-buffer* in-events i)))
+      (format 0 "[MP] Event received! Type: ~D, AID: ~D~%" (-> evt etype) (-> evt aid))
+      (mp-receive-world-event (-> evt etype) (-> evt aid))))
+  (set! (-> *mp-event-buffer* in-count) (the-as uint 0))
 
 
   (if (and *target* (nonzero? *target*)
-           (= (-> *multi-info* local-role) 1)
+           (mp-is-daxter?)
            (not (logtest? (-> *target* focus-status) (focus-status indax)))
            (not (logtest? (-> *target* focus-status) (focus-status teleporting)))
            (and *level* (nonzero? *level*) (zero? (the-as uint (-> *level* loading-level))))
@@ -297,35 +317,35 @@
         (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
         (target-indax-init #t)))
 
-  (if (= (-> *multi-info* local-role) 1)
+  (if (mp-is-daxter?)
       (begin
         ;; Update player-procs handles for AI targeting
-        (let ((loc-role (-> *multi-info* local-role))
-              (rem-role (if (= (-> *multi-info* local-role) 0) 1 0)))
-          (set! (-> *multi-info* player-procs loc-role) (process->handle *target*))
+        (let ((loc-role (-> *local-info* role))
+              (rem-role (if (mp-is-jak?) 1 0)))
+          (set! (-> *local-info* player-procs loc-role) (process->handle *target*))
           (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
             (if (and rem-mgr (nonzero? rem-mgr))
-                (set! (-> *multi-info* player-procs rem-role) (-> rem-mgr proxy-proc))
-                (set! (-> *multi-info* player-procs rem-role) (the-as handle #f)))))
+                (set! (-> *local-info* player-procs rem-role) (-> rem-mgr proxy-proc))
+                (set! (-> *local-info* player-procs rem-role) (the-as handle #f)))))
 
         (mp-sync-enemies-client)
         (if (and *target* (-> *target* draw))
             (logclear! (-> *target* draw status) (draw-control-status no-draw))))
       (begin
         ;; Update player-procs handles for AI targeting
-        (let ((loc-role (-> *multi-info* local-role))
-              (rem-role (if (= (-> *multi-info* local-role) 0) 1 0)))
-          (set! (-> *multi-info* player-procs loc-role) (process->handle *target*))
+        (let ((loc-role (-> *local-info* role))
+              (rem-role (if (mp-is-jak?) 1 0)))
+          (set! (-> *local-info* player-procs loc-role) (process->handle *target*))
           (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
             (if (and rem-mgr (nonzero? rem-mgr))
-                (set! (-> *multi-info* player-procs rem-role) (-> rem-mgr proxy-proc))
-                (set! (-> *multi-info* player-procs rem-role) (the-as handle #f)))))
+                (set! (-> *local-info* player-procs rem-role) (-> rem-mgr proxy-proc))
+                (set! (-> *local-info* player-procs rem-role) (the-as handle #f)))))
 
         (if (and *target* (-> *target* draw))
             (logclear! (-> *target* draw status) (draw-control-status no-draw)))
         ))
 
-  (if (= (-> *multi-info* local-role) 1)
+  (if (mp-is-daxter?)
       (begin
         (set-setting! 'string-min-length 'abs (meters 3.0) 0)
         (set-setting! 'string-max-length 'abs (meters 7.0) 0)
@@ -336,32 +356,32 @@
         (remove-setting! 'target-height)))
 
   (cond
-    ((= (-> *multi-info* remote-status) 1)
+    ((= (-> *remote-info* status) 1)
      (begin
        (let ((remote-pos (new 'stack-no-clear 'vector)))
-         (set-vector! remote-pos (-> *multi-info* remote-x) (-> *multi-info* remote-y) (-> *multi-info* remote-z) 1.0)
+         (set-vector! remote-pos (-> *remote-info* x) (-> *remote-info* y) (-> *remote-info* z) 1.0)
 
          (if *multi-remote-first-seen?*
              (begin
                (vector-copy! *multi-remote-interp-pos* remote-pos)
-               (set! *multi-remote-interp-angle* (-> *multi-info* remote-angle))
+               (set! *multi-remote-interp-angle* (-> *remote-info* angle))
                (set! *multi-remote-first-seen?* #f)))
 
          (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos 0.25)
-         (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *multi-info* remote-angle) (* (degrees 1080) (seconds-per-frame))))
+         (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *remote-info* angle) (* (degrees 1080) (seconds-per-frame))))
 
          (let ((mgr-ptr *mp-remote-manager*))
            (if (or (not mgr-ptr) (zero? mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
                (begin
-                 (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *multi-info* remote-id) (-> *multi-info* remote-role) :to *active-pool*)))
+                 (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *remote-info* id) (-> *remote-info* role) :to *active-pool*)))
                    (if new-mgr
                        (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
                        )
                    )
                  )
                (let ((mp-mgr (-> mgr-ptr 0)))
-                 (set! (-> mp-mgr remote-id) (-> *multi-info* remote-id))
-                 (set! (-> mp-mgr remote-role) (-> *multi-info* remote-role))
+                 (set! (-> mp-mgr remote-id) (-> *remote-info* id))
+                 (set! (-> mp-mgr remote-role) (-> *remote-info* role))
                  )
                )
            )
@@ -380,10 +400,10 @@
     )
 
   ;; 3. Daxter Animation Sync & Visibility for Host (Jak)
-  (if (and (= (-> *multi-info* local-role) 0) *target* (nonzero? *target*) (-> *target* sidekick))
+  (if (and (mp-is-jak?) *target* (nonzero? *target*) (-> *target* sidekick))
       (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
         (if (and sk (nonzero? sk) (-> sk skel) (nonzero? (-> sk skel)) (-> sk draw art-group))
-            (if (= (-> *multi-info* riding?) (the-as uint 1))
+            (if (= (-> *remote-info* riding?) (the-as uint 1))
                 (let ((skel (-> sk skel))
                       (best-anim -1)
                       (best-frame 0.0)
@@ -409,40 +429,6 @@
                   (logclear! (-> sk draw status) (draw-control-status no-draw)))
                 ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
                 (logior! (-> sk draw status) (draw-control-status no-draw))))))
-
-  ;; 4. Debug Draw Overlay
-  (when *mp-debug-draw*
-    (let ((role (-> *multi-info* local-role))
-          (riding? (= (-> *multi-info* riding?) (the-as uint 1))))
-      (format *stdcon* "~%--- MP SYNC DEBUG ---~%")
-      (format *stdcon* "ROLE: ~S | RIDING: ~S~%" (if (= role 0) "HOST (JAK)" "CLIENT (DAX)") (if riding? "YES" "NO"))
-
-      (let ((mgr-ptr *mp-remote-manager*))
-        (let ((mp (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
-                      (the-as manipy (handle->process-safe (-> mgr-ptr 0 manipy-proc)))
-                      (the-as manipy #f))))
-          (let ((sk (the-as sidekick (if (and *target* (nonzero? *target*) (-> *target* sidekick))
-                                        (ppointer->process (-> *target* sidekick))
-                                        #f))))
-
-            (format *stdcon* "OUT (LOCAL SEND)              IN (REMOTE RECV)~%")
-
-            ;; Row 1: Primary Target (Jak for Host, Daxter for Client)
-            (let ((loc-anim (-> *multi-info* local-anim))
-                  (rem-anim (-> *multi-info* remote-anim)))
-              (format *stdcon* "Targ (Net): ~D (~S)  |  Targ (Net): ~D (~S)~%"
-                      loc-anim (mp-get-anim-name *target* loc-anim)
-                      rem-anim (mp-get-anim-name mp rem-anim)))
-
-            ;; Row 2: Sidekick (The Daxter on Jak's shoulder)
-            (let ((loc-sk-anim (if (and sk (nonzero? sk) (-> sk skel) (nonzero? (-> sk skel)) (nonzero? (-> sk skel channel 0 frame-group))) (-> sk skel channel 0 frame-group master-art-group-index) -1))
-                  (net-sk-anim (mp-sidekick-anim)))
-              (format *stdcon* "Side (Eng): ~D (~S)  |  Side (Net): ~D (~S)~%"
-                      loc-sk-anim (mp-get-anim-name sk loc-sk-anim)
-                      net-sk-anim (if riding? (mp-get-anim-name sk net-sk-anim) "N/A")))
-            )))
-      ))
-
   (none)
   )
 )

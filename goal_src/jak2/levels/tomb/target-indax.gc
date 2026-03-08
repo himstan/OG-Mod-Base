@@ -563,9 +563,9 @@
 
 (defbehavior target-indax-ride-along-check target ()
   (let ((remote-pos (new 'stack-no-clear 'vector)))
-    (set! (-> remote-pos x) (-> *multi-info* remote-x))
-    (set! (-> remote-pos y) (-> *multi-info* remote-y))
-    (set! (-> remote-pos z) (-> *multi-info* remote-z))
+    (set! (-> remote-pos x) (-> *remote-info* x))
+    (set! (-> remote-pos y) (-> *remote-info* y))
+    (set! (-> remote-pos z) (-> *remote-info* z))
     (set! (-> remote-pos w) 1.0)
     (let ((dist (vector-vector-distance (-> self control trans) remote-pos)))
       (when (< dist (meters 2.0))
@@ -1651,7 +1651,7 @@
 
   :post (behavior ()
     (target-no-stick-post)
-    (if (= (-> *multi-info* local-role) 1)
+    (if (= (-> *local-info* role) 1)
         (let ((mgr-ptr *mp-remote-manager*))
           (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))
               (let ((mp (the-as manipy (handle->process (-> mgr-ptr 0 manipy-proc)))))

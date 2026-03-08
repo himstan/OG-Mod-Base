@@ -12,7 +12,7 @@
 namespace {
 MultiplayerData gMultiplayerData;
 
-void handle_packet_receive(MultiplayerInfoGOAL* info) {
+void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* remote) {
   ENetEvent event;
   while (enet_host_service(gMultiplayerData.host, &event, 0) > 0) {
     switch (event.type) {
@@ -40,32 +40,37 @@ void handle_packet_receive(MultiplayerInfoGOAL* info) {
             }
           } else if (header->type == PacketType::EVENT_WORLD &&
                      event.packet->dataLength == sizeof(PacketWorldEvent)) {
-            gMultiplayerData.inbound_events.push_back(*(PacketWorldEvent*)event.packet->data);
+            PacketWorldEvent* evt = (PacketWorldEvent*)event.packet->data;
+            lg::info("[Multiplayer] Received World Event: Type {}, AID {}", evt->event_type, evt->actor_id);
+            gMultiplayerData.inbound_events.push_back(*evt);
           } else if (header->type == PacketType::ENEMY_SYNC &&
                      event.packet->dataLength == sizeof(PacketEnemySync)) {
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
             if (gMultiplayerData.local_role == 1) {
-              info->enemy_count = enemy_sync->count;
-              memcpy(info->enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
+              local->enemy_count = enemy_sync->count;
+              memcpy(local->enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
             }
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
-            info->client_sync_money = full_sync->money;
-            info->client_sync_gems = full_sync->gems;
-            info->client_sync_skill = full_sync->skill;
-            info->remote_x = full_sync->x;
-            info->remote_y = full_sync->y;
-            info->remote_z = full_sync->z;
-            info->host_task = full_sync->host_task;
-            info->host_node = full_sync->host_node;
-            memcpy(info->host_continue, full_sync->host_continue, 32);
-            memcpy(info->task_mask, full_sync->task_mask, 64);
-            info->sync_aids_count = (full_sync->sync_aids_count > 128) ? 128 : full_sync->sync_aids_count;
-            info->riding = full_sync->riding;
-            memcpy(info->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 128);
-            info->sync_clock = full_sync->clock;
-            info->client_sync_flag = 1;
+            local->sync_money = full_sync->money;
+            local->sync_gems = full_sync->gems;
+            local->sync_skill = full_sync->skill;
+            
+            // For full sync we snap remote to host pos
+            remote->x = full_sync->x;
+            remote->y = full_sync->y;
+            remote->z = full_sync->z;
+
+            local->host_task = full_sync->host_task;
+            local->host_node = full_sync->host_node;
+            memcpy(local->host_continue, full_sync->host_continue, 32);
+            memcpy(local->task_mask, full_sync->task_mask, 64);
+            local->sync_aids_count = (full_sync->sync_aids_count > 128) ? 128 : full_sync->sync_aids_count;
+            local->riding = full_sync->riding;
+            memcpy(local->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 128);
+            local->clock = full_sync->clock;
+            local->sync_flag = 1;
           }
         }
         enet_packet_destroy(event.packet);
@@ -79,20 +84,20 @@ void handle_packet_receive(MultiplayerInfoGOAL* info) {
           memset(&sync, 0, sizeof(PacketFullSync));
           sync.header.type = PacketType::FULL_SYNC;
           sync.header.sequenceNum = gMultiplayerData.sequence_num;
-          sync.money = info->host_money;
-          sync.gems = info->host_gems;
-          sync.skill = info->host_skill;
-          sync.x = info->local_x;
-          sync.y = info->local_y;
-          sync.z = info->local_z;
-          sync.host_task = info->host_task;
-          sync.host_node = info->host_node;
-          memcpy(sync.host_continue, info->host_continue, 32);
-          memcpy(sync.task_mask, info->task_mask, 64);
-          sync.sync_aids_count = (info->sync_aids_count > 128) ? 128 : info->sync_aids_count;
-          sync.riding = info->riding;
-          memcpy(sync.sync_aids, info->sync_aids, sizeof(uint32_t) * 128);
-          sync.clock = info->sync_clock;
+          sync.money = local->money;
+          sync.gems = local->gems;
+          sync.skill = local->skill;
+          sync.x = local->x;
+          sync.y = local->y;
+          sync.z = local->z;
+          sync.host_task = local->host_task;
+          sync.host_node = local->host_node;
+          memcpy(sync.host_continue, local->host_continue, 32);
+          memcpy(sync.task_mask, local->task_mask, 64);
+          sync.sync_aids_count = (local->sync_aids_count > 128) ? 128 : local->sync_aids_count;
+          sync.riding = local->riding;
+          memcpy(sync.sync_aids, local->sync_aids, sizeof(uint32_t) * 128);
+          sync.clock = local->clock;
           MultiplayerManager::send_to_peer(event.peer, 1, &sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
         }
         break;
@@ -107,104 +112,149 @@ void handle_packet_receive(MultiplayerInfoGOAL* info) {
   }
 }
 
-void handle_packet_send(MultiplayerInfoGOAL* info) {
+void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   PacketPlayerState local_state;
   local_state.header.type = PacketType::STATE_UPDATE;
   local_state.header.sequenceNum = ++gMultiplayerData.sequence_num;
   local_state.netId = gMultiplayerData.local_net_id;
-  local_state.x = info->local_x;
-  local_state.y = info->local_y;
-  local_state.z = info->local_z;
-  local_state.angle = info->local_angle;
-  local_state.anim = (uint16_t)info->local_anim;
-  local_state.anim_frame = info->local_anim_frame;
-  local_state.level_hash = info->local_level;
-  local_state.riding = info->riding;
-  local_state.sidekick_anim = info->sidekick_anim;
-  local_state.sidekick_frame = info->sidekick_frame;
-  local_state.clock = info->sync_clock;
+  local_state.x = local->x;
+  local_state.y = local->y;
+  local_state.z = local->z;
+  local_state.angle = local->angle;
+  local_state.anim = (uint16_t)local->anim;
+  local_state.anim_frame = local->anim_frame;
+  local_state.level_hash = local->level;
+  local_state.riding = local->riding;
+  local_state.sidekick_anim = local->sidekick_anim;
+  local_state.sidekick_frame = local->sidekick_frame;
+  local_state.clock = local->clock;
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
 
-  if (info->out_event_seq > gMultiplayerData.last_out_event_seq) {
-    PacketWorldEvent out_event;
-    out_event.header.type = PacketType::EVENT_WORLD;
-    out_event.header.sequenceNum = info->out_event_seq;
-    out_event.event_type = info->out_event_type;
-    out_event.actor_id = info->out_event_aid;
-    MultiplayerManager::broadcast(gMultiplayerData, 1, out_event, ENET_PACKET_FLAG_RELIABLE);
-    gMultiplayerData.last_out_event_seq = info->out_event_seq;
-  }
-
-  if (gMultiplayerData.local_role == 0 && info->enemy_count > 0) {
+  if (gMultiplayerData.local_role == 0 && local->enemy_count > 0) {
     PacketEnemySync enemy_packet;
     enemy_packet.header.type = PacketType::ENEMY_SYNC;
     enemy_packet.header.sequenceNum = gMultiplayerData.sequence_num;
-    enemy_packet.count = info->enemy_count;
-    memcpy(enemy_packet.enemies, info->enemies, sizeof(MPEnemyState) * 24);
+    enemy_packet.count = local->enemy_count;
+    memcpy(enemy_packet.enemies, local->enemies, sizeof(MPEnemyState) * 24);
     MultiplayerManager::broadcast(gMultiplayerData, 0, enemy_packet, ENET_PACKET_FLAG_UNSEQUENCED);
   }
 }
 
-void sync_to_goal(MultiplayerInfoGOAL* info) {
-  if (!gMultiplayerData.inbound_events.empty()) {
-    auto& event = gMultiplayerData.inbound_events.front();
-    info->in_event_type = event.event_type;
-    info->in_event_aid = event.actor_id;
-    info->in_event_seq++;
-    gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
-  }
-
+void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
   uint32_t other_net_id = (gMultiplayerData.local_role == 0) ? 1 : 0;
   if (gMultiplayerData.remote_entities.count(other_net_id)) {
-    auto& remote = gMultiplayerData.remote_entities[other_net_id];
-    info->riding = remote.riding;
-    if (!(info->riding && info->local_role == 0 && other_net_id == 1)) {
-      info->remote_x = remote.x;
-      info->remote_y = remote.y;
-      info->remote_z = remote.z;
-      info->remote_angle = remote.angle;
-      info->remote_anim = (int32_t)remote.anim;
-      info->remote_anim_frame = remote.anim_frame;
-      info->remote_level = remote.level_hash;
-      info->remote_packet_id = remote.last_sequence_num;
-      info->sidekick_anim = remote.sidekick_anim;
-      info->sidekick_frame = remote.sidekick_frame;
-      info->sync_clock = remote.clock;
-      info->remote_id = other_net_id;
-      info->remote_role = (int32_t)other_net_id;
-      info->remote_status = 1;
-    } else {
-      info->remote_status = 1;
-    }
-  } else {
-    info->remote_status = 0;
-  }
+    auto& remote_state = gMultiplayerData.remote_entities[other_net_id];
+    
+    // Fill the Goal Remote struct
+    remote_goal->x = remote_state.x;
+    remote_goal->y = remote_state.y;
+    remote_goal->z = remote_state.z;
+    remote_goal->angle = remote_state.angle;
+    remote_goal->id = other_net_id;
+    remote_goal->role = (int32_t)other_net_id;
+    remote_goal->anim = (int32_t)remote_state.anim;
+    remote_goal->anim_frame = remote_state.anim_frame;
+    remote_goal->level = remote_state.level_hash;
+    remote_goal->status = 1;
+    remote_goal->packet_id = remote_state.last_sequence_num;
+    remote_goal->riding = remote_state.riding;
+    remote_goal->sidekick_anim = remote_state.sidekick_anim;
+    remote_goal->sidekick_frame = remote_state.sidekick_frame;
+    remote_goal->clock = remote_state.clock;
+    memcpy(remote_goal->scene_name, remote_state.scene_name, 32);
+    remote_goal->scene_active = remote_state.scene_active;
 
-  info->local_role = gMultiplayerData.local_role;
-  info->local_packet_id = gMultiplayerData.sequence_num;
+  } else {
+    remote_goal->status = 0;
+  }
 }
 }  // namespace
 
-void pc_multi_sync_data(u32 info_ptr, u32 flags) {
+int pc_multi_get_role() {
+  return gMultiplayerData.local_role;
+}
+
+void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
-    if (info_ptr == 0 || info_ptr < 0x1000) return;
-
-    MultiplayerInfoGOAL* info = (MultiplayerInfoGOAL*)Ptr<u8>(info_ptr).c();
-    if (!info) return;
-
-    if (flags & 0x1) {
-      handle_packet_receive(info);
-    }
-    
-    if (flags & 0x2) {
-      handle_packet_send(info);
-    }
-
-    sync_to_goal(info);
+    LocalPlayerInfoGOAL* local = (LocalPlayerInfoGOAL*)Ptr<u8>(local_ptr).c();
+    RemotePlayerInfoGOAL* remote = (RemotePlayerInfoGOAL*)Ptr<u8>(remote_ptr).c();
+    if (!local || !remote) return;
+    handle_packet_receive(local, remote);
   } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_sync_data");
+    lg::error("[Multiplayer] Exception in pc_multi_poll");
+  }
+}
+
+void pc_multi_send_state(u32 local_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || local_ptr < 0x1000) return;
+    LocalPlayerInfoGOAL* local = (LocalPlayerInfoGOAL*)Ptr<u8>(local_ptr).c();
+    if (!local) return;
+    handle_packet_send(local, nullptr);
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_send_state");
+  }
+}
+
+void pc_multi_receive_state(u32 remote_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
+    if (remote_ptr < 0x1000) return;
+    RemotePlayerInfoGOAL* remote = (RemotePlayerInfoGOAL*)Ptr<u8>(remote_ptr).c();
+    if (!remote) return;
+    sync_to_goal(remote);
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_receive_state");
+  }
+}
+
+void pc_multi_send_events(u32 event_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || event_ptr < 0x1000) return;
+    MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
+    if (!events) return;
+    
+    // Batched Outbound Events
+    if (events->out_count > 0) {
+      lg::info("[Multiplayer] Sending {} batched events", events->out_count);
+      for (uint32_t i = 0; i < events->out_count && i < 16; ++i) {
+        PacketWorldEvent out_event;
+        out_event.header.type = PacketType::EVENT_WORLD;
+        out_event.header.sequenceNum = ++gMultiplayerData.last_out_event_seq;
+        out_event.event_type = events->out_events[i].etype;
+        out_event.actor_id = events->out_events[i].aid;
+        MultiplayerManager::broadcast(gMultiplayerData, 1, out_event, ENET_PACKET_FLAG_RELIABLE);
+        lg::info("  [Event] Type: {}, AID: {}", out_event.event_type, out_event.actor_id);
+      }
+    }
+    events->out_count = 0; // Clear after sending
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_send_events");
+  }
+}
+
+void pc_multi_receive_events(u32 event_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || event_ptr < 0x1000) return;
+    MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
+    if (!events) return;
+
+    // Batched Inbound Events - APPEND only, do not clear (GOAL clears at end of frame)
+    while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
+      auto& event = gMultiplayerData.inbound_events.front();
+      events->in_events[events->in_count].etype = event.event_type;
+      events->in_events[events->in_count].aid = event.actor_id;
+      events->in_count++;
+      gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
+    }
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_receive_events");
   }
 }
 
@@ -255,7 +305,13 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-get-status", (void*)pc_multi_get_status);
   make_function_symbol_from_c("pc-multi-stop-search", (void*)pc_multi_stop_search);
   make_function_symbol_from_c("pc-multi-start-search", (void*)pc_multi_start_search);
-  make_function_symbol_from_c("pc-multi-sync-data", (void*)pc_multi_sync_data);
+  make_function_symbol_from_c("pc-multi-poll", (void*)pc_multi_poll);
+  make_function_symbol_from_c("pc-multi-send-state", (void*)pc_multi_send_state);
+  make_function_symbol_from_c("pc-multi-receive-state", (void*)pc_multi_receive_state);
+  make_function_symbol_from_c("pc-multi-send-events", (void*)pc_multi_send_events);
+  make_function_symbol_from_c("pc-multi-receive-events", (void*)pc_multi_receive_events);
+  make_function_symbol_from_c("pc-multi-get-role", (void*)pc_multi_get_role);
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);
 }
+

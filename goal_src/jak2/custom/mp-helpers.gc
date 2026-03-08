@@ -3,8 +3,8 @@
 (define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
 
 (defun mp-get-remote-target-process ()
-  (let ((remote-role (if (= (-> *multi-info* local-role) 0) 1 0)))
-    (let ((remote-h (-> *multi-info* player-procs remote-role)))
+  (let ((rem-role (if (mp-is-jak?) 1 0)))
+    (let ((remote-h (-> *local-info* player-procs rem-role)))
       (if (and (nonzero? remote-h) (handle->process-safe remote-h))
           (let ((proc (the-as process-focusable (handle->process-safe remote-h))))
             (if (and proc (nonzero? proc) (not (logtest? (-> proc mask) (process-mask sleep))))
@@ -33,7 +33,7 @@
              (if (and (type? this citizen) (!= (-> (the-as citizen this) traffic-id) -1))
                  (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen this) traffic-id))))))
              (when (nonzero? aid)
-               (if (= (-> *multi-info* local-role) 0)
+               (if (mp-is-jak?)
                    (begin
                      (when (= arg0 *target*)
                        (format 0 "[MP-Host] Local hit on ~A (AID ~D). Broadcasting.~%" this aid)
@@ -59,7 +59,7 @@
     )
 
   ;; 2. Host Authority: Only the Host actually processes damage and state changes.
-  (if (or (= (-> *multi-info* local-role) 0) *mp-processing-remote-event*)
+  (if (or (mp-is-jak?) *mp-processing-remote-event*)
       (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)
       0))
 
@@ -67,7 +67,7 @@
 
 (defun mp-enemy-dying-hijack ((this enemy))
   ;; GUARD: Only Host is authoritative over the \"start of death\".
-  (when (and (= (-> *multi-info* local-role) 0) (not *mp-processing-remote-event*))
+  (when (and (mp-is-jak?) (not *mp-processing-remote-event*))
     (let ((aid (the-as uint 0)))
       (if (-> this entity) (set! aid (-> this entity aid)))
       (if (and (type? this citizen) (!= (-> (the-as citizen this) traffic-id) -1))
@@ -77,7 +77,7 @@
         (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))))
 
   ;; Call original method
-  (if (or (= (-> *multi-info* local-role) 0) *mp-processing-remote-event*)
+  (if (or (mp-is-jak?) *mp-processing-remote-event*)
       (if *old-enemy-dying* (*old-enemy-dying* this)))
   (none))
 
@@ -232,7 +232,7 @@
          ;; Send a special attack event that our hijack will catch to force death transition
          (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death)))))))
     ((= evt-type MP_EVENT_PLAYER_HIT)
-     (let ((local-aid (the uint (+ (-> *multi-info* local-role) 1))))
+     (let ((local-aid (the uint (+ (-> *local-info* role) 1))))
        (when (= aid local-aid)
          (if (and *target* (nonzero? *target*)
                   (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-ride-along)))
@@ -257,12 +257,12 @@
   (none))
 
 (defun mp-airlock-remote-ready? ((airlock-pos vector))
-  (if (= (-> *multi-info* remote-status) 0)
+  (if (= (-> *remote-info* status) 0)
       (return #t))
   (let ((remote-pos (new 'stack-no-clear 'vector)))
-    (set! (-> remote-pos x) (-> *multi-info* remote-x))
-    (set! (-> remote-pos y) (-> *multi-info* remote-y))
-    (set! (-> remote-pos z) (-> *multi-info* remote-z))
+    (set! (-> remote-pos x) (-> *remote-info* x))
+    (set! (-> remote-pos y) (-> *remote-info* y))
+    (set! (-> remote-pos z) (-> *remote-info* z))
     (set! (-> remote-pos w) 1.0)
     (< (vector-vector-xz-distance airlock-pos remote-pos) (meters 100.0))))
 
@@ -307,7 +307,7 @@
        (kill-prefer-falling self)
        #t)
       (('attack 'touch)
-       (if (or (= (-> *multi-info* local-role) 0) *mp-processing-remote-event*)
+       (if (or (mp-is-jak?) *mp-processing-remote-event*)
            (general-event-handler self proc argc message block))
        #t)))
   :code (behavior () (loop (suspend)))
@@ -335,8 +335,8 @@
           (if (and (!= (-> e-proc status) 'dead)
                    (!= aid 0)
                    (nonzero? (-> e-proc root))
-                   (< (-> *multi-info* enemy-count) (the-as uint 24)))
-              (let ((slot (-> *multi-info* enemies (-> *multi-info* enemy-count))))
+                   (< (-> *local-info* enemy-count) (the-as uint 24)))
+              (let ((slot (-> *local-info* enemies (-> *local-info* enemy-count))))
                 (set! (-> slot actor-id) aid)
                 ;; ALIGNMENT SAFE: Individual float sets
                 (set! (-> slot x) (-> e-proc root trans x))
@@ -370,18 +370,18 @@
                     (let ((target-proc (handle->process-safe f-handle)))
                       (when target-proc
                         (cond
-                          ((= target-proc (handle->process-safe (-> *multi-info* player-procs 0)))
+                          ((= target-proc (handle->process-safe (-> *local-info* player-procs 0)))
                            (set! (-> slot focus-aid) (the-as uint 1))) ;; ID 1 = Player 0 (Jak)
-                          ((= target-proc (handle->process-safe (-> *multi-info* player-procs 1)))
+                          ((= target-proc (handle->process-safe (-> *local-info* player-procs 1)))
                            (set! (-> slot focus-aid) (the-as uint 2))) ;; ID 2 = Player 1 (Daxter)
                           ((-> target-proc entity)
                            (set! (-> slot focus-aid) (-> target-proc entity aid))))))))
 
-                (1+! (-> *multi-info* enemy-count))))))))
+                (1+! (-> *local-info* enemy-count))))))))
   #t)
 
 (defun mp-sync-enemies-host ()
-  (set! (-> *multi-info* enemy-count) (the-as uint 0))
+  (set! (-> *local-info* enemy-count) (the-as uint 0))
   (iterate-process-tree *active-pool* mp-sync-enemies-host-callback *kernel-context*)
   (none))
 
@@ -397,8 +397,8 @@
         (when (!= aid 0)
           ;; 1. Check if Host says it's ALIVE and synced
           (let ((host-synced? #f))
-            (dotimes (i (the-as int (-> *multi-info* enemy-count)))
-              (let ((slot (-> *multi-info* enemies i)))
+            (dotimes (i (the-as int (-> *local-info* enemy-count)))
+              (let ((slot (-> *local-info* enemies i)))
                 (when (= (-> slot actor-id) aid)
                   (set! host-synced? #t)
                   (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
@@ -441,6 +441,7 @@
                           (set! (-> e-proc draw death-effect) (the-as uint 1))
                           (set! (-> e-proc draw death-timer) (the-as uint 60))
                           (set! (-> e-proc draw death-timer-org) (the-as uint 60))
+                          (set! (-> e-proc draw death-timer-org) (the-as uint 60))
                           (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))))
 
                       (if (type? (-> e-proc root) collide-shape)
@@ -459,8 +460,8 @@
                     (send-event e-proc 'go-hostile)))))
 
           ;; 3. Check if Host says it's DEAD (Sync-AIDs list)
-          (dotimes (i (the-as int (-> *multi-info* sync-aids-count)))
-            (when (= (-> *multi-info* sync-aids i) aid)
+          (dotimes (i (the-as int (-> *local-info* sync-aids-count)))
+            (when (= (-> *local-info* sync-aids i) aid)
               (format 0 "[MP-Client] Authoritative kill received for ~A (AID ~D) via sync-aids list.~%" e-proc aid)
               (let ((ent (-> e-proc entity))) (if (and ent (nonzero? ent)) (logior! (-> ent extra perm status) (entity-perm-status dead))))
               (deactivate e-proc)
@@ -469,7 +470,7 @@
   #t)
 
 (defun mp-sync-enemies-client ()
-  (when (nonzero? (-> *multi-info* enemy-count))
+  (when (nonzero? (-> *local-info* enemy-count))
     (iterate-process-tree *active-pool* mp-sync-enemies-client-callback *kernel-context*)
     )
   (none))
@@ -496,13 +497,13 @@
                   (if (and (type? e-proc citizen) (!= (-> (the-as citizen e-proc) traffic-id) -1))
                       (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen e-proc) traffic-id)))))))
 
-              (if (= (-> *multi-info* local-role) 0)
+              (if (mp-is-jak?)
                   ;; Host: Read native focus
                   (let ((target (handle->process-safe (-> e-proc focus handle))))
                     (if target (set! target-name (the-as string (format #f "~A" target)))))
                   ;; Client: Read synced focus
-                  (dotimes (i (the-as int (-> *multi-info* enemy-count)))
-                    (let ((slot (-> *multi-info* enemies i)))
+                  (dotimes (i (the-as int (-> *local-info* enemy-count)))
+                    (let ((slot (-> *local-info* enemies i)))
                       (when (= (-> slot actor-id) aid)
                         (cond
                           ((= (-> slot focus-aid) 1) (set! target-name "Jak (Host)"))

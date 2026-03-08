@@ -21,6 +21,7 @@ void MultiplayerManager::setup_host(MultiplayerData& data) {
     lg::info("[Multiplayer] Listen server started on port 3000.");
     data.local_role = 0;
     data.local_net_id = 0;
+    data.join_status = 4;
     data.initialized = true;
   }
 }
