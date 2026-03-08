@@ -871,7 +871,17 @@
   (no-menu-data #x100001)
   (next-page #x100002)
   (previous-page #x100003)
-)
+  (progress-online #x100010)
+  (progress-join-game #x100011)
+  (progress-host-game #x100012)
+  (progress-username #x100013)
+  (progress-waiting-for-daxter #x100030)
+  (progress-searching #x100031)
+  (progress-joining #x100032)
+  (progress-connected #x100033)
+  (progress-no-games-found #x100034)
+  )
+
 ;; ---text-id
 
 ;; DECOMP BEGINS

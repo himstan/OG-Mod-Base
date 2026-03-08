@@ -178,6 +178,26 @@
   ;; ND originally did this...called this every frame in the game options, looked like a hack
   ;; there's probably a way to consistently do it synchronously
   (load-level-text-files (the-as int (-> *pc-settings* text-language)))
+
+  ;; Multiplayer Hosting Intercept
+  (when (and (-> *pc-settings* mp-hosting-mode?)
+             (or (= (-> this current) 'select-load)
+                 (= (-> this current) 'select-save)
+                 (= (-> this current) 'select-save-title)
+                 (= (-> this current) 'mp-select-load)
+                 (= (-> this current) 'mp-select-save-title)
+                 )
+             (cpad-pressed? 0 confirm)
+             )
+    (set! (-> *pc-settings* mp-selected-save-slot) (-> this option-index))
+    (set! (-> *pc-settings* mp-is-new-game?) (or (= (-> this current) 'mp-select-save-title) (= (-> this current) 'select-save-title)))
+    (set! (-> *progress-state* which-slot) (-> this option-index))
+    (sound-play "generic-beep")
+    (push-state this)
+    (set-next-state this 'waiting-for-daxter 0)
+    (return 0)
+    )
+
   (when (-> this current-options)
     (let ((option-array (-> this current-options options))
           (has-generic-history? (has-history? *progress-pc-generic-store*)))

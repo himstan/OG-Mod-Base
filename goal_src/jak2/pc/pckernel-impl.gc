@@ -108,6 +108,12 @@
 
    (text-language pc-language) ;; language for game text
    (subtitle-language pc-language)
+   (username string)
+   (mp-hosting-mode? symbol)
+   (mp-is-new-game? symbol)
+   (mp-selected-save-slot int32)
+   (mp-join-ip string)
+   (mp-join-status int32) ;; 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
 	 )
 
   (:methods

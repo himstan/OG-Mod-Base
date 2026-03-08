@@ -3,6 +3,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <thread>
+#include <atomic>
 
 #include "common/log/log.h"
 
@@ -163,6 +165,7 @@ struct MultiplayerInfoGOAL {
 
 struct MultiplayerData {
   bool initialized = false;
+  bool enet_initialized = false;
   ENetHost* host = nullptr;
   ENetPeer* server_peer = nullptr;  // Only used if we are a client
   int local_role = -1;
@@ -172,6 +175,11 @@ struct MultiplayerData {
 
   std::unordered_map<uint32_t, RemoteEntityState> remote_entities;
   std::vector<PacketWorldEvent> inbound_events;
+
+  // New fields for joining/searching
+  std::atomic<int> join_status{0}; // 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
+  std::string found_ip = "";
+  std::atomic<bool> stop_search{false};
 };
 
 MultiplayerData gMultiplayerData;
@@ -267,6 +275,9 @@ void pc_multi_sync_data(u32 info_ptr) {
         case ENET_EVENT_TYPE_CONNECT:
           lg::info("[Multiplayer] Peer connected: {}:{}", event.peer->address.host,
                    event.peer->address.port);
+          if (gMultiplayerData.local_role == 1) {
+            gMultiplayerData.join_status = 4; // Connected
+          }
           // Host Handshake: Send current save state to the new client
           if (gMultiplayerData.local_role == 0) {
             PacketFullSync sync;
@@ -303,7 +314,9 @@ void pc_multi_sync_data(u32 info_ptr) {
           break;
         case ENET_EVENT_TYPE_DISCONNECT:
           lg::info("[Multiplayer] Peer disconnected.");
-          // In a real scenario, we might want to remove the entity associated with this peer
+          if (gMultiplayerData.local_role == 1) {
+            gMultiplayerData.join_status = -1; // Failed/Disconnected
+          }
           break;
         default:
           break;
@@ -433,61 +446,120 @@ void pc_multi_disconnect() {
     gMultiplayerData.host = nullptr;
   }
 
-  enet_deinitialize();
+  // NOTE: enet_deinitialize is a global one-time call, usually matched with enet_initialize
+  // For the MVP, we'll just destroy the host and keep ENet initialized to avoid re-init issues.
+  // enet_deinitialize();
+  
   gMultiplayerData.initialized = false;
-  lg::info("[Multiplayer] Disconnected and ENet deinitialized.");
+  lg::info("[Multiplayer] Disconnected.");
 }
 
-void init_multiplayer_pc_port() {
-  if (gMultiplayerData.initialized)
-    return;
-
-  if (enet_initialize() != 0) {
-    lg::error("[Multiplayer] Error initializing ENet.");
-    return;
+void pc_multi_setup_host() {
+  if (gMultiplayerData.host) pc_multi_disconnect();
+  
+  if (!gMultiplayerData.enet_initialized) {
+    if (enet_initialize() != 0) return;
+    gMultiplayerData.enet_initialized = true;
   }
 
   ENetAddress address;
   address.host = ENET_HOST_ANY;
   address.port = 3000;
 
-  // Try to host
   gMultiplayerData.host = enet_host_create(&address, 32, 2, 0, 0);
-
   if (gMultiplayerData.host) {
     lg::info("[Multiplayer] Listen server started on port 3000.");
     gMultiplayerData.local_role = 0;
     gMultiplayerData.local_net_id = 0;
-  } else {
-    // Fallback to client
-    gMultiplayerData.host = enet_host_create(NULL, 1, 2, 0, 0);
-    if (gMultiplayerData.host) {
-      ENetAddress server_address;
-      enet_address_set_host(&server_address, "127.0.0.1");
-      server_address.port = 3000;
-
-      gMultiplayerData.server_peer =
-          enet_host_connect(gMultiplayerData.host, &server_address, 2, 0);
-      if (gMultiplayerData.server_peer) {
-        lg::info("[Multiplayer] Client connecting to 127.0.0.1:3000...");
-        gMultiplayerData.local_role = 1;
-        gMultiplayerData.local_net_id = 1;
-      } else {
-        lg::error("[Multiplayer] Could not connect to host.");
-        enet_host_destroy(gMultiplayerData.host);
-        gMultiplayerData.host = nullptr;
-        return;
-      }
-    } else {
-      lg::error("[Multiplayer] Could not create ENet client host.");
-      return;
-    }
+    gMultiplayerData.initialized = true;
   }
-
-  gMultiplayerData.initialized = true;
-  jak2::make_function_symbol_from_c("pc-multi-sync-data", (void*)pc_multi_sync_data);
 }
 
-void sync_network_data() {
-  // Legacy function, can be empty or used for background polling if needed
+void pc_multi_setup_client(u32 ip_ptr) {
+  using namespace jak2;
+  const char* ip = Ptr<String>(ip_ptr).c()->data();
+
+  if (gMultiplayerData.host) pc_multi_disconnect();
+  
+  if (!gMultiplayerData.enet_initialized) {
+    if (enet_initialize() != 0) return;
+    gMultiplayerData.enet_initialized = true;
+  }
+
+  gMultiplayerData.host = enet_host_create(NULL, 1, 2, 0, 0);
+  if (gMultiplayerData.host) {
+    ENetAddress server_address;
+    enet_address_set_host(&server_address, ip);
+    server_address.port = 3000;
+
+    gMultiplayerData.server_peer = enet_host_connect(gMultiplayerData.host, &server_address, 2, 0);
+    if (gMultiplayerData.server_peer) {
+      lg::info("[Multiplayer] Client connecting to {}:3000...", ip);
+      gMultiplayerData.local_role = 1;
+      gMultiplayerData.local_net_id = 1;
+      gMultiplayerData.join_status = 3; // Connecting
+      gMultiplayerData.initialized = true;
+    } else {
+      enet_host_destroy(gMultiplayerData.host);
+      gMultiplayerData.host = nullptr;
+    }
+  }
+}
+
+int pc_multi_get_status() {
+  return gMultiplayerData.join_status;
+}
+
+void pc_multi_stop_search() {
+  gMultiplayerData.stop_search = true;
+  gMultiplayerData.join_status = 0;
+}
+
+void scan_thread_func() {
+  gMultiplayerData.join_status = 1; // Searching
+  gMultiplayerData.stop_search = false;
+
+  std::vector<std::string> ips_to_check = {"127.0.0.1"};
+  // Basic local network scan
+  for (int i = 1; i < 255; ++i) {
+    ips_to_check.push_back("192.168.1." + std::to_string(i));
+  }
+
+  for (const auto& ip : ips_to_check) {
+    if (gMultiplayerData.stop_search) break;
+
+    ENetAddress address;
+    // Note: enet_address_set_host is safe without a host created
+    enet_address_set_host(&address, ip.c_str());
+    address.port = 3000;
+
+    if (ip == "127.0.0.1") {
+       gMultiplayerData.found_ip = ip;
+       gMultiplayerData.join_status = 2; // Found
+       return;
+    }
+  }
+  
+  if (gMultiplayerData.join_status == 1) {
+    gMultiplayerData.join_status = -1; // Not found
+  }
+}
+
+void pc_multi_start_search() {
+  if (!gMultiplayerData.enet_initialized) {
+    if (enet_initialize() != 0) return;
+    gMultiplayerData.enet_initialized = true;
+  }
+  std::thread(scan_thread_func).detach();
+}
+
+void init_multiplayer_pc_port() {
+  using namespace jak2;
+  make_function_symbol_from_c("pc-multi-setup-host", (void*)pc_multi_setup_host);
+  make_function_symbol_from_c("pc-multi-setup-client", (void*)pc_multi_setup_client);
+  make_function_symbol_from_c("pc-multi-get-status", (void*)pc_multi_get_status);
+  make_function_symbol_from_c("pc-multi-stop-search", (void*)pc_multi_stop_search);
+  make_function_symbol_from_c("pc-multi-start-search", (void*)pc_multi_start_search);
+  make_function_symbol_from_c("pc-multi-sync-data", (void*)pc_multi_sync_data);
+  make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
 }

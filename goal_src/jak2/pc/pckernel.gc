@@ -320,6 +320,10 @@
   "initial initialize method to be run after allocating"
   (set! (-> obj music-unlocked) (new 'global 'bit-array (-> *music-player-tracks* length)))
   ((method-of-type pc-settings initialize) obj)
+  (when (or (not (-> obj username)) (= (length (-> obj username)) 0))
+    (set! (-> obj username) (new 'global 'string 64 (the-as string #f)))
+    (copy-string<-string (-> obj username) "player")
+    )
   ;; any post-operations that need to be done after loading
   (set! (-> *setting-control* user-default sfx-volume) (-> obj memcard-volume-sfx))
   (set! (-> *setting-control* user-default music-volume) (-> obj memcard-volume-music))
@@ -752,6 +756,25 @@
     val)
   )
 
+(defmacro is-quote? (c)
+  `(= #x22 ,c))
+
+(defun pc-file-stream-read-string ((file file-stream))
+  (file-stream-seek-past-whitespace file)
+  (let ((c (file-stream-getc file)))
+    (if (is-quote? c)
+        (file-stream-read-until file is-quote?)
+        (begin
+          (file-stream-seek file -1 SCE_SEEK_CUR)
+          (file-stream-read-word file)
+          )
+        )
+    )
+  (let ((s (new 'global 'string (length *pc-temp-string*) (the-as string #f))))
+    (copy-string<-string s *pc-temp-string*)
+    s)
+  )
+
 (defmethod handle-input-settings ((obj pc-settings-jak2) (file file-stream))
   "handle the text parsing input for the 'settings' group"
   ((method-of-type pc-settings handle-input-settings) obj file)
@@ -764,6 +787,7 @@
     (("hires-clouds?") (set! (-> obj hires-clouds?) (file-stream-read-symbol file)))
     (("text-language") (set! (-> obj text-language) (the-as pc-language (file-stream-read-int file))))
     (("subtitle-language") (set! (-> obj subtitle-language) (the-as pc-language (file-stream-read-int file))))
+    (("username") (set! (-> obj username) (pc-file-stream-read-string file)))
     (("controller-led-status?") (set! (-> obj controller-led-status?) (file-stream-read-symbol file)))
     (("controller-swap-r1-r2?") (set! (-> obj controller-swap-r1-r2?) (file-stream-read-symbol file)))
     (("speedrunner-mode-custom-bind") (set! (-> obj speedrunner-mode-custom-bind) (file-stream-read-int file)))
@@ -820,6 +844,7 @@
   (format file "  (hires-clouds? ~A)~%" (-> obj hires-clouds?))
   (format file "  (text-language ~D)~%" (-> obj text-language))
   (format file "  (subtitle-language ~D)~%" (-> obj subtitle-language))
+  (format file "  (username ~S)~%" (-> obj username))
   (format file "  (controller-led-status? ~A)~%" (-> obj controller-led-status?))
   (format file "  (controller-swap-r1-r2? ~A)~%" (-> obj controller-swap-r1-r2?))
   (format file "  (speedrunner-mode-custom-bind ~D)~%" (-> obj speedrunner-mode-custom-bind))

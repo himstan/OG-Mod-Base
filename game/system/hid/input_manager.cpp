@@ -177,7 +177,13 @@ void InputManager::hide_cursor(const bool hide_cursor) {
   m_mouse_currently_hidden = hide_cursor;
 }
 
+extern u32 g_last_key;
+
 void InputManager::process_sdl_event(const SDL_Event& event) {
+  if (event.type == SDL_EVENT_KEY_DOWN) {
+    g_last_key = (u32)event.key.key;
+  }
+
   // TODO - perhaps should handle `SDL_CONTROLLERDEVICEREMAPPED`?
   // Detect controller connections and disconnects
   if (sdl_util::is_any_event_type(event.type,

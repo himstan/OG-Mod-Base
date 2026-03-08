@@ -1218,6 +1218,14 @@ void pc_register_screen_shot_settings(u32 ptr) {
   register_screen_shot_settings(Ptr<ScreenShotSettings>(ptr).c());
 }
 
+u32 g_last_key = 0;
+
+u32 pc_get_last_key() {
+  u32 key = g_last_key;
+  g_last_key = 0;
+  return key;
+}
+
 void pc_encode_utf8_string(u32 src_str_ptr, u32 str_dest_ptr) {
   auto str = std::string(Ptr<String>(src_str_ptr).c()->data());
   std::string version = version_to_game_name(g_game_version);
@@ -1367,6 +1375,7 @@ void init_common_pc_port_functions(
   make_func_symbol_func("pc-encode-utf8-string", (void*)pc_encode_utf8_string);
 
   // debugging tools
+  make_func_symbol_func("pc-get-last-key", (void*)pc_get_last_key);
   make_func_symbol_func("pc-filter-debug-string?", (void*)pc_filter_debug_string);
   make_func_symbol_func("pc-screen-shot", (void*)pc_screen_shot);
   make_func_symbol_func("pc-register-screen-shot-settings",
