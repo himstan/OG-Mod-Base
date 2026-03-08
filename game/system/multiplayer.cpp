@@ -185,7 +185,7 @@ void sync_to_goal(MultiplayerInfoGOAL* info) {
 }
 }  // namespace
 
-void pc_multi_sync_data(u32 info_ptr) {
+void pc_multi_sync_data(u32 info_ptr, u32 flags) {
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
@@ -194,8 +194,14 @@ void pc_multi_sync_data(u32 info_ptr) {
     MultiplayerInfoGOAL* info = (MultiplayerInfoGOAL*)Ptr<u8>(info_ptr).c();
     if (!info) return;
 
-    handle_packet_receive(info);
-    handle_packet_send(info);
+    if (flags & 0x1) {
+      handle_packet_receive(info);
+    }
+    
+    if (flags & 0x2) {
+      handle_packet_send(info);
+    }
+
     sync_to_goal(info);
   } catch (...) {
     lg::error("[Multiplayer] Exception in pc_multi_sync_data");
