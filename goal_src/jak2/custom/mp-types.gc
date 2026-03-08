@@ -122,6 +122,7 @@
   )
 
 
+(define-extern pc-multi-get-command-line-arg (function string string))
 (define-extern pc-multi-sync-data (function uint none))
 (define-extern pc-multi-setup-host (function none))
 (define-extern pc-multi-setup-client (function string none))

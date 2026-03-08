@@ -8,3 +8,4 @@ void pc_multi_setup_host();
 void pc_multi_setup_client(u32 ip_ptr);
 int pc_multi_get_status();
 void pc_multi_stop_search();
+u64 pc_multi_get_command_line_arg(u32 str_ptr);

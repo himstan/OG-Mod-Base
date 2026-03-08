@@ -94,11 +94,10 @@ std::thread::id g_main_thread_id = std::thread::id();
 GameVersion g_game_version = GameVersion::Jak1;
 BackgroundWorker g_background_worker;
 int g_server_port = DECI2_PORT;
-
-namespace {
-
 int g_argc = 0;
 const char** g_argv = nullptr;
+
+namespace {
 
 /*!
  * SystemThread function for running the DECI2 communication with the GOAL compiler.

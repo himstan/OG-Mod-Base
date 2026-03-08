@@ -94,12 +94,32 @@
       (set! *multi-sync-enabled?* #t)
       (format 0 "[GOAL] Jak spawned! Enabling multiplayer sync.~%")
 
-      (when (-> *pc-settings* mp-hosting-mode?)
-        (format 0 "[MP-Host] Hosting mode active. Initializing server...~%")
-        (pc-multi-setup-host)
-        (set! (-> *multi-info* local-role) 0)
-        ;; Tell the client we are loaded and ready!
-        (set! (-> *multi-info* client-sync-flag) (the-as uint 1))
+      ;; Only auto-initialize if we aren't already connected/connecting
+      (when (zero? (pc-multi-get-status))
+        (let ((host-arg (pc-multi-get-command-line-arg "-mp-host"))
+              (client-arg (pc-multi-get-command-line-arg "-mp-client")))
+          (cond
+            ;; 1. Priority: CLI Host Flag
+            ((and host-arg (nonzero? (-> host-arg allocated-length)))
+             (format 0 "[MP-Auto] Hosting via CLI argument.~%")
+             (pc-multi-setup-host)
+             (set! (-> *multi-info* local-role) 0)
+             (set! (-> *multi-info* client-sync-flag) (the-as uint 1))
+             )
+            ;; 2. Priority: CLI Client Flag
+            ((and client-arg (nonzero? (-> client-arg allocated-length)))
+             (format 0 "[MP-Auto] Connecting to ~S via CLI argument.~%" client-arg)
+             (pc-multi-setup-client client-arg)
+             )
+            ;; 3. Priority: Saved Setting
+            ((-> *pc-settings* mp-hosting-mode?)
+             (format 0 "[MP-Host] Hosting mode active (from settings). Initializing server...~%")
+             (pc-multi-setup-host)
+             (set! (-> *multi-info* local-role) 0)
+             (set! (-> *multi-info* client-sync-flag) (the-as uint 1))
+             )
+            )
+          )
         )
 
       (none)
