@@ -1,0 +1,112 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-draw-anim-debug ()
+  "Overlay real-time animation sync data for both LOCAL and REMOTE players"
+  (when *mp-debug-draw*
+    (format *stdcon* "~0k--- MP ANIMATION DEBUG ---~%")
+    
+    ;; 1. LOCAL PLAYER STATS
+    (when (and *target* (nonzero? (-> *target* skel)) (nonzero? (-> *target* draw)))
+      (let ((chan (-> *target* skel root-channel 0)))
+        (when (and chan (nonzero? chan))
+          (let* ((cur-frame (-> chan frame-num))
+                 (total-f (if (and (-> chan frame-group) (nonzero? (-> chan frame-group))) 
+                              (the float (-> chan frame-group frames num-frames)) 
+                              1.0))
+                 ;; Calculate the raw change since the last 60fps frame
+                 (delta-f (- cur-frame (-> *local-info* last-anim-frame))))
+            
+            ;; Handle wrap-around for local display
+            (if (< delta-f -5.0) (set! delta-f (+ delta-f total-f)))
+            
+            (format *stdcon* "LOCAL (You):~%")
+            (if (and (-> chan frame-group) (nonzero? (-> chan frame-group)))
+                (format *stdcon* "  Anim:  ~S~%" (-> chan frame-group name))
+                (format *stdcon* "  Anim:  NONE~%"))
+            (format *stdcon* "  Frame: ~f / ~f~%" cur-frame total-f)
+            ;; At 1.0 speed, delta-f is exactly 1.0 per 60fps frame
+            (format *stdcon* "  Speed: ~f (NetV)~%" delta-f) 
+            )
+          )
+        )
+      )
+    
+    (format *stdcon* "~%-------------------------~%~%")
+
+    ;; 2. REMOTE PUPPET STATS
+    (let ((mgr (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*)) 
+                   (the-as mp-manager (ppointer->process *mp-remote-manager*)) 
+                   (the-as mp-manager #f))))
+      
+      (cond
+        ((not mgr)
+         (format *stdcon* "REMOTE: Waiting for Manager...~%"))
+        
+        (else
+         (let* ((puppet (the-as manipy (handle->process-safe (-> mgr manipy-proc)))))
+           (if (not (and puppet (nonzero? (-> puppet skel)) (nonzero? (-> puppet draw))))
+               (format *stdcon* "REMOTE: Manager found, but Puppet/Skel is invalid.~%")
+               
+               (let ((chan (-> puppet skel root-channel 0)))
+                 (when (and chan (nonzero? chan))
+                   (let* ((cur-frame (-> chan frame-num))
+                          (raw-remote (-> *remote-info* anim-frame))
+                          (total-f (if (and (-> chan frame-group) (nonzero? (-> chan frame-group))) 
+                                       (the float (-> chan frame-group frames num-frames)) 
+                                       1.0))
+                          (time-since-arrival (- (-> *display* game-clock frame-counter) (-> mgr last-arrival-time)))
+                          ;; Predict exactly where the remote player is based on their current smoothed speed
+                          (latency-estimate (+ (the float time-since-arrival) (* *mp-anim-ping-buffer* *mp-anim-latency-factor*)))
+                          (max-lat (the float (the int *mp-anim-max-latency*))))
+
+                     (if (> latency-estimate max-lat) (set! latency-estimate max-lat))
+                     
+                     (let* ((predicted-target (+ raw-remote (* (/ latency-estimate *mp-anim-ticks-to-frames*) (-> mgr client-speed))))
+                            (buffered-target (- predicted-target *mp-anim-safety-buffer*)))
+                     
+                       ;; Smart wrap/clamp based on animation flags (Proper field access and raw bit)
+                       (let* ((anim (the-as art-joint-anim (-> chan frame-group)))
+                              (raw-flags (-> anim frames flags))
+                              (raw-num-frames (-> anim frames num-frames))
+                              (is-looping? (mp-anim-loops? anim)))
+                          
+                          (format *stdcon* "REMOTE (Puppet):~%")
+                          (format *stdcon* "  Packet ID:   ~D~%" (-> *remote-info* packet-id))
+                          (format *stdcon* "  Anim:        ~D (~S)~%" (-> *remote-info* anim) (-> puppet draw art-group data (-> *remote-info* anim) name))
+                          (format *stdcon* "  Raw Flags:   #x~X~%" raw-flags)
+                          (format *stdcon* "  Is Looping:  ~S (Name-based)~%" (if is-looping? "TRUE" "FALSE"))
+                          (format *stdcon* "  Struct NumF: ~D~%" raw-num-frames)
+                          (format *stdcon* "  Engine NumF: ~f~%" total-f)
+                          (format *stdcon* "  Local Frame: ~f / ~f~%" cur-frame total-f)
+                          (format *stdcon* "  Raw Remote:  ~f~%" raw-remote)
+                          (format *stdcon* "  Buff Target: ~f~%" buffered-target)
+                          (format *stdcon* "  Error:       ~f~%" (- buffered-target cur-frame))
+                          (format *stdcon* "  Speed:       ~f (Corrected)~%" (-> mgr anim-speed))
+                          (format *stdcon* "  NetV:        ~f (Incoming)~%" (-> mgr client-speed))
+                          (format *stdcon* "  Net Latency: ~f ms~%" (* latency-estimate 3.33))
+                          
+                          (format *stdcon* "~%TUNING (mp-types.gc):~%")
+                          (format *stdcon* "  SYNC ENABLED:     ~S~%" (if *mp-anim-smooth-sync?* "TRUE" "FALSE"))
+                          (format *stdcon* "  *mp-anim-gain*:   ~f~%" *mp-anim-gain*)
+                          (format *stdcon* "  *mp-anim-max-sp*: ~f~%" *mp-anim-max-speed*)
+                          (format *stdcon* "  *mp-anim-buffer*: ~f~%" *mp-anim-safety-buffer*)
+                          (format *stdcon* "  *mp-anim-bias*:   ~f~%" *mp-anim-speed-offset*)
+                          
+                          ;; Draw label near the puppet in 3D space
+                          (let ((draw-pos (new 'stack-no-clear 'vector)))
+                            (vector-copy! draw-pos (-> puppet root trans))
+                            (set! (-> draw-pos y) (+ (-> draw-pos y) (meters 2.5)))
+                            (add-debug-text-3d #t (bucket-id debug-no-zbuf1) (the-as string (format #f "ANIM: ~S (AUTO-SYNC)" (-> chan frame-group name))) draw-pos (font-color white) (the-as vector2h #f)))
+                          )
+                       )
+                     )
+                   )
+                 )
+               )
+           )
+         )
+        )
+      )
+    )
+  (none))

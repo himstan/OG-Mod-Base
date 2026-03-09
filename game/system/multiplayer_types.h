@@ -12,10 +12,12 @@ struct RemoteEntityState {
   float x, y, z, angle;
   uint16_t anim;
   float anim_frame;
+  float last_anim_frame;
   uint32_t level_hash;
   uint32_t riding;
   int32_t sidekick_anim;
   float sidekick_frame;
+  float last_sidekick_frame;
   uint64_t clock;
   char scene_name[32];
   uint32_t scene_active;
@@ -52,7 +54,9 @@ struct RemotePlayerInfoGOAL {
   uint64_t clock;
   uint8_t scene_name[32];
   uint32_t scene_active;
-  uint8_t pad[12];
+  float last_anim_frame;
+  float last_sidekick_frame;
+  uint8_t pad[4];
 };
 
 struct LocalPlayerInfoGOAL {
@@ -66,8 +70,10 @@ struct LocalPlayerInfoGOAL {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
-  // Padding for legacy event fields (24 bytes)
-  uint8_t pad_events[24];
+  float last_anim_frame;
+  float last_sidekick_frame;
+  // Padding for legacy event fields (16 bytes)
+  uint8_t pad_events[16];
   // Global World Sync (Outgoing)
   float money;
   float gems;

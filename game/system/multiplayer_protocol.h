@@ -31,6 +31,8 @@ struct PacketPlayerState {
   uint64_t clock;
   char scene_name[32];
   uint32_t scene_active;
+  float last_anim_frame;
+  float last_sidekick_frame;
 };
 
 struct PacketWorldEvent {
@@ -45,11 +47,12 @@ struct MPEnemyState {
   float quat_x, quat_y, quat_z, quat_w;
   int32_t anim_index;
   float anim_frame;
+  float last_anim_frame;
   int32_t hp;
   uint32_t state;
   uint32_t focus_aid;
   uint8_t attack_flag;
-  uint8_t pad[11];
+  uint8_t pad[7];
 };
 
 struct PacketEnemySync {

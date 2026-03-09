@@ -31,10 +31,12 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
               entity.angle = state->angle;
               entity.anim = state->anim;
               entity.anim_frame = state->anim_frame;
+              entity.last_anim_frame = state->last_anim_frame;
               entity.level_hash = state->level_hash;
               entity.riding = state->riding;
               entity.sidekick_anim = state->sidekick_anim;
               entity.sidekick_frame = state->sidekick_frame;
+              entity.last_sidekick_frame = state->last_sidekick_frame;
               entity.clock = state->clock;
               entity.last_sequence_num = state->header.sequenceNum;
             }
@@ -123,10 +125,12 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.angle = local->angle;
   local_state.anim = (uint16_t)local->anim;
   local_state.anim_frame = local->anim_frame;
+  local_state.last_anim_frame = local->last_anim_frame;
   local_state.level_hash = local->level;
   local_state.riding = local->riding;
   local_state.sidekick_anim = local->sidekick_anim;
   local_state.sidekick_frame = local->sidekick_frame;
+  local_state.last_sidekick_frame = local->last_sidekick_frame;
   local_state.clock = local->clock;
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
 
@@ -154,12 +158,14 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->role = (int32_t)other_net_id;
     remote_goal->anim = (int32_t)remote_state.anim;
     remote_goal->anim_frame = remote_state.anim_frame;
+    remote_goal->last_anim_frame = remote_state.last_anim_frame;
     remote_goal->level = remote_state.level_hash;
     remote_goal->status = 1;
     remote_goal->packet_id = remote_state.last_sequence_num;
     remote_goal->riding = remote_state.riding;
     remote_goal->sidekick_anim = remote_state.sidekick_anim;
     remote_goal->sidekick_frame = remote_state.sidekick_frame;
+    remote_goal->last_sidekick_frame = remote_state.last_sidekick_frame;
     remote_goal->clock = remote_state.clock;
     memcpy(remote_goal->scene_name, remote_state.scene_name, 32);
     remote_goal->scene_active = remote_state.scene_active;

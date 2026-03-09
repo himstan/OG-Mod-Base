@@ -12,6 +12,8 @@
   (set! (-> self proxy-proc) (the-as handle #f))
   (set! (-> self spawn-timer) 0)
   (set! (-> self last-anim-packet) 0)
+  (set! (-> self anim-speed) 1.0)
+  (set! (-> self client-speed) 1.0)
 
   ;; Initialize root for process-drawable
   (set! (-> self root) (the-as basic (new 'process 'trsqv)))
@@ -110,19 +112,83 @@
                  (packet-id (-> *remote-info* packet-id))
                  (parent-proc (the-as mp-manager (ppointer->process (-> self parent)))))
 
-             (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
-                 (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
-                   (if (= (-> target-anim type) art-joint-anim)
-                       (begin
-                         (if (!= (ja-group) target-anim)
-                             (ja :group! target-anim :num! (set! anim-frame)))
-                         (if (and parent-proc (!= packet-id (-> parent-proc last-anim-packet)))
-                             (begin
-                               (set! (-> self skel root-channel 0 frame-num) anim-frame)
-                               (set! (-> parent-proc last-anim-packet) packet-id))
-                             (ja :num! (loop!))))
-                       (ja :num! (loop!))))
-                 (ja :num! (loop!))))
+             (when (and parent-proc (>= packet-id (-> parent-proc last-anim-packet)))
+               (if (and (>= anim-idx 0) (< anim-idx (-> self draw art-group length)))
+                   (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
+                     (if (= (-> target-anim type) art-joint-anim)
+                         (begin
+                           ;; A. New Packet Arrival Logic
+                           (if (!= packet-id (-> parent-proc last-anim-packet))
+                               (begin
+                                 ;; State Change Check (with sequencing)
+                                 (if (!= (ja-group) target-anim)
+                                     (begin
+                                       (ja-channel-push! 1 *mp-anim-blend-time*)
+                                       (ja :group! target-anim :num! (set! anim-frame))
+                                       ;; Reset delta-f tracking on state change
+                                       (set! (-> parent-proc last-remote-frame) anim-frame)
+                                       (set! (-> parent-proc client-speed) 1.0)
+                                       )
+                                     (begin
+                                       ;; Calculate client's actual playback speed (with EMA smoothing)
+                                       (let ((delta-f (- anim-frame (-> parent-proc last-remote-frame))) 
+                                             (delta-c (- (-> *remote-info* clock) (-> parent-proc last-remote-clock))))
+                                         ;; Loop wrap for speed calc
+                                         (if (< delta-f -10.0) (set! delta-f (+ delta-f (the float (ja-num-frames 0)))))
+                                         (let ((raw-speed (mp-calc-anim-speed delta-f delta-c (-> target-anim speed))))
+                                           ;; Use *mp-anim-speed-lerp* from globals
+                                           (set! (-> parent-proc client-speed) (lerp (-> parent-proc client-speed) raw-speed *mp-anim-speed-lerp*)))
+                                         )
+                                       )
+                                     )
+
+                                 (set! (-> parent-proc last-remote-frame) anim-frame)
+                                 (set! (-> parent-proc last-remote-clock) (-> *remote-info* clock))      
+                                 (set! (-> parent-proc last-anim-packet) packet-id)
+                                 (set! (-> parent-proc last-arrival-time) (-> *display* game-clock frame-counter))
+                                 ))
+
+                           ;; B. Per-Frame Prediction & Smoothing (Always runs)
+                           (if (ja-group)
+                               (let* ((cur-frame (-> self skel root-channel 0 frame-num))
+                                      (total-f (the float (ja-num-frames 0)))
+                                      (time-since-arrival (- (-> *display* game-clock frame-counter) (-> parent-proc last-arrival-time)))
+                                      ;; 1. Clamp latency estimate to prevent massive prediction spikes during lag
+                                      (latency-estimate (+ (the float time-since-arrival) (* *mp-anim-ping-buffer* *mp-anim-latency-factor*)))
+                                      (max-lat (the float (the int *mp-anim-max-latency*))) ;; Convert time-frame to float
+                                      )
+                                 
+                                 (if (> latency-estimate max-lat) (set! latency-estimate max-lat))
+
+                                 (let ((predicted-target (+ anim-frame (* (/ latency-estimate *mp-anim-ticks-to-frames*) (-> parent-proc client-speed)))))        
+                                   ;; Apply safety buffer (interpolation delay)
+                                   (set! predicted-target (- predicted-target *mp-anim-safety-buffer*))
+
+                                   ;; 2. Local Loop Check (Heuristic based on name)
+                                   (let ((is-looping? (mp-anim-loops? target-anim)))
+                                     
+                                     (if (> (abs (- predicted-target cur-frame)) *mp-anim-snap-threshold*) 
+                                         (set! (-> self skel root-channel 0 frame-num) predicted-target)   
+                                         ;; Use client-speed as the base for correction
+                                         (begin
+                                            (if *mp-anim-smooth-sync?*
+                                                (set! (-> parent-proc anim-speed) (mp-calc-corrected-speed predicted-target cur-frame total-f (-> parent-proc client-speed) is-looping?))
+                                                (set! (-> parent-proc anim-speed) (-> parent-proc client-speed))
+                                                )
+                                            ;; Respect the looping detection
+                                            (if is-looping?
+                                                (ja :num! (loop! (-> parent-proc anim-speed)))
+                                                (ja :num! (seek! total-f (-> parent-proc anim-speed)))
+                                                )
+                                            )
+                                         )
+                                     )
+                                   )
+                                 )
+                               (ja :num! (loop!)))                           )
+                         (ja :num! (loop!))))
+                   (ja :num! (loop!))))
+             )
 
            ;; 3. Ride-Along Visibility
            (cond

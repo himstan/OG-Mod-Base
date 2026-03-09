@@ -32,7 +32,12 @@
            (begin
              (vector-copy! *multi-remote-render-pos* (-> *target* control sidekick-root parent bone transform trans))
              (quaternion-copy! (the-as quaternion *multi-remote-render-quat*) (-> *target* control quat))
-             (quaternion-rotate-y! (the-as quaternion *multi-remote-render-quat*) (the-as quaternion *multi-remote-render-quat*) (-> *target* upper-body twist z)))
+             (quaternion-rotate-y! (the-as quaternion *multi-remote-render-quat*) (the-as quaternion *multi-remote-render-quat*) (-> *target* upper-body twist z))
+             
+             ;; SNAP INTERPOLATION: Ensure that when he jumps off, he starts from the shoulder!
+             (vector-copy! *multi-remote-interp-pos* *multi-remote-render-pos*)
+             (set! *multi-remote-interp-angle* (quaternion-y-angle (the-as quaternion *multi-remote-render-quat*)))
+             )
            (begin
              ;; Fallback to received coords if host isn't ready
              (vector-copy! *multi-remote-render-pos* *multi-remote-interp-pos*)
@@ -59,7 +64,9 @@
              (begin
                (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *remote-info* id) (-> *remote-info* role) :to *active-pool*)))
                  (if new-mgr
-                     (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                     (begin
+                       (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                       (set! *multi-manager-handle* (ppointer->handle new-mgr)))
                      )
                  )
                )
@@ -89,28 +96,16 @@
       (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
         (if (and sk (nonzero? sk) (-> sk skel) (nonzero? (-> sk skel)) (-> sk draw art-group))
             (if (= (-> *remote-info* riding?) (the-as uint 1))
-                (let ((skel (-> sk skel))
-                      (best-anim -1)
-                      (best-frame 0.0)
-                      (max-weight -1.0))
-                  ;; Safe scan of channels for dominant animation
-                  (let ((limit (min (the int (-> skel active-channels)) 4)))
-                    (dotimes (i limit)
-                      (let ((chan (-> skel channel i)))
-                        (let ((weight (-> chan frame-interp 0)))
-                          (if (and (-> chan frame-group)
-                                   (= (-> chan frame-group type) art-joint-anim)
-                                   (> weight max-weight))
-                              (begin
-                                (set! max-weight weight)
-                                (set! best-anim (-> chan frame-group master-art-group-index))
-                                (set! best-frame (-> chan frame-num))))))))
+                (let ((best-anim -1)
+                      (best-frame 0.0))
+                  
+                  (mp-find-dominant-anim (the-as process-drawable sk) (the (pointer int32) (& best-anim)) (the (pointer float) (& best-frame)))
 
                   (if (!= best-anim -1)
                       (begin
+                        (set! (-> *local-info* last-sidekick-frame) (-> *local-info* sidekick-frame))
                         (set-mp-sidekick-anim! best-anim)
                         (set-mp-sidekick-frame! best-frame)))
-
                   (logclear! (-> sk draw status) (draw-control-status no-draw)))
                 ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
                 (logior! (-> sk draw status) (draw-control-status no-draw))))))

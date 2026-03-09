@@ -58,5 +58,6 @@
   ;; 4. Puppet Rendering (Interpolated every frame for smoothness)
   (mp-manage-remote-puppet)
   (mp-sync-sidekick-anim)
+  (mp-draw-anim-debug)
 
   (none)))

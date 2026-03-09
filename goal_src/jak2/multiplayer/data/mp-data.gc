@@ -101,19 +101,13 @@
                       (begin
                         (set! local-anim (-> chan frame-group master-art-group-index))
                         (set! local-frame (-> chan frame-num)))))
-                (let ((max-weight 0.0)
-                      (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
-                  (dotimes (i limit)
-                    (let ((chan (-> skel channel i)))
-                      (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)) (>= (-> chan frame-interp 0) max-weight))
-                          (begin
-                            (set! max-weight (-> chan frame-interp 0))
-                            (set! local-anim (-> chan frame-group master-art-group-index))
-                            (set! local-frame (-> chan frame-num))))))
-                  (if (and (> (-> skel allocated-length) 0) (= local-anim -1) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
+                (begin
+                  (mp-find-dominant-anim *target* (the (pointer int32) (& local-anim)) (the (pointer float) (& local-frame)))
+                  (if (and (= local-anim -1) (> (-> skel allocated-length) 0) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
                       (begin
                         (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
                         (set! local-frame (-> skel channel 0 frame-num))))))))
+      (set! (-> *local-info* last-anim-frame) (-> *local-info* anim-frame))
       (set! (-> *local-info* anim) local-anim)
       (set! (-> *local-info* anim-frame) local-frame)
       (+! (-> *local-info* packet-id) 1))

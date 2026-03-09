@@ -1,3 +1,101 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(define-extern num-func-loop! (function joint-control-channel float float float float))
+(define-extern num-func-loop-speedless! (function joint-control-channel float float float float))
+(define-extern num-func-seek! (function joint-control-channel float float float float))
+(define-extern num-func-none (function joint-control-channel float float float float))
+
+(defun mp-anim-loops? ((anim art-joint-anim))
+  "Determine if an animation should loop based on its name. (Authority)"
+  (if (or (not anim) (zero? anim)) (return #f))
+  (let ((name (-> anim name)))
+    (if (or (not name) (zero? name)) (return #f))
+    
+    ;; 1. Absolute Priority: If it explicitly says -loop, it loops.
+    (if (>= (string-position "-loop" name) 0) (return #t))
+
+    ;; 2. Blacklist: Transitions and one-shots. 
+    ;; We check this BEFORE the keywords below so "run-to-stance" doesn't match "run" or "stance".
+    (if (or (>= (string-position "-to-" name) 0)
+            (>= (string-position "land" name) 0)
+            (>= (string-position "jump-up" name) 0)
+            (>= (string-position "hit-" name) 0)
+            (>= (string-position "attack" name) 0)
+            (>= (string-position "death" name) 0)
+            )
+        (return #f))
+
+    ;; 3. Jak 2 Naming Conventions for standard Looping Anims:
+    (if (or (>= (string-position "walk" name) 0)
+            (>= (string-position "run" name) 0)
+            (>= (string-position "idle" name) 0)
+            (>= (string-position "stance" name) 0)
+            (>= (string-position "move" name) 0)
+            (>= (string-position "swim" name) 0)
+            (>= (string-position "skate" name) 0)
+            (>= (string-position "hover" name) 0)
+            (>= (string-position "board-ride" name) 0)
+            (>= (string-position "pilot" name) 0)
+            )
+        (return #t))
+    )
+  #f)
+
+(defun mp-calc-anim-speed ((delta-f float) (delta-c time-frame) (group-speed float))
+  "Calculate the speed multiplier for an animation based on frame and clock deltas."
+  (if (<= group-speed 0.0) (set! group-speed 1.0))
+  (let ((speed 1.0))
+    ;; 1 second of clock is 300 ticks. 1 second of anim is 60 frames.
+    ;; frames/tick = 60 / 300 = 1/5.
+    (if (and (> delta-c 0) (< delta-c (seconds 1)))
+        (set! speed (/ delta-f (* (/ (the float delta-c) 5.0) group-speed)))
+        ;; Fallback to TPS if clock is invalid
+        (let ((frames-per-packet (/ 60.0 (the float *multi-sync-tps*))))
+          (set! speed (/ delta-f (* frames-per-packet group-speed)))))
+    
+    (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
+    speed))
+
+(defun mp-calc-corrected-speed ((remote-frame float) (local-frame float) (total-frames float) (base-speed float) (is-looping symbol))
+  "Calculate a speed that nudges the local frame towards the remote frame to eliminate drift."
+  (let ((err (- remote-frame local-frame)))
+    (if (<= total-frames 1.0) (return base-speed))
+    
+    ;; Auto-loop detection: IF the animation is marked as looping, 
+    ;; assume large errors are wrap-arounds.
+    (when is-looping
+      (if (> err (/ total-frames 2.0)) (set! err (- err total-frames)))
+      (if (< err (/ total-frames -2.0)) (set! err (+ err total-frames))))
+    
+    ;; Apply nudge (Gain defined in mp-types.gc)
+    (let ((res (+ (+ base-speed *mp-anim-speed-offset*) (* err *mp-anim-gain*))))
+      ;; Safety clamp: Use tuning globals
+      (if (and (> base-speed 0.0) (< res *mp-anim-min-speed*)) (set! res *mp-anim-min-speed*))
+      (if (> res *mp-anim-max-speed*) (set! res *mp-anim-max-speed*))
+      res)))
+
+(defun mp-find-dominant-anim ((proc process-drawable) (out-anim (pointer int32)) (out-frame (pointer float)))
+  "Find the animation index and frame with the highest weight in the process skeleton."
+  (let ((res-anim -1)
+        (res-frame 0.0)
+        (max-weight -1.0))
+    (when (and proc (nonzero? proc) (-> proc draw) (nonzero? (-> proc draw art-group)) (-> proc skel) (nonzero? (-> proc skel)))
+      (let ((skel (-> proc skel)))
+        (let ((limit (min (the int (-> skel active-channels)) (the int (-> skel allocated-length)))))
+          (dotimes (i limit)
+            (let ((chan (-> skel channel i)))
+              (when (and (nonzero? chan) (-> chan frame-group) (= (-> chan frame-group type) art-joint-anim))
+                (let ((weight (-> chan frame-interp 0)))
+                  (if (>= weight max-weight)
+                      (begin
+                        (set! max-weight weight)
+                        (set! res-anim (-> chan frame-group master-art-group-index))
+                        (set! res-frame (-> chan frame-num)))))))))))
+    (set! (-> out-anim 0) res-anim)
+    (set! (-> out-frame 0) res-frame))
+    (none))
+
 (define *old-enemy-method-97* (the-as (function enemy process) #f))
 (define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
 (define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
@@ -66,7 +164,7 @@
 (define *old-enemy-dying* (the-as (function enemy none) #f))
 
 (defun mp-enemy-dying-hijack ((this enemy))
-  ;; GUARD: Only Host is authoritative over the \"start of death\".
+  ;; GUARD: Only Host is authoritative over the "start of death".
   (when (and (mp-is-jak?) (not *mp-processing-remote-event*))
     (let ((aid (the-as uint 0)))
       (if (-> this entity) (set! aid (-> this entity aid)))
@@ -232,7 +330,12 @@
        (if (or (mp-is-jak?) *mp-processing-remote-event*)
            (general-event-handler self proc argc message block))
        #t)))
-  :code (behavior () (loop (suspend)))
+  :code (behavior ()
+    (loop
+      (let ((speed (-> self water-surface-height)))
+        (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
+        (ja :num! (loop! speed)))
+      (suspend)))
   :post mp-enemy-sync-post-behavior)
 
 (defun mp-sync-enemies-host-callback ((p process-tree))
@@ -248,7 +351,7 @@
         ;; 1. Death detection (Host -> Client)
         (let ((is-dying? (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
           (when (and (!= aid 0) is-dying?)
-            ;; Use bit 43 as our \"MP death event sent\" flag to avoid spamming
+            ;; Use bit 43 as our "MP death event sent" flag to avoid spamming
             (when (not (logtest? (-> e-proc enemy-flags) (enemy-flag enemy-flag43)))
               (format 0 "[MP-Host] Authoritative death detected: ~A (AID ~D). Broadcasting.~%" e-proc aid)
               (mp-send-world-event MP_EVENT_ENEMY_DEATH aid)
@@ -271,7 +374,12 @@
                 (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)) (nonzero? (-> e-proc draw)))
                     (let ((chan (-> e-proc skel channel 0)))
                       (if (and (nonzero? chan) (nonzero? (-> chan frame-group)) (nonzero? (-> e-proc draw art-group)))
-                          (begin
+                            (begin
+                            (let ((prev-frame 0.0))
+                              (dotimes (j 24)
+                                (if (= (-> *local-info* enemies j actor-id) aid)
+                                    (set! prev-frame (-> *local-info* enemies j anim-frame))))
+                              (set! (-> slot last-anim-frame) prev-frame))
                             (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
                             (set! (-> slot anim-frame) (-> chan frame-num)))
                           (begin
@@ -339,14 +447,32 @@
                       (set! (-> e-proc root quat w) (-> slot quat-w))
 
                       (let ((anim-idx (-> slot anim-index))
-                            (anim-frame (-> slot anim-frame)))
+                            (anim-frame (-> slot anim-frame))
+                            (last-anim-frame (-> slot last-anim-frame)))
                         (when (and (>= anim-idx 0) (< anim-idx (-> e-proc draw art-group length)))
                           (let ((target-anim (the-as art-joint-anim (-> e-proc draw art-group data anim-idx))))
                             (when (and target-anim (= (-> target-anim type) art-joint-anim))
                               (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
                                 (if (!= (-> e-proc skel channel 0 frame-group) target-anim)
-                                    (set! (-> e-proc skel channel 0 frame-group) target-anim))
-                                (set! (-> e-proc skel channel 0 frame-num) anim-frame))))))
+                                    (begin
+                                      (set! (-> e-proc skel channel 0 frame-group) target-anim)
+                                      (set! (-> e-proc skel channel 0 frame-num) anim-frame)
+                                      )
+                                    )
+                                (let ((delta-f (- anim-frame last-anim-frame)))
+                                  (if (< delta-f 0.0)
+                                      (set! delta-f (+ delta-f (the float (-> target-anim frames num-frames)))))
+                                  
+                                  (let ((base-speed (mp-calc-anim-speed delta-f 0 (-> target-anim speed)))
+                                        (cur-frame (-> e-proc skel channel 0 frame-num))
+                                        (total-f (the float (-> target-anim frames num-frames))))
+                                    
+                                    (if (> (abs (- anim-frame cur-frame)) 10.0)
+                                        (set! (-> e-proc skel channel 0 frame-num) anim-frame)
+                                        (set! (-> e-proc water-surface-height) (mp-calc-corrected-speed anim-frame cur-frame total-f base-speed #t))
+                                        )
+                                    )
+                                  ))))))
 
                       (set! (-> e-proc hit-points) (-> slot hp))
 
@@ -362,7 +488,6 @@
                         (when (nonzero? (-> e-proc draw))
                           (set! (-> e-proc draw death-effect) (the-as uint 1))
                           (set! (-> e-proc draw death-timer) (the-as uint 60))
-                          (set! (-> e-proc draw death-timer-org) (the-as uint 60))
                           (set! (-> e-proc draw death-timer-org) (the-as uint 60))
                           (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))))
 

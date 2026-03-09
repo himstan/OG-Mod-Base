@@ -8,6 +8,21 @@
 (define-extern *has-ridden-before?* symbol)
 (define *multi-sync-tps* 20)
 
+;; --- Animation Sync Tuning Globals ---
+(define *mp-anim-smooth-sync?* #t)      ;; Use P-Controller for drift correction?
+(define *mp-anim-gain* 0.05)            ;; How aggressively we close the frame gap (Reduced to 0.05)
+(define *mp-anim-snap-threshold* 30.0) ;; Error in frames before a hard snap occurs
+(define *mp-anim-latency-factor* 1.0)  ;; Multiplier for prediction (0.0 to 1.5)
+(define *mp-anim-speed-lerp* 0.2)      ;; EMA smoothing factor for client-speed (0.1 to 0.5)
+(define *mp-anim-speed-offset* 0.0)    ;; Constant bias added to the incoming NetV (e.g. -0.05)
+(define *mp-anim-max-speed* 3.0)       ;; Maximum allowed playback speed (Reduced to 1.5)
+(define *mp-anim-min-speed* 0.5)       ;; Minimum allowed playback speed
+(define *mp-anim-ping-buffer* 10.0)    ;; Base ping buffer in ticks
+(define *mp-anim-safety-buffer* 1.0)   ;; Targeted "lag" in frames to prevent jitter (interpolation delay)
+(define *mp-anim-ticks-to-frames* 5.0) ;; Engine constant: 300 ticks / 60 fps = 5.0
+(define *mp-anim-blend-time* (seconds 0.05)) ;; Time to blend between different animations
+(define *mp-anim-max-latency* (seconds 0.5)) ;; Maximum time we are allowed to predict forward
+
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))
 (defconstant MP_EVENT_BREAK (the-as uint 3))
@@ -50,11 +65,12 @@
    (quat-w     float)
    (anim-index int32)
    (anim-frame float)
+   (last-anim-frame float)
    (hp         int32)
    (state      uint32)
    (focus-aid  uint32)
    (attack-flag uint8)
-   (pad         uint8 11))
+   (pad         uint8 7))
   )
 
 (deftype remote-player-info (structure)
@@ -75,7 +91,9 @@
    (clock       time-frame)
    (scene-name  uint8 32)
    (scene-active uint32)
-   (pad         uint8 12)
+   (last-anim-frame float)
+   (last-sidekick-frame float)
+   (pad         uint8 4)
    )
   :size-assert 112)
 
@@ -93,8 +111,10 @@
    (sidekick-anim  int32)
    (sidekick-frame float)
    (clock       time-frame)
-   ;; Padding for legacy event fields (24 bytes)
-   (pad-events  uint8 24)
+   (last-anim-frame float)
+   (last-sidekick-frame float)
+   ;; Padding for legacy event fields (16 bytes)
+   (pad-events  uint8 16)
    ;; Global World Sync (Outgoing)
    (money       float)
    (gems        float)
@@ -201,6 +221,14 @@
    (proxy-proc          handle)
    (spawn-timer         time-frame)
    (last-anim-packet    uint32)
+   (anim-speed          float)
+   (client-speed        float)
+   (last-arrival-time   time-frame)
+
+   (last-remote-clock   time-frame)
+
+   (last-remote-frame   float)
+   (last-remote-sidekick-frame float)
    )
   (:state-methods
     idle)
@@ -213,7 +241,7 @@
 (define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
-(define-perm *mp-debug-draw* symbol #f)
+(define-perm *mp-debug-draw* symbol #t)
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
 

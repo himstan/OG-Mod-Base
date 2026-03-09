@@ -481,6 +481,7 @@
   "mod-common-functions.o" ;; added
   "orb-placer.o"  ;; added
   "mp-helpers.o" ;; added
+  "mp-debug.o" ;; added
   "mp-actor.o" ;; added
   "mp-clock.o" ;; added
   "mp-sync-state.o" ;; added
