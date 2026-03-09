@@ -1,0 +1,121 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-get-anim-name ((proc process-drawable) (idx int))
+  (if (and proc (nonzero? proc) (-> proc draw) (-> proc draw art-group) (>= idx 0) (< idx (-> proc draw art-group length)))
+      (let ((name (-> proc draw art-group data idx name)))
+        (if (and name (nonzero? name))
+            name
+            "unknown"))
+      "unknown"))
+
+(defun mp-extract-local-stats ()
+  "Update local info with current game stats"
+  (set! (-> *local-info* money) (-> *game-info* money))
+  (set! (-> *local-info* gems) (-> *game-info* gem))
+  (set! (-> *local-info* skill) (-> *game-info* skill))
+
+  (when (and (mp-is-daxter?))
+    (if *local-riding?*
+      (set! (-> *local-info* riding?) (the-as uint 1))
+      (set! (-> *local-info* riding?) (the-as uint 0)))
+    )
+  (none))
+
+(defun mp-extract-local-data ()
+  "Extract position, animation, and world state for sending"
+  (with-pp
+    ;; Extraction of dead/collected aids (HOST ONLY)
+    (if (mp-is-jak?)
+        (begin
+          (mp-sync-enemies-host)
+          (let ((count 0))
+            ;; 1. Global Task State (Shelved)
+
+            ;; 2. Continue Point Sync
+            (let ((dst (-> *local-info* host-continue)))
+              (dotimes (i 32) (set! (-> dst i) (the-as uint 0))) ;; Clear first
+              (let ((cont (-> *game-info* current-continue)))
+                (if (and cont (nonzero? cont))
+                    (let ((cont-name (-> cont name)))
+                      (if (and cont-name (nonzero? cont-name))
+                          (let ((src (-> cont-name data))
+                                (len (min 31 (length cont-name))))
+                            (dotimes (i len)
+                              (set! (-> dst i) (-> src i)))))))))
+
+            ;; 3. Scan the global persistent list
+            (let ((perm-array (-> *game-info* perm-list)))
+              (when perm-array
+                (dotimes (i (-> perm-array length))
+                  (let ((perm (-> perm-array data i)))
+                    (when (logtest? (-> perm status) (entity-perm-status dead))
+                      (set! (-> *local-info* sync-aids count) (the-as uint (-> perm aid)))
+                      (+! count 1)
+                      (if (>= count 120) (goto full-buffer)))))))
+
+            ;; 4. Scan all loaded levels (Capture actors that haven't hit the perm-list yet)
+            (dotimes (l 6)
+              (let ((lev (-> *level* level l)))
+                (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+                  (let ((entities (-> lev entity)))
+                    (when (and entities (nonzero? entities))
+                      (dotimes (i (-> entities length))
+                        (let ((ent (-> entities data i)))
+                          (let ((perm (-> ent perm))
+                                (proc (-> ent process)))
+                            (when (or (logtest? (-> perm status) (entity-perm-status dead))
+                                      (and proc (nonzero? proc) (type? proc enemy) (logtest? (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))))
+                              (let ((already-in? #f))
+                                (dotimes (j count)
+                                  (if (= (-> *local-info* sync-aids j) (the-as uint (-> ent aid)))
+                                      (set! already-in? #t)))
+                                (when (not already-in?)
+                                  (set! (-> *local-info* sync-aids count) (the-as uint (-> ent aid)))
+                                  (+! count 1)
+                                  (if (>= count 120) (goto full-buffer)))))))))))))
+
+            (label full-buffer)
+            (set! (-> *local-info* sync-aids-count) (the-as uint count)))))
+
+    (set! (-> *local-info* x) (-> *target* control trans x))
+    (set! (-> *local-info* y) (-> *target* control trans y))
+    (set! (-> *local-info* z) (-> *target* control trans z))
+    (set! (-> *local-info* angle) (quaternion-y-angle (-> *target* control quat)))
+
+    ;; Hash the level name
+    (set! (-> *local-info* level) (the-as uint 0))
+    (let ((lev (-> *level* level 0)))
+      (if (and lev (nonzero? lev) (= (-> lev status) 'active))
+          (let ((lev-name (-> lev name)))
+            (if (and lev-name (nonzero? lev-name))
+                (set! (-> *local-info* level) (string-crc32 (symbol->string lev-name)))))))
+
+    (let ((local-anim -1)
+          (local-frame 0.0))
+      (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)) (> (-> *target* skel allocated-length) 0))
+          (let ((skel (-> *target* skel)))
+            (if (mp-is-daxter?)
+                (let ((chan (-> skel channel 0)))
+                  (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
+                      (begin
+                        (set! local-anim (-> chan frame-group master-art-group-index))
+                        (set! local-frame (-> chan frame-num)))))
+                (let ((max-weight 0.0)
+                      (limit (min 7 (min (the int (-> skel active-channels)) (the int (-> skel allocated-length))))))
+                  (dotimes (i limit)
+                    (let ((chan (-> skel channel i)))
+                      (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)) (>= (-> chan frame-interp 0) max-weight))
+                          (begin
+                            (set! max-weight (-> chan frame-interp 0))
+                            (set! local-anim (-> chan frame-group master-art-group-index))
+                            (set! local-frame (-> chan frame-num))))))
+                  (if (and (> (-> skel allocated-length) 0) (= local-anim -1) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
+                      (begin
+                        (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
+                        (set! local-frame (-> skel channel 0 frame-num))))))))
+      (set! (-> *local-info* anim) local-anim)
+      (set! (-> *local-info* anim-frame) local-frame)
+      (+! (-> *local-info* packet-id) 1))
+    )
+  (none))

@@ -1,0 +1,66 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-update-role-transformation ()
+  "Handle transforming Jak to Daxter (Ride-Along) or vice-versa"
+  (if (and *target* (nonzero? *target*)
+           (mp-is-daxter?)
+           (not (logtest? (-> *target* focus-status) (focus-status indax)))
+           (not (logtest? (-> *target* focus-status) (focus-status teleporting)))
+           (and *level* (nonzero? *level*) (zero? (the-as uint (-> *level* loading-level))))
+           (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-load-wait)))
+           (nonzero? (-> *target* control))
+           (let ((surf (-> *target* control current-surface)))
+             (and surf (not (zero? (the-as uint surf))) (not (logtest? (the-as uint surf) 3)) (< (the-as uint surf) #x70000000))))
+      (begin
+        (format 0 "[MP] Role assigned: 1. Transforming via target-indax-init (Ride-Along default)...~%")
+        (target-indax-init #t)))
+  (none))
+
+(defun mp-update-ai-targeting ()
+  "Update player-procs handles for AI targeting"
+  (let ((loc-role (-> *local-info* role))
+        (rem-role (if (mp-is-jak?) 1 0)))
+    (set! (-> *local-info* player-procs loc-role) (process->handle *target*))
+    (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
+      (if (and rem-mgr (nonzero? rem-mgr))
+          (set! (-> *local-info* player-procs rem-role) (-> rem-mgr proxy-proc))
+          (set! (-> *local-info* player-procs rem-role) (the-as handle #f)))))
+  (none))
+
+(defun mp-update-camera-settings ()
+  "Apply or remove role-specific camera settings"
+  (if (mp-is-daxter?)
+      (begin
+        (set-setting! 'string-min-length 'abs (meters 3.0) 0)
+        (set-setting! 'string-max-length 'abs (meters 7.0) 0)
+        (set-setting! 'target-height     'abs (meters 1.0) 0))
+      (begin
+        (remove-setting! 'string-min-length)
+        (remove-setting! 'string-max-length)
+        (remove-setting! 'target-height)))
+  (none))
+
+(defun mp-handle-scene-transition ()
+  "Handle state changes when entering/exiting scenes"
+  (let ((in-scene? (not (not *scene-player*))))
+    (when (and (mp-is-daxter?)
+               *mp-last-scene-player*
+               (not in-scene?))
+      (format 0 "[MP] Scene ended. Re-entering ride-along...~%")
+      (set! *has-ridden-before?* #f))
+    (set! *mp-last-scene-player* in-scene?))
+  (none))
+
+(defun mp-update-player-visibility ()
+  "Ensure local player is visible if not in specialized state"
+  (if (mp-is-daxter?)
+      (begin
+        (mp-sync-enemies-client)
+        (if (and *target* (-> *target* draw))
+            (logclear! (-> *target* draw status) (draw-control-status no-draw))))
+      (begin
+        (if (and *target* (-> *target* draw))
+            (logclear! (-> *target* draw status) (draw-control-status no-draw)))
+        ))
+  (none))

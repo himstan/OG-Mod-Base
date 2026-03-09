@@ -3,7 +3,10 @@
 
 ;; --- Globals for Throttling ---
 (define-perm *multi-last-send-time* time-frame 0)
-(define *multi-sync-tps* 10)
+(define-perm *multi-remote-spawn-time* time-frame 0)
+(define-perm *mp-last-scene-player* symbol #f)
+(define-extern *has-ridden-before?* symbol)
+(define *multi-sync-tps* 20)
 
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))
@@ -185,6 +188,8 @@
 (define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
 (define-perm *multi-remote-interp-angle* float 0.0)
 (define-perm *multi-remote-first-seen?* symbol #t)
+(define-perm *multi-remote-render-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-render-quat* structure (new 'static 'structure))
 
 ;; Track the manager via handle to prevent respawn loops
 (declare-type mp-target-proxy process-focusable)

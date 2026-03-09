@@ -1,0 +1,91 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-handle-full-sync-state ()
+  "Handle Full Sync State Machine (MUST BE ABOVE GUARDS)"
+  (when (and (mp-is-daxter?) (nonzero? (-> *local-info* sync-flag)))
+    (case (-> *local-info* sync-flag)
+      ((1) ;; Phase 1: Request Hard Load
+       (format 0 "[MP-Client] Starting Full Sync Hard Load...~%")
+       (let ((dst (-> *mp-continue-name* data))
+             (src (-> *local-info* host-continue)))
+         (dotimes (i 32) (set! (-> dst i) (-> src i))))
+       (when (nonzero? (length *mp-continue-name*))
+         (set-continue! *game-info* *mp-continue-name* #t)
+         (initialize! *game-info* 'game (the-as game-save #f) *mp-continue-name*)
+         (set! (-> *local-info* sync-flag) (the-as uint 2))
+         )
+       )
+      ((2) ;; Phase 2: Wait for Load & Level Paging
+       (let ((cont (get-continue-by-name *game-info* *mp-continue-name*)))
+         (when cont
+           (let ((lev (level-get *level* (-> cont level))))
+             (when (and lev (nonzero? lev) (= (-> lev status) 'active) (= (-> *level* loading-level) (-> *level* default-level)))
+               (set! (-> *local-info* sync-flag) (the-as uint 3))
+               )
+             )
+           )
+         )
+       )
+      ((3) ;; Phase 3: Apply Data (Once target exists and levels are active)
+       (when (and *target* (-> *target* control))
+         (format 0 "[MP-Client] Paging Complete. Applying World State for Level ~S...~%" *mp-continue-name*)
+         (set! (-> *game-info* money) (-> *local-info* sync-money))
+         (set! (-> *game-info* gem) (-> *local-info* sync-gems))
+         (set! (-> *game-info* skill) (-> *local-info* sync-skill))
+
+         (let ((h-task (-> *local-info* host-task)))
+           (if (nonzero? h-task)
+               (task-node-close! (the-as game-task-node h-task))))
+
+         ;; Sync AIDs (Orbs, etc.)
+         (let ((count (-> *local-info* sync-aids-count)))
+           (if (> count 128) (set! count (the-as uint 128)))
+           (format 0 "[MP-Client] Marking ~D actors as dead in fresh perm-list...~%" count)
+           (dotimes (i (the-as int count))
+             (let ((aid (-> *local-info* sync-aids i)))
+               ;; 1. Inject into Global Perm-List
+               (let ((perm (actor-perm *game-info* (the-as actor-id aid))))
+                 (cond
+                   (perm (logior! (-> perm status) (entity-perm-status dead)))
+                   (else
+                     (let ((game-perms (-> *game-info* perm-list)))
+                       (when (< (-> game-perms length) (-> game-perms allocated-length))
+                         (let ((new-perm (-> game-perms data (-> game-perms length))))
+                           (set! (-> new-perm quad) (the-as uint128 0))
+                           (set! (-> new-perm aid) (the-as actor-id aid))
+                           (set! (-> new-perm status) (entity-perm-status dead))
+                           (+! (-> game-perms length) 1)))))))
+
+               ;; 2. Surgical Deactivation (Now that the level is 'active, this will actually find things)
+               (dotimes (l 6)
+                 (let ((lev (-> *level* level l)))
+                   (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+                     (let ((entities (-> lev entity)))
+                       (when (and entities (nonzero? entities))
+                         (dotimes (j (-> entities length))
+                           (let ((ent (-> entities data j)))
+                             (when (= (-> ent aid) (the-as uint aid))
+                               ;; Force the level-local perm to dead
+                               (logior! (-> ent perm status) (entity-perm-status dead))
+                               ;; Kill the process if it spawned during the load
+                               (let ((proc (-> ent process)))
+                                 (if (and proc (nonzero? proc))
+                                     (begin
+                                       (format 0 "[MP-Client] Surgical Deactivate: Actor AID ~D in Level ~S~%" aid (-> lev name))
+                                       (deactivate proc)))))))))))))))
+
+         ;; FINAL TELEPORT: Snap to Host's exact position
+         (format 0 "[MP-Client] Snap-Teleport to Host: ~F ~F ~F~%" (-> *remote-info* x) (-> *remote-info* y) (-> *remote-info* z))
+         (set! (-> *target* control trans x) (-> *remote-info* x))
+         (set! (-> *target* control trans y) (-> *remote-info* y))
+         (set! (-> *target* control trans z) (-> *remote-info* z))
+         (set-setting! 'allow-recharge #f 0.0 0)
+
+         (set! (-> *local-info* sync-flag) (the-as uint 0))
+         (format 0 "[MP-Client] Join Handshake & Level Alignment Successful!~%")
+         )
+       )
+      )
+    )
+  (none))

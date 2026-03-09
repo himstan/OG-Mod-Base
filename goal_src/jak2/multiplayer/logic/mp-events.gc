@@ -1,0 +1,40 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-receive-world-event ((evt-type uint) (aid uint))
+  (set! *mp-processing-remote-event* #t)
+  (case evt-type
+    ((MP_EVENT_ORB)         (mp-event-handler-orb aid))
+    ((MP_EVENT_GEM)         (mp-event-handler-gem aid))
+    ((MP_EVENT_BREAK)       (mp-event-handler-break aid))
+    ((MP_EVENT_ATTACK_ENEMY) (mp-event-handler-attack-enemy aid))
+    ((MP_EVENT_ENEMY_DEATH)  (mp-event-handler-enemy-death aid))
+    ((MP_EVENT_PLAYER_HIT)   (mp-event-handler-player-hit aid))
+    ((MP_EVENT_DEBUG)        (format 0 "[MP-DEBUG-REMOTE] Received debug event AID: ~D~%" aid))
+    ((MP_EVENT_SCENE_START)  (mp-event-handler-scene-start aid))
+    ((MP_EVENT_SCENE_SKIP)   (mp-event-handler-scene-skip aid))
+    )
+  (set! *mp-processing-remote-event* #f)
+  (none))
+
+(defun mp-push-local-events ()
+  "Event Pusher (Batch all queued events into the bridge buffer)"
+  (let ((out-idx 0))
+    (while (and (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*) (< out-idx 16))
+      (let ((q-idx *mp-event-queue-read-ptr*))
+        (set! (-> *mp-event-buffer* out-events out-idx etype) (-> *mp-event-queue* q-idx etype))
+        (set! (-> *mp-event-buffer* out-events out-idx aid) (-> *mp-event-queue* q-idx aid))
+        (set! *mp-event-queue-read-ptr* (logand (+ q-idx 1) 31))
+        (1+! out-idx)))
+    (if (> out-idx 0) (format 0 "[MP] Sending ~D batched events to bridge~%" out-idx))
+    (set! (-> *mp-event-buffer* out-count) (the-as uint out-idx)))
+  (none))
+
+(defun mp-process-inbound-events ()
+  "Process Inbound Events (Batch)"
+  (dotimes (i (the-as int (-> *mp-event-buffer* in-count)))
+    (let ((evt (-> *mp-event-buffer* in-events i)))
+      (format 0 "[MP] Event received! Type: ~D, AID: ~D~%" (-> evt etype) (-> evt aid))
+      (mp-receive-world-event (-> evt etype) (-> evt aid))))
+  (set! (-> *mp-event-buffer* in-count) (the-as uint 0))
+  (none))

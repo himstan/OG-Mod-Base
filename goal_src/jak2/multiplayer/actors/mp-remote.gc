@@ -1,0 +1,117 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defun mp-update-remote-transform ()
+  "Consolidated logic for calculating the remote player's visual and physical transform"
+  (let ((remote-pos (new 'stack-no-clear 'vector)))
+    (set-vector! remote-pos (-> *remote-info* x) (-> *remote-info* y) (-> *remote-info* z) 1.0)
+
+    ;; 1. Smooth Interpolation
+    (if *multi-remote-first-seen?*
+        (begin
+          (vector-copy! *multi-remote-interp-pos* remote-pos)
+          (set! *multi-remote-interp-angle* (-> *remote-info* angle))
+          (set! *multi-remote-first-seen?* #f)))
+
+    (let ((interp-factor (* 15.0 (seconds-per-frame))))
+      (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos interp-factor))
+    (set! *multi-remote-interp-angle* (deg-seek *multi-remote-interp-angle* (-> *remote-info* angle) (* (degrees 1080) (seconds-per-frame))))
+
+    ;; 2. Final Transform Calculation (Logic for Ride-Along vs Independent)
+    (cond
+      ((and (= (-> *remote-info* role) 1) (= (-> *remote-info* riding?) 1))
+       ;; Case: Remote Daxter is riding local Jak. Snap to shoulder SAFELY.
+       (if (and (mp-is-jak?)
+                *target*
+                (nonzero? (-> *target* control))
+                (nonzero? (-> *target* node-list))
+                (-> *target* control sidekick-root)
+                (-> *target* control sidekick-root parent)
+                (-> *target* control sidekick-root parent bone)
+                (nonzero? (-> *target* upper-body)))
+           (begin
+             (vector-copy! *multi-remote-render-pos* (-> *target* control sidekick-root parent bone transform trans))
+             (quaternion-copy! (the-as quaternion *multi-remote-render-quat*) (-> *target* control quat))
+             (quaternion-rotate-y! (the-as quaternion *multi-remote-render-quat*) (the-as quaternion *multi-remote-render-quat*) (-> *target* upper-body twist z)))
+           (begin
+             ;; Fallback to received coords if host isn't ready
+             (vector-copy! *multi-remote-render-pos* *multi-remote-interp-pos*)
+             (quaternion-identity! (the-as quaternion *multi-remote-render-quat*))
+             (quaternion-rotate-y! (the-as quaternion *multi-remote-render-quat*) (the-as quaternion *multi-remote-render-quat*) *multi-remote-interp-angle*))))
+      (else
+        ;; Case: Standard independent position
+        (vector-copy! *multi-remote-render-pos* *multi-remote-interp-pos*)
+        (quaternion-identity! (the-as quaternion *multi-remote-render-quat*))
+        (quaternion-rotate-y! (the-as quaternion *multi-remote-render-quat*) (the-as quaternion *multi-remote-render-quat*) *multi-remote-interp-angle*))))
+  (none))
+
+(defun mp-manage-remote-puppet ()
+  "Spawn, update, or deactivate the remote player puppet"
+  (cond
+    ((= (-> *remote-info* status) 1)
+     (begin
+       ;; A. Calculate current transform once
+       (mp-update-remote-transform)
+
+       ;; B. Manage process lifecycle
+       (let ((mgr-ptr *mp-remote-manager*))
+         (if (or (not mgr-ptr) (zero? mgr-ptr) (= (-> mgr-ptr 0 status) 'dead))
+             (begin
+               (let ((new-mgr (process-spawn mp-manager :init mp-manager-init (-> *remote-info* id) (-> *remote-info* role) :to *active-pool*)))
+                 (if new-mgr
+                     (set! *mp-remote-manager* (the-as (pointer mp-manager) new-mgr))
+                     )
+                 )
+               )
+             (let ((mp-mgr (-> mgr-ptr 0)))
+               (set! (-> mp-mgr remote-id) (-> *remote-info* id))
+               (set! (-> mp-mgr remote-role) (-> *remote-info* role))
+               )
+             )
+         )
+       )
+     )
+    (else
+     (begin
+       (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) (the-as symbol 'dead)))
+           (begin
+             (deactivate (-> *mp-remote-manager* 0))
+             (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
+       (set! *multi-remote-first-seen?* #t)
+       )
+     )
+    )
+  (none))
+
+(defun mp-sync-sidekick-anim ()
+  "Daxter Animation Sync & Visibility for Host (Jak)"
+  (if (and (mp-is-jak?) *target* (nonzero? *target*) (-> *target* sidekick))
+      (let ((sk (the-as sidekick (ppointer->process (-> *target* sidekick)))))
+        (if (and sk (nonzero? sk) (-> sk skel) (nonzero? (-> sk skel)) (-> sk draw art-group))
+            (if (= (-> *remote-info* riding?) (the-as uint 1))
+                (let ((skel (-> sk skel))
+                      (best-anim -1)
+                      (best-frame 0.0)
+                      (max-weight -1.0))
+                  ;; Safe scan of channels for dominant animation
+                  (let ((limit (min (the int (-> skel active-channels)) 4)))
+                    (dotimes (i limit)
+                      (let ((chan (-> skel channel i)))
+                        (let ((weight (-> chan frame-interp 0)))
+                          (if (and (-> chan frame-group)
+                                   (= (-> chan frame-group type) art-joint-anim)
+                                   (> weight max-weight))
+                              (begin
+                                (set! max-weight weight)
+                                (set! best-anim (-> chan frame-group master-art-group-index))
+                                (set! best-frame (-> chan frame-num))))))))
+
+                  (if (!= best-anim -1)
+                      (begin
+                        (set-mp-sidekick-anim! best-anim)
+                        (set-mp-sidekick-frame! best-frame)))
+
+                  (logclear! (-> sk draw status) (draw-control-status no-draw)))
+                ;; Hide sidekick while NOT riding (the remote puppet is shown instead)
+                (logior! (-> sk draw status) (draw-control-status no-draw))))))
+  (none))

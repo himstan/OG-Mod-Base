@@ -15,8 +15,8 @@
 
   ;; Initialize root for process-drawable
   (set! (-> self root) (the-as basic (new 'process 'trsqv)))
-  (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-interp-pos*)
-  (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
+  (vector-copy! (-> (the-as trsqv (-> self root)) trans) *multi-remote-render-pos*)
+  (quaternion-copy! (the-as quaternion (-> (the-as trsqv (-> self root)) quat)) (the-as quaternion *multi-remote-render-quat*))
 
   (go-virtual idle))
 
@@ -34,23 +34,15 @@
   (set-time! (-> self spawn-time))
 
   ;; 1. Collide Shape (For AI Targeting/LOS)
-  ;; IMPORTANT: In Jak 2, 'player' list enum is NOT supported in the constructor.
-  ;; We MUST use 'hit-by-others' to be added to *collide-player-list*.
   (let ((cshape (new 'process 'collide-shape-moving self (collide-list-enum hit-by-others))))
     (let ((v1-6 (new 'process 'collide-shape-prim-sphere cshape (the-as uint 0))))
-      ;; collide-as: jak/player-list (for AI), hit-by-others-list/obstacle (for Jak collision)
       (set! (-> v1-6 prim-core collide-as) (collide-spec jak player-list hit-by-others-list obstacle))
-      ;; collide-with: player-list (for other players), hit-by-player-list (for local attacks)
       (set! (-> v1-6 prim-core collide-with) (collide-spec backgnd obstacle jak player-list hit-by-player-list))
-      (set! (-> v1-6 prim-core action) (collide-action solid)) ;; Enable solid collision
+      (set! (-> v1-6 prim-core action) (collide-action solid))
       (set-vector! (-> v1-6 local-sphere) 0.0 (meters 1.0) 0.0 (meters 1.0))
       (set! (-> cshape total-prims) (the-as uint 1))
       (set! (-> cshape root-prim) v1-6))
     (set! (-> cshape nav-radius) (meters 1.0))
-    (let ((v1-9 (-> cshape root-prim)))
-      (set! (-> cshape backup-collide-as) (-> v1-9 prim-core collide-as))
-      (set! (-> v1-9 prim-core collide-with) (-> v1-9 prim-core collide-with)))
-    ;; Use native methods to set masks
     (set-collide-as! cshape (collide-spec jak player-list hit-by-others-list obstacle))
     (set-collide-with! cshape (collide-spec backgnd obstacle jak player-list hit-by-player-list))
     (set! (-> cshape dynam) (copy *standard-dynamics* 'process))
@@ -58,21 +50,16 @@
     (set! (-> cshape no-reaction) (the-as (function collide-shape-moving collide-query vector vector object) nothing))
     (set! (-> self root) cshape))
 
-  ;; IMPORTANT: Add to BOTH player list (for AI) and hit-by-player list (for player collision)
   (add-connection *collide-player-list* self #f (-> self root) #f #f)
   (add-connection *collide-hit-by-player-list* self #f (-> self root) #f #f)
 
-  (set! (-> (the-as trsqv (-> self root)) trans quad) (-> pos quad))
-  (quaternion-identity! (-> (the-as trsqv (-> self root)) quat))
+  (vector-copy! (-> (the-as trsqv (-> self root)) trans) pos)
+  (quaternion-identity! (the-as quaternion (-> (the-as trsqv (-> self root)) quat)))
 
-  ;; 2. Process Flags
-  ;; Mask must contain 'target' for AI to even consider us
   (logior! (-> self mask) (process-mask target))
   (set! (-> self focus-status) (focus-status))
-  ;; MUST be targetable! Clear dead/disable/ignore.
   (logclear! (-> self focus-status) (focus-status disable dead ignore grabbed))
 
-  ;; 3. Fake skeleton (For native engine notice/LOS checks that expect joint info)
   (let ((name (if (= role 1) "skel-sidekick" "skel-jchar")))
     (initialize-skeleton self (the-as skeleton-group (art-group-get-by-name *level* name (the-as (pointer uint32) #f))) (the-as pair #f)))
   (logior! (-> self draw status) (draw-control-status no-draw))
@@ -84,48 +71,16 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('attack)
-       ;; If we are riding, or if any level is loading, ignore all attacks on the proxy
        (if (or (nonzero? (-> *remote-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
            (return #f))
-
-       ;; Relay damage to the network!
-       (let ((mode 'unknown)
-             (id (the-as uint 0)))
-         ;; Try to extract info from attack-info structure if provided
-         (when (>= argc 2)
-           (let ((info (the-as attack-info (-> block param 1))))
-             (if (nonzero? info)
-                 (begin
-                   (set! mode (-> info mode))
-                   (set! id (-> info id))
-                   ))))
-         (format 0 "MP-LOG: Proxy hit! (mode: ~S, id: ~D) -> Relaying HIT event to network for player ~D~%"
-                 mode id (if (= (-> self remote-role) 1) 2 1))
-         ;; We need to know which remote player this proxy represents.
-         ;; remote-role 1 = Client Daxter, 0 = Host Jak
-         (if (= (-> self remote-role) 1)
-             (mp-send-world-event MP_EVENT_PLAYER_HIT (the-as uint 2)) ;; Target Client
-             (mp-send-world-event MP_EVENT_PLAYER_HIT (the-as uint 1)) ;; Target Host
-             ))
+       (if (= (-> self remote-role) 1)
+           (mp-send-world-event MP_EVENT_PLAYER_HIT (the-as uint 2))
+           (mp-send-world-event MP_EVENT_PLAYER_HIT (the-as uint 1)))
        #t)
       (('query) #t)))
   :trans (behavior ()
-    ;; 1. Position Sync
-    (cond
-      ((and (= (-> self remote-role) 1)
-            (= (-> *remote-info* riding?) 1)
-            (mp-is-jak?)
-            *target*
-            (nonzero? (-> *target* control))
-            (nonzero? (-> *target* node-list))
-            (-> *target* control sidekick-root)
-            (-> *target* control sidekick-root parent)
-            (-> *target* control sidekick-root parent bone))
-       ;; Remote Daxter is riding local Jak. Snap to shoulder SAFELY.
-       (set! (-> self root trans quad) (-> *target* control sidekick-root parent bone transform trans quad)))
-      (else
-        ;; Standard independent position
-        (set! (-> self root trans quad) (-> *multi-remote-interp-pos* quad))))
+    ;; 1. Unified Position Sync
+    (vector-copy! (-> self root trans) *multi-remote-render-pos*)
 
     ;; 2. Update gspot for nav-enemy aggro checks
     (set! (-> (the-as collide-shape-moving (-> self root)) gspot-pos quad) (-> self root trans quad))
@@ -134,26 +89,20 @@
     (let ((cshape (the-as collide-shape-moving (-> self root))))
       (if (or (= (-> *remote-info* riding?) 1)
               (and (mp-is-daxter?) (= (-> self remote-role) 1)))
+          (set! (-> cshape root-prim prim-core action) (collide-action))
+          (set! (-> cshape root-prim prim-core action) (collide-action solid))))
 
-          (set! (-> cshape root-prim prim-core action) (collide-action)) ;; Non-solid
-          (set! (-> cshape root-prim prim-core action) (collide-action solid)) ;; Solid
-          ))
-
-    ;; Keep focus status clean
     (logclear! (-> self focus-status) (focus-status disable dead ignore grabbed)))
-  :code (behavior ()
-    (loop
-      (suspend)))
+  :code (behavior () (loop (suspend)))
   :post transform-post)
 
-;; --- MP Idle State ---
+;; --- MP Idle State (Visual Puppet) ---
 (defstate mp-idle (manipy)
   :code (behavior ()
          (loop
-           ;; 1. Position & Rotation Sync
-           (vector-copy! (-> self root trans) *multi-remote-interp-pos*)
-           (quaternion-identity! (-> self root quat))
-           (quaternion-rotate-y! (-> self root quat) (-> self root quat) *multi-remote-interp-angle*)
+           ;; 1. Unified Transform Sync
+           (vector-copy! (-> self root trans) *multi-remote-render-pos*)
+           (quaternion-copy! (the-as quaternion (-> self root quat)) (the-as quaternion *multi-remote-render-quat*))
 
            ;; 2. Animation Logic
            (let ((anim-idx (-> *remote-info* anim))
@@ -165,36 +114,26 @@
                  (let ((target-anim (the-as art-joint-anim (-> self draw art-group data anim-idx))))
                    (if (= (-> target-anim type) art-joint-anim)
                        (begin
-                         ;; A. Group Management
                          (if (!= (ja-group) target-anim)
                              (ja :group! target-anim :num! (set! anim-frame)))
-
-                         ;; B. Fluidity: Only snap if a NEW packet has arrived
                          (if (and parent-proc (!= packet-id (-> parent-proc last-anim-packet)))
                              (begin
                                (set! (-> self skel root-channel 0 frame-num) anim-frame)
                                (set! (-> parent-proc last-anim-packet) packet-id))
-                             ;; Otherwise, let the engine play the animation naturally at 60fps
                              (ja :num! (loop!))))
                        (ja :num! (loop!))))
                  (ja :num! (loop!))))
 
-           ;; 2. Logic for Ride-Along model visibility
+           ;; 3. Ride-Along Visibility
            (cond
              ((mp-is-jak?)
-              ;; I am Jak (Host):
               (if (= (-> *remote-info* riding?) 1)
-                  ;; Hide the remote Daxter puppet (using local sidekick instead)
                   (logior! (-> self draw status) (draw-control-status no-draw))
-                  ;; Show the remote Daxter puppet
                   (logclear! (-> self draw status) (draw-control-status no-draw))))
              (else
-              ;; I am Daxter (Client):
-              ;; ALWAYS show the remote Jak puppet
               (logclear! (-> self draw status) (draw-control-status no-draw))))
 
-           (suspend))
-         )
+           (suspend)))
   :post ja-post)
 
 ;; --- Remote Character Initialization ---
@@ -203,28 +142,22 @@
   (stack-size-set! (-> self main-thread) 2048)
   (logior! (-> self mask) (process-mask heap-shrunk))
 
-  ;; Use a proper collide-shape so AI targeting (LOS) works, but make it NON-SOLID
-  ;; so it doesn't interfere with the local player's physics.
   (let ((cshape (new 'process 'collide-shape self (collide-list-enum hit-by-others))))
     (let ((v1-6 (new 'process 'collide-shape-prim-sphere cshape (the-as uint 0))))
       (set! (-> v1-6 prim-core collide-as) (collide-spec player-list))
       (set! (-> v1-6 prim-core collide-with) (collide-spec backgnd obstacle hit-by-others-list))
-      (set! (-> v1-6 prim-core action) (collide-action)) ;; Empty = Non-solid
+      (set! (-> v1-6 prim-core action) (collide-action))
       (set-vector! (-> v1-6 local-sphere) 0.0 (meters 1.0) 0.0 (meters 1.0))
       (set! (-> cshape total-prims) (the-as uint 1))
       (set! (-> cshape root-prim) v1-6))
     (set! (-> cshape nav-radius) (meters 1.0))
-    (let ((v1-9 (-> cshape root-prim)))
-      (set! (-> cshape backup-collide-as) (-> v1-9 prim-core collide-as))
-      (set! (-> cshape backup-collide-with) (-> v1-9 prim-core collide-with)))
     (set! (-> self root) cshape))
 
   (vector-copy! (-> self root trans) pos)
-  (quaternion-identity! (-> self root quat))
+  (quaternion-identity! (the-as quaternion (-> self root quat)))
   (process-entity-set! self (the-as entity #f))
   (initialize-skeleton-by-name self skel-name)
   (logior! (-> self mask) (process-mask target))
-  ;; --------------------------------------
 
   (if (-> self draw)
       (begin
@@ -247,68 +180,29 @@
               (ja :group! valid-anim :num! min)))))
   (go mp-idle))
 
-(defun find-safe-entity ()
-  (if (and *target* (-> *target* entity)) (return (-> *target* entity)))
-  (dotimes (i (-> *level* length))
-    (let ((lev (-> *level* level i)))
-      (if (and (nonzero? lev) (= (-> lev status) 'active) (-> lev entity) (nonzero? (-> lev entity length)))
-          (return (-> lev entity data 0)))))
-  (the-as entity-actor #f))
-
 (defstate idle (mp-manager)
   :virtual #t
   :trans (behavior ()
-          ;; 1. Sync visual manipy
+          ;; 1. Lifecycle: Spawn Visual Puppet
           (let ((m (handle->process-safe (-> self manipy-proc))))
             (if (not m)
                 (when (time-elapsed? (-> self spawn-timer) (seconds 0.5))
                   (let ((name (if (= (-> self remote-role) 1) "sidekick" "jchar")))
-                    (format 0 "MP-LOG: idle-trans: Spawning manipy (~S)...~%" name)
-                    ;; Use #f for entity
-                    (let ((new-proc (process-spawn manipy :init mp-character-init *multi-remote-interp-pos* (the-as entity-actor #f) name (-> self remote-role) :to self)))
+                    (let ((new-proc (process-spawn manipy :init mp-character-init *multi-remote-render-pos* (the-as entity-actor #f) name (-> self remote-role) :to self)))
                       (if new-proc
                           (set! (-> self manipy-proc) (ppointer->handle new-proc)))))
                   (set-time! (-> self spawn-timer)))
-                ;; Update existing manipy
-                (let ((mp (the-as manipy m)))
-                  (cond
-                    ((and (= (-> self remote-role) 1) (= (-> *remote-info* riding?) 1))
-                     ;; Daxter is riding. Snap to Host Jak's joint if we are the host.
-                     (if (and (mp-is-jak?)
-                              *target*
-                              (nonzero? (-> *target* control))
-                              (nonzero? (-> *target* node-list))
-                              (-> *target* control sidekick-root)
-                              (-> *target* control sidekick-root parent)
-                              (-> *target* control sidekick-root parent bone)
-                              (nonzero? (-> *target* upper-body))) ;; <-- Guard the twist bone!
-                         (begin
-                           (vector-copy! (-> mp root trans) (-> *target* control sidekick-root parent bone transform trans))
-                           (quaternion-copy! (-> mp root quat) (-> *target* control quat))
-                           (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) (-> *target* upper-body twist z)))
-                         (begin
-                           ;; Otherwise just use received coords (interpolated)
-                           (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
-                           (quaternion-identity! (-> mp root quat))
-                           (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*))))
-                    (else
-                      ;; Independent state
-                      (vector-copy! (-> mp root trans) *multi-remote-interp-pos*)
-                      (quaternion-identity! (-> mp root quat))
-                      (quaternion-rotate-y! (-> mp root quat) (-> mp root quat) *multi-remote-interp-angle*)))
+                (if (-> (the-as manipy m) draw)
+                    (logclear! (-> (the-as manipy m) draw status) (draw-control-status no-draw no-draw-temp)))))
 
-                  (if (-> mp draw)
-                      (logclear! (-> mp draw status) (draw-control-status no-draw no-draw-temp))))))
-
-          ;; 2. Sync invisible AI proxy
+          ;; 2. Lifecycle: Spawn Invisible AI Proxy
           (let ((p (handle->process-safe (-> self proxy-proc))))
             (if (not p)
                 (when (and (handle->process-safe (-> self manipy-proc)) (time-elapsed? (-> self spawn-timer) (seconds 0.5)))
-                  (format 0 "MP-LOG: idle-trans: Spawning mp-target-proxy...~%")
-                  (let ((new-proxy (process-spawn mp-target-proxy :init mp-target-proxy-init *multi-remote-interp-pos* (-> self remote-role) :to self)))
+                  (let ((new-proxy (process-spawn mp-target-proxy :init mp-target-proxy-init *multi-remote-render-pos* (-> self remote-role) :to self)))
                     (if new-proxy
                         (set! (-> self proxy-proc) (ppointer->handle new-proxy)))))
-                ;; Update: Proxy handles its own position now!
+                ;; Note: Both manipy and proxy now handle their own position internally using *multi-remote-render-pos*
                 )))
 
   :code (behavior () (loop (suspend))))

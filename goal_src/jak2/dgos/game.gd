@@ -482,6 +482,13 @@
   "orb-placer.o"  ;; added
   "mp-helpers.o" ;; added
   "mp-actor.o" ;; added
+  "mp-clock.o" ;; added
+  "mp-sync-state.o" ;; added
+  "mp-event-handlers.o" ;; added
+  "mp-events.o" ;; added
+  "mp-data.o" ;; added
+  "mp-remote.o" ;; added
+  "mp-role.o" ;; added
   "mp-main.o" ;; added
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
