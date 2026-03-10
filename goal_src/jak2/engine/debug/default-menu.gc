@@ -767,6 +767,20 @@
   (-> arg0 value)
   )
 
+(defun dm-float-toggle-pick-func ((arg0 symbol) (arg1 debug-menu-msg) (arg2 float) (arg3 float))
+  (if (= arg1 (debug-menu-msg press))
+      (set! (-> arg0 value) arg2)
+      )
+  (the-as float (-> arg0 value))
+  )
+
+(defun dm-int-toggle-pick-func ((arg0 symbol) (arg1 debug-menu-msg) (arg2 int) (arg3 int))
+  (if (= arg1 (debug-menu-msg press))
+      (set! (-> arg0 value) arg2)
+      )
+  (the-as int (-> arg0 value))
+  )
+
 (defun dm-time-of-day-pick-func ((arg0 symbol) (arg1 debug-menu-msg))
   (time-of-day-setup (= arg1 (debug-menu-msg press)))
   )
@@ -4196,6 +4210,32 @@
         )
       )
     (debug-menu-append-item s5-0 (debug-menu-make-camera-menu arg0))
+    (debug-menu-append-item
+      s5-0
+      (debug-menu-make-from-template
+        arg0
+        '(menu
+           "Multiplayer"
+           (menu
+             "Animation"
+             (flag "Animation Debug Draw" *mp-debug-draw* dm-boolean-toggle-pick-func)
+             (flag "Smooth Sync?" *mp-anim-smooth-sync?* dm-boolean-toggle-pick-func)
+             (float-var "Gain" *mp-anim-gain* dm-float-toggle-pick-func 100 5 #t 0 1 2)
+             (float-var "Snap Threshold" *mp-anim-snap-threshold* dm-float-toggle-pick-func 10 1 #t 0 300 1)
+             (float-var "Latency Factor" *mp-anim-latency-factor* dm-float-toggle-pick-func 10 1 #t 0 2 1)
+             (float-var "Speed Lerp" *mp-anim-speed-lerp* dm-float-toggle-pick-func 10 5 #t 0 1 2)
+             (float-var "Speed Offset" *mp-anim-speed-offset* dm-float-toggle-pick-func 100 1 #t -1 1 2)
+             (float-var "Max Speed" *mp-anim-max-speed* dm-float-toggle-pick-func 10 1 #t 0 10 1)
+             (float-var "Min Speed" *mp-anim-min-speed* dm-float-toggle-pick-func 10 1 #t 0 5 1)
+             (float-var "Ping Buffer" *mp-anim-ping-buffer* dm-float-toggle-pick-func 10 1 #t 0 100 1)
+             (float-var "Safety Buffer" *mp-anim-safety-buffer* dm-float-toggle-pick-func 10 1 #t 0 10 1)
+             (float-var "Ticks to Frames" *mp-anim-ticks-to-frames* dm-float-toggle-pick-func 10 1 #t 1 10 1)
+             (int-var "Blend Time (ticks)" *mp-anim-blend-time* dm-int-toggle-pick-func 1 1 #t 0 300)
+             (int-var "Max Latency (ticks)" *mp-anim-max-latency* dm-int-toggle-pick-func 1 5 #t 0 1000)
+             )
+           )
+        )
+      )
     (debug-menu-append-item
       s5-0
       (debug-menu-make-from-template

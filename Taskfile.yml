@@ -72,7 +72,7 @@ tasks:
       - sh: test -f {{.GK_BIN_RELEASE_DIR}}/gk{{.EXE_FILE_EXTENSION}}
         msg: "Couldn't locate runtime executable in '{{.GK_BIN_RELEASE_DIR}}/gk'"
     cmds:
-      - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug"
+      - "{{.GK_BIN_RELEASE_DIR}}/gk -v --game {{.GAME}} -- -fakeiso -debug -continue forexita-tube -mp-host true"
   run-game-p2:
     desc: "Start the game's runtime, to start the game itself the REPL is required"
     preconditions:
