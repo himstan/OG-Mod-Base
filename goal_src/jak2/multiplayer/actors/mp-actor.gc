@@ -89,10 +89,14 @@
 
     ;; 3. Dynamic Collision: Disable solid if riding or if representation of same team
     (let ((cshape (the-as collide-shape-moving (-> self root))))
-      (if (or (= (-> *remote-info* riding?) 1)
+      (if (or *scene-player*
+              (= (-> *remote-info* riding?) 1)
               (and (mp-is-daxter?) (= (-> self remote-role) 1)))
           (set! (-> cshape root-prim prim-core action) (collide-action))
           (set! (-> cshape root-prim prim-core action) (collide-action solid))))
+
+    (if (-> self draw)
+        (logior! (-> self draw status) (draw-control-status no-draw)))
 
     (logclear! (-> self focus-status) (focus-status disable dead ignore grabbed)))
   :code (behavior () (loop (suspend)))
@@ -192,10 +196,8 @@
 
            ;; 3. Ride-Along Visibility
            (cond
-             ((mp-is-jak?)
-              (if (= (-> *remote-info* riding?) 1)
-                  (logior! (-> self draw status) (draw-control-status no-draw))
-                  (logclear! (-> self draw status) (draw-control-status no-draw))))
+             ((or *scene-player* (and (mp-is-jak?) (= (-> *remote-info* riding?) 1)))
+              (logior! (-> self draw status) (draw-control-status no-draw)))
              (else
               (logclear! (-> self draw status) (draw-control-status no-draw))))
 
@@ -258,7 +260,7 @@
                       (if new-proc
                           (set! (-> self manipy-proc) (ppointer->handle new-proc)))))
                   (set-time! (-> self spawn-timer)))
-                (if (-> (the-as manipy m) draw)
+                (if (and (not *scene-player*) (-> (the-as manipy m) draw))
                     (logclear! (-> (the-as manipy m) draw status) (draw-control-status no-draw no-draw-temp)))))
 
           ;; 2. Lifecycle: Spawn Invisible AI Proxy
