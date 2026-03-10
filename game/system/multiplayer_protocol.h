@@ -8,7 +8,7 @@ enum class PacketType : uint8_t {
   STATE_UPDATE = 0,
   EVENT_JOIN = 1,
   EVENT_LEAVE = 2,
-  EVENT_WORLD = 3,
+  EVENT_GAME = 3,
   FULL_SYNC = 4,
   ENEMY_SYNC = 5
 };
@@ -29,16 +29,23 @@ struct PacketPlayerState {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
-  char scene_name[32];
-  uint32_t scene_active;
   float last_anim_frame;
   float last_sidekick_frame;
 };
 
-struct PacketWorldEvent {
+struct PacketGameEvent {
   PacketHeader header;
-  uint32_t event_type;
+  uint8_t raw_data[48];
+};
+
+struct WorldEventData {
   uint32_t actor_id;
+};
+
+struct SceneEventData {
+  uint32_t state;
+  char scene_name[32];
+  uint32_t event_id;
 };
 
 struct MPEnemyState {
@@ -77,8 +84,6 @@ struct PacketFullSync {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
-  char scene_name[32];
-  uint32_t scene_active;
 };
 
 #pragma pack(pop)

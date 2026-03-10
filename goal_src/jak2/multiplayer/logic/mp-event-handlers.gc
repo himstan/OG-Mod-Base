@@ -75,16 +75,27 @@
           (format 0 "[MP-WorldEvent] Local player hit ignored (Riding along).~%"))))
   (none))
 
-(defun mp-event-handler-scene-start ((aid uint))
+(defun mp-event-handler-scene-start ((evt mp-scene-event))
   (when (not *scene-player*)
-    (let ((s (find-scene-by-hash aid)))
-      (when s
-        (format 0 "[MP-WorldEvent] Remote started scene: ~S (Hash ~D). Starting locally.~%" (-> s name) aid)
-        (process-spawn scene-player :init scene-player-init s #t #f))))
+    ;; *mp-scene-name-scratch* was already filled by mp-receive-scene-event
+    (let ((s (scene-lookup *mp-scene-name-scratch*)))
+      (if s
+          (begin
+            (format 0 "[MP-WorldEvent] Remote started scene: ~S. Starting locally.~%" (-> s name))
+            (process-spawn scene-player :init scene-player-init s #t #f))
+          (format 0 "[MP-WorldEvent] ERROR: Could not find scene locally: ~S~%" *mp-scene-name-scratch*)
+          )
+      )
+    )
   (none))
 
-(defun mp-event-handler-scene-skip ((aid uint))
+(defun mp-event-handler-scene-request-skip ((aid uint))
+  (format 0 "[MP-WorldEvent] Remote player requested to skip scene.~%")
+  (set! *mp-remote-wants-skip* #t)
+  (none))
+
+(defun mp-event-handler-scene-skipped ((aid uint))
   (when *scene-player*
-    (format 0 "[MP-WorldEvent] Remote skipped scene. Aborting locally.~%")
+    (format 0 "[MP-WorldEvent] All players skipped. Aborting locally.~%")
     (send-event (ppointer->process *scene-player*) 'abort))
   (none))

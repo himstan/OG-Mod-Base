@@ -40,10 +40,11 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
               entity.clock = state->clock;
               entity.last_sequence_num = state->header.sequenceNum;
             }
-          } else if (header->type == PacketType::EVENT_WORLD &&
-                     event.packet->dataLength == sizeof(PacketWorldEvent)) {
-            PacketWorldEvent* evt = (PacketWorldEvent*)event.packet->data;
-            lg::info("[Multiplayer] Received World Event: Type {}, AID {}", evt->event_type, evt->actor_id);
+          } else if (header->type == PacketType::EVENT_GAME &&
+                     event.packet->dataLength == sizeof(PacketGameEvent)) {
+            PacketGameEvent* evt = (PacketGameEvent*)event.packet->data;
+            uint32_t etype = *(uint32_t*)evt->raw_data;
+            lg::info("[Multiplayer] Received Game Event: Type {}", etype);
             gMultiplayerData.inbound_events.push_back(*evt);
           } else if (header->type == PacketType::ENEMY_SYNC &&
                      event.packet->dataLength == sizeof(PacketEnemySync)) {
@@ -167,8 +168,6 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->sidekick_frame = remote_state.sidekick_frame;
     remote_goal->last_sidekick_frame = remote_state.last_sidekick_frame;
     remote_goal->clock = remote_state.clock;
-    memcpy(remote_goal->scene_name, remote_state.scene_name, 32);
-    remote_goal->scene_active = remote_state.scene_active;
 
   } else {
     remote_goal->status = 0;
@@ -229,13 +228,13 @@ void pc_multi_send_events(u32 event_ptr) {
     if (events->out_count > 0) {
       lg::info("[Multiplayer] Sending {} batched events", events->out_count);
       for (uint32_t i = 0; i < events->out_count && i < 16; ++i) {
-        PacketWorldEvent out_event;
-        out_event.header.type = PacketType::EVENT_WORLD;
+        PacketGameEvent out_event;
+        out_event.header.type = PacketType::EVENT_GAME;
         out_event.header.sequenceNum = ++gMultiplayerData.last_out_event_seq;
-        out_event.event_type = events->out_events[i].etype;
-        out_event.actor_id = events->out_events[i].aid;
+        // Copy the entire 48-byte GOAL mp-event structure (etype + pad + data)
+        memcpy(out_event.raw_data, &events->out_events[i], 48);
         MultiplayerManager::broadcast(gMultiplayerData, 1, out_event, ENET_PACKET_FLAG_RELIABLE);
-        lg::info("  [Event] Type: {}, AID: {}", out_event.event_type, out_event.actor_id);
+        lg::info("  [Event] Type: {}", events->out_events[i].etype);
       }
     }
     events->out_count = 0; // Clear after sending
@@ -254,8 +253,8 @@ void pc_multi_receive_events(u32 event_ptr) {
     // Batched Inbound Events - APPEND only, do not clear (GOAL clears at end of frame)
     while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
       auto& event = gMultiplayerData.inbound_events.front();
-      events->in_events[events->in_count].etype = event.event_type;
-      events->in_events[events->in_count].aid = event.actor_id;
+      // Copy the entire 48-byte structure back to GOAL
+      memcpy(&events->in_events[events->in_count], event.raw_data, 48);
       events->in_count++;
       gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
     }

@@ -1601,6 +1601,13 @@
     (('change-mode)
      (let ((mode (-> arg3 param 0)))
       (format 0 "Handling change-mode for mode: ~A ~%" mode)
+      (if (= mode 'grab)
+          (begin
+            (format 0 "[MP] Grabbed while riding! Dismounting...~%")
+            (logclear! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
+            (set! *local-riding?* #f)
+            )
+          )
       (target-standard-event-handler arg0 arg1 arg2 arg3)))
     (else
      (target-standard-event-handler arg0 arg1 arg2 arg3))))
@@ -1631,9 +1638,13 @@
 
   :trans (behavior ()
     (set! *has-ridden-before?* #t)
-    (if (cpad-pressed? (-> self control cpad number) x)
+    (if (or (cpad-pressed? (-> self control cpad number) x)
+            *scene-player*) ;; Force dismount if a scene starts
         (begin
-          (format 0 "[MP] Jumping off Jak...~%")
+          (if *scene-player*
+              (format 0 "[MP] Scene player detected! Dismounting automatically...~%")
+              (format 0 "[MP] Jumping off Jak...~%")
+              )
           (vector-float*! (-> self control transv) (-> self control transv) (meters -4.0))
           (set! (-> self control transv y) (meters 10.0))
           (format 0 "[MP] Exiting ride along state...~%")

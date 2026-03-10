@@ -7,6 +7,7 @@
 
 (define-extern string-crc32 (function string uint))
 (define-extern *mp-processing-remote-event* symbol)
+(define-extern mp-send-scene-event (function mp-scene-state string none))
 
 ;; DECOMP BEGINS
 
@@ -373,41 +374,6 @@
     )
   )
 
-(defun find-scene-by-hash ((hash uint))
-  "Iterate all loaded levels and their art-groups to find a scene with matching CRC32"
-  (dotimes (i (-> *level* length))
-    (let ((lev (-> *level* level i)))
-      (when (and (nonzero? lev) (= (-> lev status) 'active))
-        (let ((lda (-> lev art-group)))
-          (when (and lda (nonzero? lda))
-            (let ((ag-array (-> lda art-group-array)))
-              (when (and ag-array (nonzero? ag-array))
-                (dotimes (j (-> ag-array length))
-                  (let ((ag (-> ag-array j)))
-                    (when (and (nonzero? ag) (type? ag art-group))
-                      (dotimes (k (-> ag length))
-                        (let ((obj (-> ag data k)))
-                          (when (and (nonzero? obj) (type? obj scene))
-                            (let ((s (the-as scene obj)))
-                              (if (= (string-crc32 (-> s name)) hash)
-                                  (return s)
-                                  )
-                              )
-                            )
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  (the-as scene #f)
-  )
 
 ;; WARN: Return type mismatch basic vs scene.
 (defmethod scene-player-method-24 ((this scene-player) (arg0 basic) (arg1 symbol))
@@ -1189,9 +1155,6 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('abort)
-       (when (not *mp-processing-remote-event*)
-         (format 0 "[MP-Scene] Broadcasting scene skip~%")
-         (mp-send-world-event MP_EVENT_SCENE_SKIP (the uint 0)))
        (set! (-> self aborted?) #t)
        (set-blackout-frames (seconds 0.2))
        (let ((a0-3 (-> self anim)))
@@ -1276,13 +1239,27 @@
         (the-as
           (function process-drawable symbol)
           (if (-> self scene abort)
-              (lambda :behavior scene-player () (when (cpad-pressed? 0 triangle)
-                                                  (set! (-> self aborted?) #t)
-                                                  (logclear! (-> *cpad-list* cpads 0 button0-abs 0) (pad-buttons triangle))
-                                                  (logclear! (-> *cpad-list* cpads 0 button0-rel 0) (pad-buttons triangle))
-                                                  #t
-                                                  )
-                                             )
+              (lambda :behavior scene-player ()
+                (when (cpad-pressed? 0 triangle)
+                  (cond
+                    ((or *mp-remote-wants-skip* (not *multi-sync-enabled?*))
+                     ;; Both want to skip or single player
+                     (set! (-> self aborted?) #t)
+                     (when *multi-sync-enabled?*
+                       (mp-send-scene-event (mp-scene-state skipped) (-> self scene name))
+                       )
+                     )
+                    (else
+                      ;; Local player wants to skip, but remote hasn't yet
+                      (set! *mp-local-wants-skip* #t)
+                      (mp-send-scene-event (mp-scene-state request-skip) (-> self scene name))
+                      )
+                    )
+                  (logclear! (-> *cpad-list* cpads 0 button0-abs 0) (pad-buttons triangle))
+                  (logclear! (-> *cpad-list* cpads 0 button0-rel 0) (pad-buttons triangle))
+                  (-> self aborted?)
+                  )
+                )
               false-func
               )
           )
@@ -1310,6 +1287,18 @@
         )
     )
   :post (behavior ()
+    (when (and *multi-sync-enabled?* (or *mp-local-wants-skip* *mp-remote-wants-skip*))
+      (let ((gp-context
+              (new 'stack 'font-context *font-default-matrix* 20 20 0.0 (font-color default) (font-flags shadow kerning))
+              )
+            )
+        (set! (-> gp-context width) (the float 472))
+        (set! (-> gp-context height) (the float 40))
+        (set! (-> gp-context scale) 0.6)
+        (set! (-> gp-context flags) (font-flags shadow kerning middle large))
+        (print-game-text "1/2 PLAYERS WANT TO SKIP" gp-context #f 44 (bucket-id subtitle))
+        )
+      )
     (when (-> self scene)
       (let ((gp-0 (-> self scene cut-list))
             (s5-0 (-> self skel root-channel 0 frame-group))
@@ -1598,6 +1587,11 @@
 ;; WARN: Using new Jak 2 rtype-of
 (defbehavior scene-player-init scene-player ((arg0 object) (arg1 symbol) (arg2 string))
   "`object` arg can be an `(array scene)`, `pair of scene` or a `scene`"
+  ;; Force dismount if we are in target-ride-along (Daxter on Jak)
+  (when (and *target* (-> *target* next-state) (= (-> *target* next-state name) 'target-ride-along))
+    (format 0 "[MP-Scene] Force dismounting from target-ride-along...~%")
+    (send-event *target* 'change-mode 'normal #f)
+    )
   (process-entity-set! self (the-as entity #f))
   ;; og:preserve-this changed from 512
   (stack-size-set! (-> self main-thread) 768)
@@ -1679,8 +1673,11 @@
   (set! *scene-player* (the-as (pointer scene-player) (process->ppointer self)))
 
   (when (and (not *mp-processing-remote-event*) (-> self scene))
-    (format 0 "[MP-Scene] Broadcasting scene start: ~S (Hash ~D)~%" (-> self scene name) (string-crc32 (-> self scene name)))
-    (mp-send-world-event MP_EVENT_SCENE_START (string-crc32 (-> self scene name))))
+    (format 0 "[MP-Scene] Broadcasting scene start: ~S~%" (-> self scene name))
+    (mp-send-scene-event (mp-scene-state started) (-> self scene name)))
+
+  (set! *mp-local-wants-skip* #f)
+  (set! *mp-remote-wants-skip* #f)
 
   (set! *display-entity-errors* #f)
   (set-setting! 'speech-control #f 0.0 0)

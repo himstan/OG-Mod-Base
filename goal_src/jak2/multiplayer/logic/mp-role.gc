@@ -49,6 +49,11 @@
                (not in-scene?))
       (format 0 "[MP] Scene ended. Re-entering ride-along...~%")
       (set! *has-ridden-before?* #f))
+    
+    (when (not in-scene?)
+      (set! *mp-remote-wants-skip* #f)
+      (set! *mp-local-wants-skip* #f))
+
     (set! *mp-last-scene-player* in-scene?))
   (none))
 

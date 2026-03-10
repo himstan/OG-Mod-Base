@@ -31,7 +31,8 @@
 (defconstant MP_EVENT_PLAYER_HIT (the-as uint 6))
 (defconstant MP_EVENT_DEBUG (the-as uint 7))
 (defconstant MP_EVENT_SCENE_START (the-as uint 8))
-(defconstant MP_EVENT_SCENE_SKIP (the-as uint 9))
+(defconstant MP_EVENT_SCENE_REQUEST_SKIP (the-as uint 10))
+(defconstant MP_EVENT_SCENE_SKIPPED (the-as uint 11))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
@@ -53,6 +54,9 @@
 
 (define *local-riding?* #f)
 (define *mp-processing-remote-event* #f)
+(define-perm *mp-last-remote-scene-active* uint (the uint 0))
+(define *mp-remote-wants-skip* #f)
+(define *mp-local-wants-skip* #f)
 
 (deftype mp-enemy-state (structure)
   ((actor-id    uint32)
@@ -73,6 +77,32 @@
    (pad         uint8 7))
   )
 
+(defenum mp-scene-state (uint32)
+  (none 0)
+  (started 1)
+  (request-skip 2)
+  (skipped 3)
+  )
+
+(deftype mp-event (structure)
+  ((etype uint32)
+   (pad   uint32)
+   (data  uint8 40)
+   )
+  :size-assert 48)
+
+(deftype mp-world-event (mp-event)
+  ((aid uint32 :overlay-at (-> data 0))
+   )
+  )
+
+(deftype mp-scene-event (mp-event)
+  ((state      mp-scene-state :overlay-at (-> data 0))
+   (scene-name uint8 32      :overlay-at (-> data 4))
+   (event-id   uint32        :overlay-at (-> data 36))
+   )
+  )
+
 (deftype remote-player-info (structure)
   ((x           float)
    (y           float)
@@ -89,13 +119,11 @@
    (sidekick-anim  int32)
    (sidekick-frame float)
    (clock       time-frame)
-   (scene-name  uint8 32)
-   (scene-active uint32)
    (last-anim-frame float)
    (last-sidekick-frame float)
-   (pad         uint8 4)
+   (pad         uint8 8)
    )
-  :size-assert 112)
+  :size-assert 80)
 
 (deftype local-player-info (structure)
   ((x           float)
@@ -113,8 +141,7 @@
    (clock       time-frame)
    (last-anim-frame float)
    (last-sidekick-frame float)
-   ;; Padding for legacy event fields (16 bytes)
-   (pad-events  uint8 16)
+   (pad         uint8 4)
    ;; Global World Sync (Outgoing)
    (money       float)
    (gems        float)
@@ -136,21 +163,15 @@
    (enemies     mp-enemy-state 24 :inline)
    (player-procs handle 2)
    )
-  :size-assert 2304)
-
-(deftype mp-event (structure)
-  ((etype uint32)
-   (aid   uint32)
-   (pad   uint8 8))
-  )
+  :size-assert 2288)
 
 (deftype mp-event-buffer (structure)
   ((out-count uint32)
-   (out-events mp-event 16 :inline :offset 16)
-   (in-count  uint32)
-   (in-events  mp-event 16 :inline :offset 288)
+   (out-events mp-event 16 :inline :offset 16)  ;; 16 * 48 = 768. Ends at 16 + 768 = 784
+   (in-count  uint32 :offset 784)
+   (in-events  mp-event 16 :inline :offset 800) ;; 16 * 48 = 768. Ends at 800 + 768 = 1568
    )
-  :size-assert 544)
+  :size-assert 1568)
 
 ;; Helper macros to access sidekick sync data
 (defmacro mp-sidekick-anim ()
@@ -240,6 +261,7 @@
 
 (define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
 (define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
+(define *mp-scene-name-scratch* (new 'global 'string 32 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #t)
 (define-perm *mp-hijacks-applied?* symbol #f)

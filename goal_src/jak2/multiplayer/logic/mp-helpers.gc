@@ -265,16 +265,16 @@
   *mp-search-enemy-res*)
 
 (defun mp-send-world-event ((etype uint) (aid uint))
-  (let ((idx *mp-event-queue-write-ptr*))
-    (let ((evt (-> *mp-event-queue* idx)))
-      (set! (-> evt etype) (the-as uint32 etype))
-      (set! (-> evt aid) (the-as uint32 aid)))
-    (set! *mp-event-queue-write-ptr* (logand (+ idx 1) 31))
-    (format 0 "[MP] Queueing World Event: Type ~D, AID ~D at idx ~D~%" etype aid idx)
+  (let ((q-idx *mp-event-queue-write-ptr*))
+    (let ((evt (the-as mp-world-event (-> *mp-event-queue* q-idx))))
+      (set! (-> evt etype) etype)
+      (set! (-> evt aid) aid)
+      )
+    (set! *mp-event-queue-write-ptr* (logand (+ q-idx 1) 31))
     )
   (none))
 
-(define-extern find-scene-by-hash (function uint scene))
+(define-extern scene-lookup (function basic scene))
 
 (defun mp-airlock-remote-ready? ((airlock-pos vector))
   (if (= (-> *remote-info* status) 0)

@@ -19,15 +19,12 @@ struct RemoteEntityState {
   float sidekick_frame;
   float last_sidekick_frame;
   uint64_t clock;
-  char scene_name[32];
-  uint32_t scene_active;
   uint32_t last_sequence_num = 0;
 };
 
 struct MPEvent {
   uint32_t etype;
-  uint32_t aid;
-  uint8_t pad[8];
+  uint8_t data[44];
 };
 
 struct MPEventBufferGOAL {
@@ -52,11 +49,9 @@ struct RemotePlayerInfoGOAL {
   int32_t sidekick_anim;
   float sidekick_frame;
   uint64_t clock;
-  uint8_t scene_name[32];
-  uint32_t scene_active;
   float last_anim_frame;
   float last_sidekick_frame;
-  uint8_t pad[4];
+  uint8_t pad[8];
 };
 
 struct LocalPlayerInfoGOAL {
@@ -72,8 +67,7 @@ struct LocalPlayerInfoGOAL {
   uint64_t clock;
   float last_anim_frame;
   float last_sidekick_frame;
-  // Padding for legacy event fields (16 bytes)
-  uint8_t pad_events[16];
+  uint8_t pad[4];
   // Global World Sync (Outgoing)
   float money;
   float gems;
@@ -107,7 +101,7 @@ struct MultiplayerData {
   uint32_t last_out_event_seq = 0;
 
   std::unordered_map<uint32_t, RemoteEntityState> remote_entities;
-  std::vector<PacketWorldEvent> inbound_events;
+  std::vector<PacketGameEvent> inbound_events;
 
   // New fields for joining/searching
   std::atomic<int> join_status{0}; // 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
