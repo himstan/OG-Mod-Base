@@ -1,5 +1,7 @@
 #include "multiplayer_manager.h"
+#include "multiplayer_protocol.h"
 #include "common/log/log.h"
+#include "common/cross_sockets/XSocket.h"
 #include "enet/enet.h"
 
 void MultiplayerManager::setup_host(MultiplayerData& data) {
@@ -23,6 +25,10 @@ void MultiplayerManager::setup_host(MultiplayerData& data) {
     data.local_net_id = 0;
     data.join_status = 4;
     data.initialized = true;
+
+    // Start discovery responder
+    data.host_discovery_active = true;
+    data.discovery_thread = std::thread(discovery_responder_func, &data);
   }
 }
 
@@ -64,6 +70,12 @@ void MultiplayerManager::disconnect(MultiplayerData& data) {
   if (!data.initialized)
     return;
 
+  // Stop discovery responder
+  data.host_discovery_active = false;
+  if (data.discovery_thread.joinable()) {
+    data.discovery_thread.join();
+  }
+
   if (data.host) {
     if (data.local_role == 1 && data.server_peer) {
       enet_peer_disconnect_now(data.server_peer, 0);
@@ -83,4 +95,42 @@ void MultiplayerManager::send_to_peer(ENetPeer* peer,
                                       ENetPacketFlag flags) {
   ENetPacket* packet = enet_packet_create(packet_data, size, flags);
   enet_peer_send(peer, channel, packet);
+}
+
+void MultiplayerManager::discovery_responder_func(MultiplayerData* data) {
+  int sock = open_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock < 0) return;
+
+  sockaddr_in listen_addr;
+  listen_addr.sin_family = AF_INET;
+  listen_addr.sin_port = htons(DISCOVERY_PORT);
+  listen_addr.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind(sock, (sockaddr*)&listen_addr, sizeof(listen_addr)) < 0) {
+    lg::error("[Multiplayer] Discovery responder failed to bind to port {}", DISCOVERY_PORT);
+    close_socket(sock);
+    return;
+  }
+
+  set_socket_timeout(sock, 1000000); // 1s timeout for checking stop flag
+
+  lg::info("[Multiplayer] Discovery responder active on port {}", DISCOVERY_PORT);
+
+  char buffer[64];
+  while (data->host_discovery_active) {
+    sockaddr_in from_addr;
+    int from_len = sizeof(from_addr);
+    int bytes_received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (sockaddr*)&from_addr, &from_len);
+    
+    if (bytes_received > 0) {
+      buffer[bytes_received] = '\0';
+      if (std::string(buffer) == DISCOVERY_MAGIC) {
+        // Send reply
+        sendto(sock, DISCOVERY_MAGIC, strlen(DISCOVERY_MAGIC), 0, (sockaddr*)&from_addr, from_len);
+      }
+    }
+  }
+
+  lg::info("[Multiplayer] Discovery responder stopped.");
+  close_socket(sock);
 }

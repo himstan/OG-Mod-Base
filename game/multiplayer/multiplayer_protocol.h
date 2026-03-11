@@ -4,6 +4,9 @@
 
 #pragma pack(push, 1)
 
+const int DISCOVERY_PORT = 3001;
+const char* const DISCOVERY_MAGIC = "OG_MP_DISCOVERY";
+
 enum class PacketType : uint8_t {
   STATE_UPDATE = 0,
   EVENT_JOIN = 1,

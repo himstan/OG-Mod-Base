@@ -5,6 +5,7 @@
 #include <vector>
 #include <atomic>
 #include <string>
+#include <thread>
 
 #include "multiplayer_protocol.h"
 
@@ -107,4 +108,8 @@ struct MultiplayerData {
   std::atomic<int> join_status{0}; // 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
   std::string found_ip = "";
   std::atomic<bool> stop_search{false};
+
+  // Discovery / Hosting responder
+  std::thread discovery_thread;
+  std::atomic<bool> host_discovery_active{false};
 };

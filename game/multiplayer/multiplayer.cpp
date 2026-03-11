@@ -303,6 +303,11 @@ u64 pc_multi_get_command_line_arg(u32 str_ptr) {
   return s7.offset; // Not found
 }
 
+u64 pc_multi_get_found_ip() {
+  using namespace jak2;
+  return make_string_from_c(gMultiplayerData.found_ip.c_str());
+}
+
 void init_multiplayer_pc_port() {
   using namespace jak2;
   make_function_symbol_from_c("pc-multi-setup-host", (void*)pc_multi_setup_host);
@@ -310,6 +315,7 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-get-status", (void*)pc_multi_get_status);
   make_function_symbol_from_c("pc-multi-stop-search", (void*)pc_multi_stop_search);
   make_function_symbol_from_c("pc-multi-start-search", (void*)pc_multi_start_search);
+  make_function_symbol_from_c("pc-multi-get-found-ip", (void*)pc_multi_get_found_ip);
   make_function_symbol_from_c("pc-multi-poll", (void*)pc_multi_poll);
   make_function_symbol_from_c("pc-multi-send-state", (void*)pc_multi_send_state);
   make_function_symbol_from_c("pc-multi-receive-state", (void*)pc_multi_receive_state);

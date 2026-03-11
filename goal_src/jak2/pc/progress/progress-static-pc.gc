@@ -866,7 +866,7 @@ This gives us more freedom to write code how we want.
       (set! (-> obj last-status) status)
       (cond
         ((= status 2) ;; Found
-         (pc-multi-setup-client "127.0.0.1") ;; For MVP just connect to local if found
+         (pc-multi-setup-client (pc-multi-get-found-ip))
          )
         ((= status 4) ;; Connected
          (sound-play "generic-beep")

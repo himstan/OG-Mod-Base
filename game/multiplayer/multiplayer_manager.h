@@ -30,4 +30,7 @@ class MultiplayerManager {
                            const void* packet_data,
                            size_t size,
                            ENetPacketFlag flags);
+
+ private:
+  static void discovery_responder_func(MultiplayerData* data);
 };

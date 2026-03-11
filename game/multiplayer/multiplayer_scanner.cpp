@@ -1,20 +1,28 @@
 #include "multiplayer_scanner.h"
-#include "enet/enet.h"
+#include "multiplayer_protocol.h"
+#include "common/cross_sockets/XSocket.h"
+#include "common/log/log.h"
 #include <string>
 #include <vector>
+#include <chrono>
+
+enum class DiscoveryStatus {
+  IDLE = 0,
+  SEARCHING = 1,
+  FOUND = 2,
+  FAILED = -1
+};
 
 void MultiplayerScanner::start_search(MultiplayerData& data) {
-  if (!data.enet_initialized) {
-    if (enet_initialize() != 0)
-      return;
-    data.enet_initialized = true;
-  }
+  if (data.join_status == (int)DiscoveryStatus::SEARCHING) return;
+  
+  data.stop_search = false;
   std::thread(scan_thread_func, &data).detach();
 }
 
 void MultiplayerScanner::stop_search(MultiplayerData& data) {
   data.stop_search = true;
-  data.join_status = 0;
+  data.join_status = (int)DiscoveryStatus::IDLE;
 }
 
 int MultiplayerScanner::get_status(const MultiplayerData& data) {
@@ -22,33 +30,52 @@ int MultiplayerScanner::get_status(const MultiplayerData& data) {
 }
 
 void MultiplayerScanner::scan_thread_func(MultiplayerData* data) {
-  data->join_status = 1;  // Searching
-  data->stop_search = false;
+  data->join_status = (int)DiscoveryStatus::SEARCHING;
+  
+  int sock = open_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (sock < 0) {
+    data->join_status = (int)DiscoveryStatus::FAILED;
+    return;
+  }
 
-  std::vector<std::string> ips_to_check = {"127.0.0.1"};
-  // Basic local network scan
-  for (int i = 1; i < 255; ++i) {
-    for (int j = 1; j < 255; ++j) {
-      ips_to_check.push_back("192.168." + std::to_string(i) + "." + std::to_string(j));
+  // Enable broadcasting
+  int broadcast_enable = 1;
+  set_socket_option(sock, SOL_SOCKET, SO_BROADCAST, &broadcast_enable, sizeof(broadcast_enable));
+  set_socket_timeout(sock, 500000); // 500ms timeout
+
+  sockaddr_in broadcast_addr;
+  broadcast_addr.sin_family = AF_INET;
+  broadcast_addr.sin_port = htons(DISCOVERY_PORT);
+  broadcast_addr.sin_addr.s_addr = INADDR_BROADCAST;
+
+  lg::info("[Multiplayer] Starting discovery broadcast on port {}...", DISCOVERY_PORT);
+
+  const int max_attempts = 10;
+  for (int attempt = 0; attempt < max_attempts && !data->stop_search; ++attempt) {
+    // Send discovery ping
+    sendto(sock, DISCOVERY_MAGIC, strlen(DISCOVERY_MAGIC), 0, (sockaddr*)&broadcast_addr, sizeof(broadcast_addr));
+
+    // Wait for reply
+    char buffer[64];
+    sockaddr_in from_addr;
+    int from_len = sizeof(from_addr);
+    
+    int bytes_received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (sockaddr*)&from_addr, &from_len);
+    if (bytes_received > 0) {
+      buffer[bytes_received] = '\0';
+      if (std::string(buffer) == DISCOVERY_MAGIC) {
+        data->found_ip = address_to_string(from_addr);
+        lg::info("[Multiplayer] Found host at {}", data->found_ip);
+        data->join_status = (int)DiscoveryStatus::FOUND;
+        close_socket(sock);
+        return;
+      }
     }
   }
 
-  for (const auto& ip : ips_to_check) {
-    if (data->stop_search)
-      break;
-
-    ENetAddress address;
-    enet_address_set_host(&address, ip.c_str());
-    address.port = 3000;
-
-    if (ip == "127.0.0.1") {
-      data->found_ip = ip;
-      data->join_status = 2;  // Found
-      return;
-    }
+  lg::info("[Multiplayer] Discovery timed out.");
+  if (data->join_status == (int)DiscoveryStatus::SEARCHING) {
+    data->join_status = (int)DiscoveryStatus::FAILED;
   }
-
-  if (data->join_status == 1) {
-    data->join_status = -1;  // Not found
-  }
+  close_socket(sock);
 }

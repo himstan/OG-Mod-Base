@@ -201,6 +201,7 @@
 (define-extern pc-multi-setup-host (function none))
 (define-extern pc-multi-setup-client (function string none))
 (define-extern pc-multi-get-status (function int))
+(define-extern pc-multi-get-found-ip (function string))
 (define-extern pc-multi-stop-search (function none))
 (define-extern pc-multi-start-search (function none))
 (define-extern pc-multi-disconnect (function none))
