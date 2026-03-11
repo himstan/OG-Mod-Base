@@ -303,9 +303,9 @@ set(RUNTIME_SOURCE
         system/hid/sdl_util.cpp
         system/IOP_Kernel.cpp
         system/iop_thread.cpp
-        system/multiplayer.cpp
-        system/multiplayer_manager.cpp
-        system/multiplayer_scanner.cpp
+        multiplayer/multiplayer.cpp
+        multiplayer/multiplayer_manager.cpp
+        multiplayer/multiplayer_scanner.cpp
         system/SystemThread.cpp
         tools/filter_menu/filter_menu.cpp
         tools/subtitle_editor/subtitle_editor_db.cpp

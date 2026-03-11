@@ -43,7 +43,7 @@
 #include "game/sce/libgraph.h"
 #include "game/sce/sif_ee.h"
 #include "game/sce/stubs.h"
-#include "game/system/multiplayer.h"
+#include "game/multiplayer/multiplayer.h"
 
 using namespace ee;
 

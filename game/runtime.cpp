@@ -82,7 +82,7 @@
 #include "game/overlord/jak3/overlord.h"
 #include "game/system/Deci2Server.h"
 #include "game/system/iop_thread.h"
-#include "game/system/multiplayer.h"
+#include "game/multiplayer/multiplayer.h"
 #include "sce/deci2.h"
 #include "sce/iop.h"
 #include "sce/libcdvd_ee.h"
