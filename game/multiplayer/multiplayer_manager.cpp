@@ -4,6 +4,10 @@
 #include "common/cross_sockets/XSocket.h"
 #include "enet/enet.h"
 
+#ifdef _WIN32
+typedef int socklen_t;
+#endif
+
 void MultiplayerManager::setup_host(MultiplayerData& data) {
   if (data.host)
     disconnect(data);
@@ -116,7 +120,7 @@ void MultiplayerManager::discovery_responder_func(MultiplayerData* data) {
   char buffer[64];
   while (data->host_discovery_active) {
     sockaddr_in from_addr;
-    int from_len = sizeof(from_addr);
+    socklen_t from_len = sizeof(from_addr);
     int bytes_received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (sockaddr*)&from_addr, &from_len);
     
     if (bytes_received > 0) {

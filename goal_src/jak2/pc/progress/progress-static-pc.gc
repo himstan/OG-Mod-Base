@@ -9,6 +9,62 @@ This gives us more freedom to write code how we want.
 (defun-extern pc-get-last-key uint)
 (defun-extern draw-generic-highlight int int float pointer)
 
+(deftype menu-username-option (menu-option)
+  ()
+  )
+
+(defmethod respond-progress ((obj menu-username-option) (p progress) (selected? symbol))
+  (if selected?
+    (let ((key (pc-get-last-key)))
+      (when (nonzero? key)
+        (let ((s (-> *pc-settings* username)))
+          (cond
+            ;; Backspace
+            ((= key #x08)
+             (when (> (length s) 0)
+               (set! (-> s data (dec (length s))) 0)
+               ))
+            ;; Enter/Return - finish editing
+            ((or (= key #x0D) (= key #x0A))
+             (set! (-> p selected-option) #f)
+             )
+            ;; Printable ASCII
+            ((and (>= key #x20) (<= key #x7e) (< (length s) 16))
+             (let ((len (length s)))
+               (set! (-> s data len) key)
+               (set! (-> s data (inc len)) 0)
+               )
+             )
+            )
+          )
+        (pc-settings-save)
+        )
+      )
+    )
+  0)
+
+(defmethod draw-option ((obj menu-username-option) (p progress) (font-ctx font-context) (option-index int) (selected? symbol))
+  (let ((alpha (max 0.0 (* 2.0 (- 0.5 (-> p menu-transition)))))
+        (username (-> *pc-settings* username)))
+    (set! (-> font-ctx alpha) alpha)
+    (set-flags! font-ctx (font-flags kerning middle large))
+    (set-scale! font-ctx 0.5)
+    (+! (-> font-ctx origin y) 11.0)
+    (cond
+      ((= option-index (-> *progress-pc-generic-store* current-menu-hover-index))
+       (set-color! font-ctx (progress-selected 0))
+       (draw-generic-highlight (the int (+ -2.0 (-> font-ctx origin y))) 18 alpha))
+      (else
+       (set-color! font-ctx (font-color progress))))
+
+    (if selected?
+      (format (clear *temp-string*) "~S: ~S~S" (lookup-text! *common-text* (text-id progress-username) #f) username (if (logtest? (the int (-> *display* real-clock frame-counter)) #x20) "_" " "))
+      (format (clear *temp-string*) "~S: ~S" (lookup-text! *common-text* (text-id progress-username) #f) username)
+      )
+    (print-game-text *temp-string* font-ctx #f 44 (bucket-id progress))
+    )
+  (none))
+
 (define *title-pc*
   (new 'static 'menu-option-list
     :y-center #xc6
@@ -16,15 +72,19 @@ This gives us more freedom to write code how we want.
     :scale 0.82
     :options (new 'static 'boxed-array :type menu-option
       (new 'static 'menu-sub-menu-option
-        :name (text-id progress-title-new-game)
+        :name (text-id progress-host-game)
         :scale #t
-        :next-state 'select-save-title
+        :next-state 'host-game
         )
-      (new 'static 'menu-sub-menu-option :name (text-id progress-load-game) :scale #t :next-state 'select-load)
       (new 'static 'menu-sub-menu-option
-        :name (text-id progress-online)
+        :name (text-id progress-join-game)
         :scale #t
-        :next-state 'online
+        :next-state 'searching-game
+        )
+      (new 'static 'menu-sub-menu-option
+        :name (text-id progress-username)
+        :scale #t
+        :next-state 'username
         )
       (new 'static 'menu-sub-menu-option
         :name (text-id progress-title-options)
@@ -824,36 +884,6 @@ This gives us more freedom to write code how we want.
     )
   )
 
-(define *online-options-pc*
-  (new 'static 'menu-option-list
-    :y-center #xc6
-    :y-space 30
-    :scale 0.82
-    :options (new 'static 'boxed-array :type menu-option
-      (new 'static 'menu-sub-menu-option
-        :name (text-id progress-join-game)
-        :scale #t
-        :next-state 'searching-game
-        )
-      (new 'static 'menu-sub-menu-option
-        :name (text-id progress-host-game)
-        :scale #t
-        :next-state 'host-game
-        )
-      (new 'static 'menu-sub-menu-option
-        :name (text-id progress-username)
-        :scale #t
-        :next-state 'username
-        )
-      (new 'static 'menu-sub-menu-option
-        :name (text-id progress-back)
-        :scale #t
-        :next-state 'back
-        )
-      )
-    )
-  )
-
 (deftype menu-join-search-option (menu-option)
   ((last-status int32)
    )
@@ -944,62 +974,6 @@ This gives us more freedom to write code how we want.
       )
     )
   )
-
-(deftype menu-username-option (menu-option)
-  ()
-  )
-
-(defmethod respond-progress ((obj menu-username-option) (p progress) (selected? symbol))
-  (if selected?
-    (let ((key (pc-get-last-key)))
-      (when (nonzero? key)
-        (let ((s (-> *pc-settings* username)))
-          (cond
-            ;; Backspace
-            ((= key #x08)
-             (when (> (length s) 0)
-               (set! (-> s data (dec (length s))) 0)
-               ))
-            ;; Enter/Return - finish editing
-            ((or (= key #x0D) (= key #x0A))
-             (set! (-> p selected-option) #f)
-             )
-            ;; Printable ASCII
-            ((and (>= key #x20) (<= key #x7e) (< (length s) 16))
-             (let ((len (length s)))
-               (set! (-> s data len) key)
-               (set! (-> s data (inc len)) 0)
-               )
-             )
-            )
-          )
-        (pc-settings-save)
-        )
-      )
-    )
-  0)
-
-(defmethod draw-option ((obj menu-username-option) (p progress) (font-ctx font-context) (option-index int) (selected? symbol))
-  (let ((alpha (max 0.0 (* 2.0 (- 0.5 (-> p menu-transition)))))
-        (username (-> *pc-settings* username)))
-    (set! (-> font-ctx alpha) alpha)
-    (set-flags! font-ctx (font-flags kerning middle large))
-    (set-scale! font-ctx 0.5)
-    (+! (-> font-ctx origin y) 11.0)
-    (cond
-      ((= option-index (-> *progress-pc-generic-store* current-menu-hover-index))
-       (set-color! font-ctx (progress-selected 0))
-       (draw-generic-highlight (the int (+ -2.0 (-> font-ctx origin y))) 18 alpha))
-      (else
-       (set-color! font-ctx (font-color progress))))
-
-    (if selected?
-      (format (clear *temp-string*) "~S: ~S~S" (lookup-text! *common-text* (text-id progress-username) #f) username (if (logtest? (the int (-> *display* real-clock frame-counter)) #x20) "_" " "))
-      (format (clear *temp-string*) "~S: ~S" (lookup-text! *common-text* (text-id progress-username) #f) username)
-      )
-    (print-game-text *temp-string* font-ctx #f 44 (bucket-id progress))
-    )
-  (none))
 
 (define *username-options-pc*
   (new 'static 'menu-option-list
