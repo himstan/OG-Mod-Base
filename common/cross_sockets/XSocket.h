@@ -18,8 +18,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <WinSock2.h>
+#include <WS2tcpip.h>
 #endif
 // clang-format on
+
+#ifdef _WIN32
+typedef int socklen_t;
+#endif
 
 #ifdef __linux
 const int TCP_SOCKET_LEVEL = SOL_TCP;
@@ -31,13 +36,8 @@ const int TCP_SOCKET_LEVEL = IPPROTO_TCP;
 
 int open_socket(int af, int type, int protocol);
 int connect_socket(int socket, sockaddr* addr, int nameLen);
-#ifdef OS_POSIX
 int accept_socket(int socket, sockaddr* addr, socklen_t* addrLen);
 int select_and_accept_socket(int socket, sockaddr* addr, socklen_t* addrLen, int microSeconds);
-#elif _WIN32
-int accept_socket(int socket, sockaddr* addr, int* addrLen);
-int select_and_accept_socket(int socket, sockaddr* addr, int* addrLen, int microSeconds);
-#endif
 void close_socket(int sock);
 int set_socket_option(int socket, int level, int optname, const void* optval, int optlen);
 int set_socket_timeout(int socket, long microSeconds);

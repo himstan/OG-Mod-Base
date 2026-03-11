@@ -51,7 +51,7 @@ void MultiplayerScanner::scan_thread_func(MultiplayerData* data) {
     // Wait for reply
     char buffer[64];
     sockaddr_in from_addr;
-    int from_len = sizeof(from_addr);
+    socklen_t from_len = sizeof(from_addr);
     
     int bytes_received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (sockaddr*)&from_addr, &from_len);
     if (bytes_received > 0) {

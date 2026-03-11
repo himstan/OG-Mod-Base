@@ -4,10 +4,6 @@
 #include "common/cross_sockets/XSocket.h"
 #include "enet/enet.h"
 
-#ifdef _WIN32
-typedef int socklen_t;
-#endif
-
 void MultiplayerManager::setup_host(MultiplayerData& data) {
   if (data.host)
     disconnect(data);

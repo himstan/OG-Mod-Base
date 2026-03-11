@@ -68,7 +68,7 @@ int select_and_accept_socket(int socket, sockaddr* addr, socklen_t* addrLen, int
 #endif
 
 #ifdef _WIN32
-int accept_socket(int socket, sockaddr* addr, int* addrLen) {
+int accept_socket(int socket, sockaddr* addr, socklen_t* addrLen) {
   WSADATA wsaData = {0};
   int iResult = 0;
   // Initialize Winsock
@@ -80,7 +80,7 @@ int accept_socket(int socket, sockaddr* addr, int* addrLen) {
   return accept(socket, addr, addrLen);
 }
 
-int select_and_accept_socket(int socket, sockaddr* addr, int* addrLen, int microSeconds) {
+int select_and_accept_socket(int socket, sockaddr* addr, socklen_t* addrLen, int microSeconds) {
   WSADATA wsaData = {0};
   int iResult = 0;
   // Initialize Winsock
