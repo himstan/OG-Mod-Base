@@ -7,6 +7,17 @@
 const int DISCOVERY_PORT = 3001;
 const char* const DISCOVERY_MAGIC = "OG_MP_DISCOVERY";
 
+enum class MultiplayerStatus : uint8_t {
+  IDLE = 0,
+  SEARCHING = 1,
+  FOUND = 2,
+  CONNECTING = 3,
+  CONNECTED_LOBBY = 4, // Both connected, waiting in menu
+  GAME_STARTING = 5,   // Host/Client is loading the save/level
+  IN_GAME = 6,         // Fully spawned and playing
+  FAILED = 255
+};
+
 enum class PacketType : uint8_t {
   STATE_UPDATE = 0,
   EVENT_JOIN = 1,
@@ -24,6 +35,7 @@ struct PacketHeader {
 struct PacketPlayerState {
   PacketHeader header;
   uint32_t netId;
+  uint8_t status;
   float x, y, z, angle;
   uint16_t anim;
   float anim_frame;

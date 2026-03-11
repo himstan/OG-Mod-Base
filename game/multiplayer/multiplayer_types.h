@@ -10,6 +10,7 @@
 #include "multiplayer_protocol.h"
 
 struct RemoteEntityState {
+  uint8_t status;
   float x, y, z, angle;
   uint16_t anim;
   float anim_frame;
@@ -112,4 +113,5 @@ struct MultiplayerData {
   // Discovery / Hosting responder
   std::thread discovery_thread;
   std::atomic<bool> host_discovery_active{false};
+  std::atomic<bool> pending_full_sync{false};
 };

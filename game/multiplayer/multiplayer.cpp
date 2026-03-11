@@ -25,6 +25,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             PacketPlayerState* state = (PacketPlayerState*)event.packet->data;
             auto& entity = gMultiplayerData.remote_entities[state->netId];
             if (state->header.sequenceNum > entity.last_sequence_num) {
+              entity.status = state->status;
               entity.x = state->x;
               entity.y = state->y;
               entity.z = state->z;
@@ -81,33 +82,19 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
       }
       case ENET_EVENT_TYPE_CONNECT:
         if (gMultiplayerData.local_role == 1) {
-          gMultiplayerData.join_status = 4;
+          // Client successfully connected via ENet
+          lg::info("[Multiplayer] Successfully connected to host.");
+          gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
         } else if (gMultiplayerData.local_role == 0) {
-          PacketFullSync sync;
-          memset(&sync, 0, sizeof(PacketFullSync));
-          sync.header.type = PacketType::FULL_SYNC;
-          sync.header.sequenceNum = gMultiplayerData.sequence_num;
-          sync.money = local->money;
-          sync.gems = local->gems;
-          sync.skill = local->skill;
-          sync.x = local->x;
-          sync.y = local->y;
-          sync.z = local->z;
-          sync.host_task = local->host_task;
-          sync.host_node = local->host_node;
-          memcpy(sync.host_continue, local->host_continue, 32);
-          memcpy(sync.task_mask, local->task_mask, 64);
-          sync.sync_aids_count = (local->sync_aids_count > 128) ? 128 : local->sync_aids_count;
-          sync.riding = local->riding;
-          memcpy(sync.sync_aids, local->sync_aids, sizeof(uint32_t) * 128);
-          sync.clock = local->clock;
-          MultiplayerManager::send_to_peer(event.peer, 1, &sync, sizeof(PacketFullSync), ENET_PACKET_FLAG_RELIABLE);
+          // Peer connected to host
+          char ip[64];
+          enet_address_get_host_ip(&event.peer->address, ip, 64);
+          lg::info("[Multiplayer] Client connected from {}:{}", ip, event.peer->address.port);
+          gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
         }
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
-        if (gMultiplayerData.local_role == 1) {
-          gMultiplayerData.join_status = -1;
-        }
+        gMultiplayerData.join_status = (int)MultiplayerStatus::FAILED;
         break;
       default:
         break;
@@ -120,6 +107,7 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.header.type = PacketType::STATE_UPDATE;
   local_state.header.sequenceNum = ++gMultiplayerData.sequence_num;
   local_state.netId = gMultiplayerData.local_net_id;
+  local_state.status = (uint8_t)gMultiplayerData.join_status;
   local_state.x = local->x;
   local_state.y = local->y;
   local_state.z = local->z;
@@ -134,6 +122,30 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.last_sidekick_frame = local->last_sidekick_frame;
   local_state.clock = local->clock;
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
+
+  if (gMultiplayerData.local_role == 0 && gMultiplayerData.pending_full_sync) {
+    gMultiplayerData.pending_full_sync = false;
+    lg::info("[Multiplayer] Sending FullSync broadcast...");
+    PacketFullSync sync;
+    memset(&sync, 0, sizeof(PacketFullSync));
+    sync.header.type = PacketType::FULL_SYNC;
+    sync.header.sequenceNum = ++gMultiplayerData.sequence_num;
+    sync.money = local->money;
+    sync.gems = local->gems;
+    sync.skill = local->skill;
+    sync.x = local->x;
+    sync.y = local->y;
+    sync.z = local->z;
+    sync.host_task = local->host_task;
+    sync.host_node = local->host_node;
+    memcpy(sync.host_continue, local->host_continue, 32);
+    memcpy(sync.task_mask, local->task_mask, 64);
+    sync.sync_aids_count = (local->sync_aids_count > 128) ? 128 : local->sync_aids_count;
+    sync.riding = local->riding;
+    memcpy(sync.sync_aids, local->sync_aids, sizeof(uint32_t) * 128);
+    sync.clock = local->clock;
+    MultiplayerManager::broadcast(gMultiplayerData, 1, sync, ENET_PACKET_FLAG_RELIABLE);
+  }
 
   if (gMultiplayerData.local_role == 0 && local->enemy_count > 0) {
     PacketEnemySync enemy_packet;
@@ -161,7 +173,9 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->anim_frame = remote_state.anim_frame;
     remote_goal->last_anim_frame = remote_state.last_anim_frame;
     remote_goal->level = remote_state.level_hash;
-    remote_goal->status = 1;
+    // Map network status (3, 4) to GOAL status field.
+    // If it's connected (>=3), GOAL sees it as active (1) or the specific state.
+    remote_goal->status = (remote_state.status > 0) ? (int32_t)remote_state.status : 1;
     remote_goal->packet_id = remote_state.last_sequence_num;
     remote_goal->riding = remote_state.riding;
     remote_goal->sidekick_anim = remote_state.sidekick_anim;
@@ -281,6 +295,22 @@ int pc_multi_get_status() {
   return MultiplayerScanner::get_status(gMultiplayerData);
 }
 
+void pc_multi_set_status(int status) {
+  int old_status = gMultiplayerData.join_status;
+  gMultiplayerData.join_status = status;
+
+  // If Host is transitioning to IN_GAME, broadcast a FullSync to all connected clients
+  // This allows clients to start their loading process with the correct world state.
+  // We only do this on the transition from a non-game state to IN_GAME to avoid
+  // triggering hard-reloads on clients every time the host respawns.
+  if (gMultiplayerData.local_role == 0 && 
+      status == (int)MultiplayerStatus::IN_GAME && 
+      old_status != (int)MultiplayerStatus::IN_GAME) {
+    lg::info("[Multiplayer] Host entered game. Broadcasting FullSync to peers...");
+    gMultiplayerData.pending_full_sync = true;
+  }
+}
+
 void pc_multi_stop_search() {
   MultiplayerScanner::stop_search(gMultiplayerData);
 }
@@ -313,6 +343,7 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-setup-host", (void*)pc_multi_setup_host);
   make_function_symbol_from_c("pc-multi-setup-client", (void*)pc_multi_setup_client);
   make_function_symbol_from_c("pc-multi-get-status", (void*)pc_multi_get_status);
+  make_function_symbol_from_c("pc-multi-set-status", (void*)pc_multi_set_status);
   make_function_symbol_from_c("pc-multi-stop-search", (void*)pc_multi_stop_search);
   make_function_symbol_from_c("pc-multi-start-search", (void*)pc_multi_start_search);
   make_function_symbol_from_c("pc-multi-get-found-ip", (void*)pc_multi_get_found_ip);
@@ -325,4 +356,3 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);
 }
-

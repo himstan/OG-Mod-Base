@@ -5,19 +5,26 @@
 
 (defun multiplayer-network-tick ()
   "Logic that only runs during network sync windows. Extracts local state and pushes to the bridge."
-  ;; Global Guard: Don't send data if we aren't synced or are in a middle of a load
-  (if (or (not *multi-sync-enabled?*)
-          (not *target*)
-          (not (-> *target* control))
-          (focus-test? *target* teleporting))
-      (return #f))
+  (let ((status (pc-multi-get-status)))
+    ;; 1. Handshake Guard: Must be at least Connecting or in Lobby
+    (if (< status 3)
+        (return #f))
 
-  (mp-extract-local-data)
-  (mp-push-local-events)
+    ;; 2. Data Extraction (Only if fully in-game and synced)
+    (when (and (= status 6) *multi-sync-enabled?*)
+      (when (and *target* 
+                 (-> *target* control) 
+                 (not (focus-test? *target* teleporting)))
+        (mp-extract-local-data)
+        (mp-push-local-events)
+        )
+      )
 
-  ;; ACTUALLY SEND
-  (pc-multi-send-state (the-as uint *local-info*))
-  (pc-multi-send-events (the-as uint *mp-event-buffer*))
+    ;; 3. ACTUALLY SEND
+    ;; We always send the state packet because it contains our 'status' field
+    (pc-multi-send-state (the-as uint *local-info*))
+    (pc-multi-send-events (the-as uint *mp-event-buffer*))
+    )
   (none))
 
 ;; --- Client Tick (Every Frame) ---
@@ -25,39 +32,44 @@
 (defun multiplayer-client-tick ()
   "High-frequency logic that must run every engine frame (Polling, Interpolation, Rendering)."
   (with-pp
-  ;; GLOBAL GUARD: Ensure all MP data structures are initialized
-  (if (or (not *local-info*) (not *remote-info*) (not *mp-event-buffer*))
-      (return #f))
+    ;; GLOBAL GUARD: Ensure all MP data structures are initialized
+    (if (or (not *local-info*) (not *remote-info*) (not *mp-event-buffer*))
+        (return #f))
 
-  ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
-  (let ((status (pc-multi-get-status)))
-    (if (or (= status 3) (= status 4)) ;; Connecting or Connected
-        (begin
-          (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
-          (pc-multi-receive-state (the-as uint *remote-info*))
-          (pc-multi-receive-events (the-as uint *mp-event-buffer*))
-          (set! (-> *local-info* role) (pc-multi-get-role)))
-        (begin
-          (set! (-> *local-info* role) -1)
-          (return #f))))
+    ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
+    (let ((status (pc-multi-get-status)))
+      (if (or (= status 3) (= status 4) (= status 5) (= status 6))
+          (begin
+            (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
+            (pc-multi-receive-state (the-as uint *remote-info*))
+            (pc-multi-receive-events (the-as uint *mp-event-buffer*))
+            (set! (-> *local-info* role) (pc-multi-get-role)))
+          (begin
+            (set! (-> *local-info* role) -1)
+            (return #f))))
 
-  ;; 2. Logic & State Machine
-  (mp-sync-clock-host)
-  (mp-sync-clock-client)
-  (mp-handle-full-sync-state)
-  (mp-handle-scene-transition)
-  (mp-extract-local-stats)
-  
-  ;; 3. High-Frequency Local Updates
-  (mp-process-inbound-events)
-  (mp-update-role-transformation)
-  (mp-update-ai-targeting)
-  (mp-update-player-visibility)
-  (mp-update-camera-settings)
+    ;; 2. Logic & State Machine (MUST BE ABOVE GUARD for Join Handshake)
+    (mp-handle-full-sync-state)
+    (mp-handle-scene-transition)
 
-  ;; 4. Puppet Rendering (Interpolated every frame for smoothness)
-  (mp-manage-remote-puppet)
-  (mp-sync-sidekick-anim)
-  (mp-draw-anim-debug)
+    ;; GLOBAL GUARD: Logic below only runs once we are actually synced and in-game
+    (if (not *multi-sync-enabled?*)
+        (return #f))
 
-  (none)))
+    ;; 3. High-Frequency Local Updates
+    (mp-sync-clock-host)
+    (mp-sync-clock-client)
+    (mp-extract-local-stats)
+    (mp-process-inbound-events)
+
+    (mp-update-role-transformation)
+    (mp-update-ai-targeting)
+    (mp-update-player-visibility)
+    (mp-update-camera-settings)
+
+    ;; 4. Puppet Rendering
+    (mp-manage-remote-puppet)
+    (mp-sync-sidekick-anim)
+    (mp-draw-anim-debug)
+
+    (none)))

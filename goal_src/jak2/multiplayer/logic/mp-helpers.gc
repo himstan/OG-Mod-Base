@@ -265,6 +265,10 @@
   *mp-search-enemy-res*)
 
 (defun mp-send-world-event ((etype uint) (aid uint))
+  ;; GUARD: Only send if synced and in-game
+  (if (or (not *multi-sync-enabled?*) (!= (pc-multi-get-status) 6))
+      (return #f))
+
   (let ((q-idx *mp-event-queue-write-ptr*))
     (let ((evt (the-as mp-world-event (-> *mp-event-queue* q-idx))))
       (set! (-> evt etype) etype)

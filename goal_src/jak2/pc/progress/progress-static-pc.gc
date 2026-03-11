@@ -777,11 +777,10 @@ This gives us more freedom to write code how we want.
   )
 
 (defmethod respond-progress ((obj menu-waiting-for-daxter-option) (p progress) (selected? symbol))
-  ;; Check if anyone joined
-  (when (and (= (-> *remote-info* status) 1) (not *multi-sync-enabled?*))
+  ;; Check if anyone joined (Status 4 = CONNECTED_LOBBY)
+  (when (and (>= (-> *remote-info* status) 4) (not *multi-sync-enabled?*))
     ;; Peer joined! Start game.
     (sound-play "generic-beep")
-    (set! *multi-sync-enabled?* #t)
     ;; Clear client sync flag - we will set it to 1 in runs-on-jak-spawn
     (set! (-> *local-info* sync-flag) (the-as uint 0))
     

@@ -23,7 +23,7 @@ void MultiplayerManager::setup_host(MultiplayerData& data) {
     lg::info("[Multiplayer] Listen server started on port 3000.");
     data.local_role = 0;
     data.local_net_id = 0;
-    data.join_status = 4;
+    data.join_status = (int)MultiplayerStatus::CONNECTING; // Waiting for peer
     data.initialized = true;
 
     // Start discovery responder
@@ -53,11 +53,7 @@ void MultiplayerManager::setup_client(MultiplayerData& data, const char* ip) {
       lg::info("[Multiplayer] Client connecting to {}:3000...", ip);
       data.local_role = 1;
       data.local_net_id = 1;
-      if (std::string(ip) == "127.0.0.1") {
-        data.join_status = 4; // Skip searching/connecting states for local
-      } else {
-        data.join_status = 3;  // Connecting
-      }
+      data.join_status = (int)MultiplayerStatus::CONNECTING;
       data.initialized = true;
     } else {
       enet_host_destroy(data.host);
@@ -85,6 +81,7 @@ void MultiplayerManager::disconnect(MultiplayerData& data) {
   }
 
   data.initialized = false;
+  data.join_status = (int)MultiplayerStatus::IDLE;
   lg::info("[Multiplayer] Disconnected.");
 }
 

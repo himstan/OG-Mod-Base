@@ -6,15 +6,8 @@
 #include <vector>
 #include <chrono>
 
-enum class DiscoveryStatus {
-  IDLE = 0,
-  SEARCHING = 1,
-  FOUND = 2,
-  FAILED = -1
-};
-
 void MultiplayerScanner::start_search(MultiplayerData& data) {
-  if (data.join_status == (int)DiscoveryStatus::SEARCHING) return;
+  if (data.join_status == (int)MultiplayerStatus::SEARCHING) return;
   
   data.stop_search = false;
   std::thread(scan_thread_func, &data).detach();
@@ -22,7 +15,7 @@ void MultiplayerScanner::start_search(MultiplayerData& data) {
 
 void MultiplayerScanner::stop_search(MultiplayerData& data) {
   data.stop_search = true;
-  data.join_status = (int)DiscoveryStatus::IDLE;
+  data.join_status = (int)MultiplayerStatus::IDLE;
 }
 
 int MultiplayerScanner::get_status(const MultiplayerData& data) {
@@ -30,11 +23,11 @@ int MultiplayerScanner::get_status(const MultiplayerData& data) {
 }
 
 void MultiplayerScanner::scan_thread_func(MultiplayerData* data) {
-  data->join_status = (int)DiscoveryStatus::SEARCHING;
+  data->join_status = (int)MultiplayerStatus::SEARCHING;
   
   int sock = open_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sock < 0) {
-    data->join_status = (int)DiscoveryStatus::FAILED;
+    data->join_status = (int)MultiplayerStatus::FAILED;
     return;
   }
 
@@ -66,7 +59,7 @@ void MultiplayerScanner::scan_thread_func(MultiplayerData* data) {
       if (std::string(buffer) == DISCOVERY_MAGIC) {
         data->found_ip = address_to_string(from_addr);
         lg::info("[Multiplayer] Found host at {}", data->found_ip);
-        data->join_status = (int)DiscoveryStatus::FOUND;
+        data->join_status = (int)MultiplayerStatus::FOUND;
         close_socket(sock);
         return;
       }
@@ -74,8 +67,8 @@ void MultiplayerScanner::scan_thread_func(MultiplayerData* data) {
   }
 
   lg::info("[Multiplayer] Discovery timed out.");
-  if (data->join_status == (int)DiscoveryStatus::SEARCHING) {
-    data->join_status = (int)DiscoveryStatus::FAILED;
+  if (data->join_status == (int)MultiplayerStatus::SEARCHING) {
+    data->join_status = (int)MultiplayerStatus::FAILED;
   }
   close_socket(sock);
 }

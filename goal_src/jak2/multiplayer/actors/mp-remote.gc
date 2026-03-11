@@ -53,7 +53,7 @@
 (defun mp-manage-remote-puppet ()
   "Spawn, update, or deactivate the remote player puppet"
   (cond
-    ((= (-> *remote-info* status) 1)
+    ((= (-> *remote-info* status) 6)
      (begin
        ;; A. Calculate current transform once
        (mp-update-remote-transform)
