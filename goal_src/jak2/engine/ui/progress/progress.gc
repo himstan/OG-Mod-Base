@@ -536,6 +536,8 @@
        (!= (-> this current) 'video-mode-ok)
        (!= (-> this current) 'progressive-mode-warning)
        (!= (-> this current) 'video-mode-warning)
+       (!= (-> this current) 'reconnect)
+       (!= (-> this current) 'host-left)
        )
   )
 

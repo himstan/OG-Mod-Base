@@ -75,6 +75,14 @@ void MultiplayerManager::disconnect(MultiplayerData& data) {
   if (data.host) {
     if (data.local_role == 1 && data.server_peer) {
       enet_peer_disconnect_now(data.server_peer, 0);
+    } else if (data.local_role == 0) {
+      // Host disconnecting: notify all peers
+      for (size_t i = 0; i < data.host->peerCount; ++i) {
+        ENetPeer* peer = &data.host->peers[i];
+        if (peer->state == ENET_PEER_STATE_CONNECTED) {
+          enet_peer_disconnect_now(peer, 0);
+        }
+      }
     }
     enet_host_destroy(data.host);
     data.host = nullptr;
