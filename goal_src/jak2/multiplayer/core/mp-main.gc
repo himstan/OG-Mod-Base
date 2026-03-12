@@ -8,15 +8,31 @@
   (let ((status (pc-multi-get-status)))
     ;; 1. Handshake Guard: Must be at least Connecting or in Lobby
     (if (< status 3)
-        (return #f))
+        (begin
+          ;; Debug log if status is low while we think we should be syncing
+          (when *multi-sync-enabled?*
+            (format 0 "[MP-Tick] Return Early: Status ~D, SyncEnabled? ~A~%" status *multi-sync-enabled?*)
+            )
+          (return #f)
+          )
+        )
 
-    ;; 2. Data Extraction (Only if fully in-game and synced)
-    (when (and (= status 6) *multi-sync-enabled?*)
-      (when (and *target* 
-                 (-> *target* control) 
-                 (not (focus-test? *target* teleporting)))
-        (mp-extract-local-data)
-        (mp-push-local-events)
+    ;; 2. Data Extraction
+    ;; Host (Role 0) always extracts once in-game. 
+    ;; Client (Role 1) only extracts once fully synced.
+    (let ((role (-> *local-info* role)))
+      (when (and (= status 6) (or (zero? role) *multi-sync-enabled?*))
+        (when (and *target* 
+                   (-> *target* control) 
+                   (not (focus-test? *target* teleporting)))
+          ;; Debug log every 5 seconds to show we are extracting
+          (when (>= (- (current-time) *multi-last-sync-frame*) (seconds 5))
+            (format 0 "[MP-Tick] Active and Syncing! (Status ~D, Role ~D, SyncFlag ~D)~%" 
+                    status role (-> *local-info* sync-flag))
+            (set! *multi-last-sync-frame* (current-time)))
+          (mp-extract-local-data)
+          (mp-push-local-events)
+          )
         )
       )
 
@@ -52,13 +68,17 @@
     (mp-handle-full-sync-state)
     (mp-handle-scene-transition)
 
+    ;; 3. Basic Handshake Updates (Must run before guard to avoid frozen puppets during load)
+    (mp-sync-clock-host)
+    (mp-sync-clock-client)
+    (mp-manage-remote-puppet)
+    (mp-sync-sidekick-anim)
+
     ;; GLOBAL GUARD: Logic below only runs once we are actually synced and in-game
     (if (not *multi-sync-enabled?*)
         (return #f))
 
-    ;; 3. High-Frequency Local Updates
-    (mp-sync-clock-host)
-    (mp-sync-clock-client)
+    ;; 4. High-Frequency Local Updates
     (mp-extract-local-stats)
     (mp-process-inbound-events)
 
@@ -67,9 +87,6 @@
     (mp-update-player-visibility)
     (mp-update-camera-settings)
 
-    ;; 4. Puppet Rendering
-    (mp-manage-remote-puppet)
-    (mp-sync-sidekick-anim)
     (mp-draw-anim-debug)
 
     (none)))

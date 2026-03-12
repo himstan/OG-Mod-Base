@@ -90,7 +90,11 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
           char ip[64];
           enet_address_get_host_ip(&event.peer->address, ip, 64);
           lg::info("[Multiplayer] Client connected from {}:{}", ip, event.peer->address.port);
-          gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
+          if (gMultiplayerData.join_status != (int)MultiplayerStatus::IN_GAME) {
+            gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
+          } else {
+            gMultiplayerData.pending_full_sync = true;
+          }
         }
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
@@ -298,6 +302,10 @@ int pc_multi_get_status() {
 void pc_multi_set_status(int status) {
   int old_status = gMultiplayerData.join_status;
   gMultiplayerData.join_status = status;
+  
+  if (old_status != status) {
+    lg::info("[Multiplayer] Status transition: {} -> {}", old_status, status);
+  }
 
   // If Host is transitioning to IN_GAME, broadcast a FullSync to all connected clients
   // This allows clients to start their loading process with the correct world state.

@@ -90,7 +90,11 @@ an orb |#
   ;; Update status to IN_GAME (6) if we are connected
   (let ((status (pc-multi-get-status)))
     (if (>= status 3)
-        (pc-multi-set-status 6))
+        (begin
+          (pc-multi-set-status 6)
+          (set! *multi-last-send-time* 0)
+          )
+        )
 
     ;; Only auto-initialize if we aren't already connected/connecting
     (when (zero? status)

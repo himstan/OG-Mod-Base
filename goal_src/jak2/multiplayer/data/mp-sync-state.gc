@@ -21,6 +21,7 @@
          (when cont
            (let ((lev (level-get *level* (-> cont level))))
              (when (and lev (nonzero? lev) (= (-> lev status) 'active) (= (-> *level* loading-level) (-> *level* default-level)))
+               (format 0 "[MP-Client] Level ~S is active. Transitioning to Phase 3...~%" (-> cont level))
                (set! (-> *local-info* sync-flag) (the-as uint 3))
                )
              )
@@ -83,7 +84,8 @@
          (set-setting! 'allow-recharge #f 0.0 0)
 
          (set! (-> *local-info* sync-flag) (the-as uint 0))
-         (format 0 "[MP-Client] Join Handshake & Level Alignment Successful!~%")
+         (set! *multi-sync-enabled?* #t)
+         (format 0 "[MP-Client] Join Handshake & Level Alignment Successful! Enabled sync flag.~%")
          )
        )
       )
