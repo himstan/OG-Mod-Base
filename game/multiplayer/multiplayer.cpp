@@ -125,8 +125,8 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
           // Host stays in whatever status they were in (likely IN_GAME)
         } else {
           // Client lost connection to host
-          lg::warn("[Multiplayer] Disconnected from host.");
-          gMultiplayerData.join_status = (int)MultiplayerStatus::FAILED;
+          lg::warn("[Multiplayer] Host has left the session.");
+          gMultiplayerData.join_status = (int)MultiplayerStatus::HOST_LEFT;
         }
         break;
       default:

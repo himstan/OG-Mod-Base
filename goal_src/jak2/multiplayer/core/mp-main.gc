@@ -57,7 +57,7 @@
 
     ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
     (let ((status (pc-multi-get-status)))
-      (if (or (= status 3) (= status 4) (= status 5) (= status 6) (= status 7))
+      (if (or (= status 3) (= status 4) (= status 5) (= status 6) (= status 7) (= status 8))
           (begin
             (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
             (pc-multi-receive-state (the-as uint *remote-info*))
@@ -85,6 +85,16 @@
                   (set-next-state (-> *progress-process* 0) 'go-away 0))
               (set! *mp-reconnect-menu-active?* #f)
               )
+            )
+          )
+
+      ;; HOST LEFT DIALOG TRIGGER
+      (when (= status 8)
+          ;; Only activate if not already marked active
+          (when (not *mp-host-left-menu-active?*)
+            (format 0 "[MP-UI] Host has left the session. Activating Host Left screen.~%")
+            (activate-progress *dproc* 'host-left)
+            (set! *mp-host-left-menu-active?* #t)
             )
           )
       )

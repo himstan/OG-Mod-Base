@@ -212,9 +212,13 @@
   )
 
 
-(deftype menu-reconnect-option (menu-option)
-  ((sprites  hud-sprite  2 :inline :offset  48)
-   )
+(deftype menu-reconnect-option (menu-icon-info-option)
+  ()
+  )
+
+
+(deftype menu-host-left-option (menu-icon-info-option)
+  ()
   )
 
 

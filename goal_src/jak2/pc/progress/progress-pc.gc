@@ -28,6 +28,7 @@
 (define *progress-state-pc* (new 'static 'progress-global-state-pc :music-player-track #f))
 
 (define-extern *reconnect-options* menu-option-list)
+(define-extern *host-left-options* menu-option-list)
 
 (defmacro when-not-drawn-decoration (&rest body)
   `(when (> (-> *display* real-clock integral-frame-counter) (-> *progress-state-pc* decoration-draw-time))
@@ -230,6 +231,9 @@
      )
     (('reconnect)
      (set! (-> obj current-options) *reconnect-options*)
+     )
+    (('host-left)
+     (set! (-> obj current-options) *host-left-options*)
      )
     (('format-card)
      (set! (-> obj current-options) *format-card-options*)

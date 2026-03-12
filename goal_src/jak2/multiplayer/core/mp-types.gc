@@ -246,6 +246,7 @@
 (define-perm *multi-remote-render-quat* structure (new 'static 'structure))
 (define-perm *mp-reconnect-process* handle (the-as handle #f))
 (define-perm *mp-reconnect-menu-active?* symbol #f)
+(define-perm *mp-host-left-menu-active?* symbol #f)
 
 ;; Track the manager via handle to prevent respawn loops
 (declare-type mp-target-proxy process-focusable)

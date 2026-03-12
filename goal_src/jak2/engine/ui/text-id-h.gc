@@ -883,6 +883,8 @@
   (progress-reconnect-lost #x100040)
   (progress-reconnect-attempt #x100041)
   (progress-reconnect-disconnect #x100042)
+  (progress-multi-host-left-msg    #x100050)
+  (progress-multi-host-left-disc   #x100051)
   )
 
 ;; ---text-id
