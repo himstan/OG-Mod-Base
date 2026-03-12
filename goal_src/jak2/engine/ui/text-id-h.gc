@@ -880,6 +880,9 @@
   (progress-joining #x100032)
   (progress-connected #x100033)
   (progress-no-games-found #x100034)
+  (progress-reconnect-lost #x100040)
+  (progress-reconnect-attempt #x100041)
+  (progress-reconnect-disconnect #x100042)
   )
 
 ;; ---text-id

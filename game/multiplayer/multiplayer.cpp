@@ -252,6 +252,8 @@ void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
     if (!local || !remote) return;
     handle_packet_receive(local, remote);
 
+    current_time = enet_time_get();
+
     // Timeout Check: If we are in-game but haven't received anything in 10s, trigger Reconnecting UI
     // Host only checks if at least one peer is connected. Client always checks.
     bool should_check_timeout = (gMultiplayerData.local_role == 1) || 
@@ -409,7 +411,14 @@ u64 pc_multi_get_found_ip() {
 }
 
 void pc_multi_debug_stop_receive(u32 val) {
-  g_multi_debug_stop_receive = (val != 0);
+  bool new_val = (val != 0);
+  if (g_multi_debug_stop_receive != new_val) {
+    g_multi_debug_stop_receive = new_val;
+  }
+}
+
+u64 pc_multi_get_ticks() {
+  return enet_time_get();
 }
 
 void init_multiplayer_pc_port() {
@@ -430,4 +439,5 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);
   make_function_symbol_from_c("pc-multi-debug-stop-receive", (void*)pc_multi_debug_stop_receive);
+  make_function_symbol_from_c("pc-multi-get-ticks", (void*)pc_multi_get_ticks);
 }

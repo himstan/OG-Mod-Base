@@ -279,5 +279,8 @@
   "100031": "Searching for games...",
   "100032": "Joining Game...",
   "100033": "Connected!",
-  "100034": "No games found."
+  "100034": "No games found.",
+  "100040": "CONNECTION LOST",
+  "100041": "ATTEMPTING TO RECONNECT...",
+  "100042": "PRESS <PAD_X> TO DISCONNECT"
 }

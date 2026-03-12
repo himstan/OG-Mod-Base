@@ -80,8 +80,9 @@
           (begin
             ;; Auto-close if we were in reconnect mode
             (when *mp-reconnect-menu-active?*
-              (format 0 "[MP-UI] Connection restored. Closing Reconnect screen.~%")
-              (deactivate-progress)
+              (format 0 "[MP-UI] Connection restored. Closing Reconnect screen smoothly.~%")
+              (if *progress-process*
+                  (set-next-state (-> *progress-process* 0) 'go-away 0))
               (set! *mp-reconnect-menu-active?* #f)
               )
             )
@@ -99,13 +100,37 @@
     (mp-sync-sidekick-anim)
 
     ;; Debug: Simulate connection loss (must be above sync guard)
+    (if *mp-debug-simulate-loss?*
+        (begin
+          ;; If timer is 0, we just turned it ON
+          (if (zero? *mp-debug-simulate-loss-time*)
+              (set! *mp-debug-simulate-loss-time* (current-time)))
+          
+          ;; Check if 30 seconds have passed
+          (when (>= (- (current-time) *mp-debug-simulate-loss-time*) (seconds 60))
+            (format 0 "[MP-Debug] Auto-restoring connection after 30s timeout.~%")
+            (set! *mp-debug-simulate-loss?* #f)
+            (set! *mp-debug-simulate-loss-time* 0)
+            )
+          )
+        (begin
+          ;; Ensure timer is reset when OFF
+          (set! *mp-debug-simulate-loss-time* 0)
+          )
+        )
+    
     (pc-multi-debug-stop-receive (if *mp-debug-simulate-loss?* (the uint 1) (the uint 0)))
 
     ;; 4. NETWORK SEND (Throttled)
     ;; We send even if *multi-sync-enabled?* is #f to provide heartbeat/status to peer
-    (when (and (not *mp-debug-simulate-loss?*) (>= (- (current-time) *multi-last-send-time*) (/ (seconds 1) *multi-sync-tps*)))
-      (set! *multi-last-send-time* (current-time))
-      (multiplayer-network-tick))
+    ;; Use millisecond ticks from C++ for perfectly consistent TPS regardless of pause
+    (let ((current-ticks (pc-multi-get-ticks)))
+      (when (and (not *mp-debug-simulate-loss?*) 
+                 (>= (- current-ticks (the uint64 *multi-last-send-time*)) 
+                     (the uint64 (/ 1000 *multi-sync-tps*))))
+        (set! *multi-last-send-time* (the-as time-frame current-ticks))
+        (multiplayer-network-tick))
+      )
 
     ;; GLOBAL GUARD: Logic below only runs once we are actually synced and in-game
     (if (not *multi-sync-enabled?*)

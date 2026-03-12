@@ -2366,6 +2366,70 @@
   (none)
   )
 
+(defmethod draw-option ((obj menu-reconnect-option) (p progress) (arg1 font-context) (arg2 int) (arg3 symbol))
+  (set! (-> arg1 alpha) (- 1.0 (-> p menu-transition)))
+  (set-color! arg1 (font-color progress))
+  (set-scale! arg1 0.5)
+  (set! (-> obj sprites 0 tex) (get-texture checkpoint level-default-minimap))
+  (set! (-> obj sprites 0 scale-x) 1.0)
+  (set! (-> obj sprites 0 scale-y) 1.0)
+  (let ((v1-6 (-> obj sprites 0 color2)))
+    (set! (-> v1-6 0) 128)
+    (set! (-> v1-6 1) 128)
+    (set! (-> v1-6 2) 128)
+    (set! (-> v1-6 3) (the int (* 128.0 (- 1.0 (-> p menu-transition)))))
+    )
+  (set! (-> obj sprites 0 pos z) #xffffff)
+  (set! (-> obj sprites 0 pos w) 0)
+  (set-hud-piece-position! (the-as hud-sprite (-> obj sprites)) (adjust-x-if-needed 240) 160)
+  (with-dma-buffer-add-bucket ((s3-0 (-> *display* frames (-> *display* on-screen) global-buf))
+                               (bucket-id progress)
+                               )
+    (draw (-> obj sprites 0) s3-0 (-> *level* default-level))
+    )
+  (set-flags! arg1 (font-flags kerning middle middle-vert large))
+  (set! (-> arg1 origin x) 90.0)
+  (set! (-> arg1 origin y) 80.0)
+  (set-width! arg1 330)
+  (set-height! arg1 85)
+  (when (not (-> *pc-settings* use-vis?))
+    (set! (-> arg1 origin x) (the float (adjust-game-x (-> arg1 origin x))))
+    (*! (-> arg1 width) (-> *pc-settings* aspect-ratio-reciprocal))
+    )
+  ;; CONNECTION LOST
+  (print-game-text
+    (lookup-text! *common-text* (text-id progress-reconnect-lost) #f)
+    arg1
+    #f
+    44
+    (bucket-id progress)
+    )
+  (+! (-> arg1 origin y) 115.0)
+  (set-height! arg1 95)
+  ;; ATTEMPTING TO RECONNECT...
+  (print-game-text
+    (lookup-text! *common-text* (text-id progress-reconnect-attempt) #f)
+    arg1
+    #f
+    44
+    (bucket-id progress)
+    )
+  (+! (-> arg1 origin y) 90.0)
+  (set-height! arg1 50)
+  (set-color! arg1 (progress-selected 0))
+  (draw-highlight (the int (+ 12.0 (-> arg1 origin y))) 24 (-> arg1 alpha))
+  ;; PRESS <X> TO DISCONNECT
+  (print-game-text
+    (lookup-text! *common-text* (text-id progress-reconnect-disconnect) #f)
+    arg1
+    #f
+    44
+    (bucket-id progress)
+    )
+  0
+  (none)
+  )
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;

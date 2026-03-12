@@ -200,6 +200,7 @@
   )
 
 (define-extern pc-multi-debug-stop-receive (function uint none))
+(define-extern pc-multi-get-ticks (function uint64))
 (define-extern pc-multi-get-command-line-arg (function string string))
 (define-extern pc-multi-get-role (function int))
 (define-extern pc-multi-poll (function uint uint none))
@@ -279,6 +280,7 @@
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #f)
 (define-perm *mp-debug-simulate-loss?* symbol #f)
+(define-perm *mp-debug-simulate-loss-time* time-frame 0)
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
 

@@ -82,6 +82,8 @@ void MultiplayerManager::disconnect(MultiplayerData& data) {
 
   data.initialized = false;
   data.join_status = (int)MultiplayerStatus::IDLE;
+  data.inbound_events.clear();
+  data.remote_entities.clear();
   lg::info("[Multiplayer] Disconnected.");
 }
 
