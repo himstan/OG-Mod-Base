@@ -305,7 +305,10 @@
                       )
      )
     (('progress)
-     (if (cpad-hold? 0 start)
+     (when (and (cpad-hold? 0 start) (cpad-hold? 0 triangle) (cpad-hold? 0 circle) (cpad-hold? 0 square)
+                *progress-process*
+                (!= (-> *progress-process* 0 current) 'reconnect)
+                (!= (-> *progress-process* 0 current) 'host-left))
          (hide-progress-screen)
          )
      (set! *pause-lock* (and *cheat-mode* (cpad-hold? 0 r2)))
