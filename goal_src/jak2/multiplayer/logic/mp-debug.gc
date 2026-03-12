@@ -108,5 +108,18 @@
          )
         )
       )
+    (format *stdcon* "~%-------------------------~%~%")
+    ;; 3. NETWORK INFO
+    (format *stdcon* "NETWORK INFO:~%")
+    (let ((status (pc-multi-get-status))
+          (role (-> *local-info* role)))
+      (format *stdcon* "  Status:    ~D~%" status)
+      (format *stdcon* "  Role:      ~D~%" role)
+      (format *stdcon* "  SyncFlag:  ~D~%" (-> *local-info* sync-flag))
+      (when *mp-debug-simulate-loss?*
+        (format *stdcon* "  DEBUG: CONNECTION LOSS SIMULATED~%"))
+      )
+
+    (format *stdcon* "~%-------------------------~%~%")
     )
   (none))

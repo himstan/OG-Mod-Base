@@ -250,6 +250,17 @@
 
 (defstate idle (mp-manager)
   :virtual #t
+  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+    (case message
+      (('die)
+       (let ((m (handle->process (-> self manipy-proc))))
+         (if m (deactivate m)))
+       (let ((p (handle->process (-> self proxy-proc))))
+         (if p (deactivate p)))
+       (deactivate self)
+       )
+      )
+    )
   :trans (behavior ()
           ;; 1. Lifecycle: Spawn Visual Puppet
           (let ((m (handle->process-safe (-> self manipy-proc))))

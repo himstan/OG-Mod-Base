@@ -4233,6 +4233,10 @@
              (int-var "Blend Time (ticks)" *mp-anim-blend-time* dm-int-toggle-pick-func 1 1 #t 0 300)
              (int-var "Max Latency (ticks)" *mp-anim-max-latency* dm-int-toggle-pick-func 1 5 #t 0 1000)
              )
+           (menu
+             "Network"
+             (flag "Simulate Connection Loss" *mp-debug-simulate-loss?* dm-boolean-toggle-pick-func)
+             )
            )
         )
       )

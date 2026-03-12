@@ -414,6 +414,15 @@
     )
   )
 
+(define *reconnect-options*
+  (new 'static 'menu-option-list
+    :y-center #xc6
+    :y-space 30
+    :scale 0.82
+    :options (new 'static 'boxed-array :type menu-option (new 'static 'menu-reconnect-option))
+    )
+  )
+
 (define *format-card-options*
   (new 'static 'menu-option-list
     :y-center #xc6

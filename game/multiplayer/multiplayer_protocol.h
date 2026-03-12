@@ -15,6 +15,7 @@ enum class MultiplayerStatus : uint8_t {
   CONNECTED_LOBBY = 4, // Both connected, waiting in menu
   GAME_STARTING = 5,   // Host/Client is loading the save/level
   IN_GAME = 6,         // Fully spawned and playing
+  RECONNECTING = 7,    // Connection lost, trying to restore
   FAILED = 255
 };
 

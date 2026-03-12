@@ -29,11 +29,6 @@ an orb |#
   ;; Runs Polling, Interpolation, and high-frequency state logic
   (multiplayer-client-tick)
 
-  ;; Throttled Network Send
-  (when (>= (- (current-time) *multi-last-send-time*) (/ (seconds 1) *multi-sync-tps*))
-    (set! *multi-last-send-time* (current-time))
-    (multiplayer-network-tick))
-
   (none)
   )
 

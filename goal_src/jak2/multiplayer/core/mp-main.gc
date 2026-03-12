@@ -1,6 +1,9 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
+(define-extern activate-progress (function process symbol none))
+(define-extern deactivate-progress (function none))
+
 ;; --- Network Tick (Throttled to the configured TPS) ---
 
 (defun multiplayer-network-tick ()
@@ -54,7 +57,7 @@
 
     ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
     (let ((status (pc-multi-get-status)))
-      (if (or (= status 3) (= status 4) (= status 5) (= status 6))
+      (if (or (= status 3) (= status 4) (= status 5) (= status 6) (= status 7))
           (begin
             (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
             (pc-multi-receive-state (the-as uint *remote-info*))
@@ -62,7 +65,28 @@
             (set! (-> *local-info* role) (pc-multi-get-role)))
           (begin
             (set! (-> *local-info* role) -1)
-            (return #f))))
+            (return #f)))
+
+      ;; RECONNECT DIALOG TRIGGER
+      (if (= status 7)
+          (begin
+            ;; Only activate if not already marked active
+            (when (not *mp-reconnect-menu-active?*)
+              (format 0 "[MP-UI] Connection lost. Activating Reconnect screen.~%")
+              (activate-progress *dproc* 'reconnect)
+              (set! *mp-reconnect-menu-active?* #t)
+              )
+            )
+          (begin
+            ;; Auto-close if we were in reconnect mode
+            (when *mp-reconnect-menu-active?*
+              (format 0 "[MP-UI] Connection restored. Closing Reconnect screen.~%")
+              (deactivate-progress)
+              (set! *mp-reconnect-menu-active?* #f)
+              )
+            )
+          )
+      )
 
     ;; 2. Logic & State Machine (MUST BE ABOVE GUARD for Join Handshake)
     (mp-handle-full-sync-state)
@@ -73,6 +97,15 @@
     (mp-sync-clock-client)
     (mp-manage-remote-puppet)
     (mp-sync-sidekick-anim)
+
+    ;; Debug: Simulate connection loss (must be above sync guard)
+    (pc-multi-debug-stop-receive (if *mp-debug-simulate-loss?* (the uint 1) (the uint 0)))
+
+    ;; 4. NETWORK SEND (Throttled)
+    ;; We send even if *multi-sync-enabled?* is #f to provide heartbeat/status to peer
+    (when (and (not *mp-debug-simulate-loss?*) (>= (- (current-time) *multi-last-send-time*) (/ (seconds 1) *multi-sync-tps*)))
+      (set! *multi-last-send-time* (current-time))
+      (multiplayer-network-tick))
 
     ;; GLOBAL GUARD: Logic below only runs once we are actually synced and in-game
     (if (not *multi-sync-enabled?*)

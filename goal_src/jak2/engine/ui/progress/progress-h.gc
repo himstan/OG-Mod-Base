@@ -212,6 +212,12 @@
   )
 
 
+(deftype menu-reconnect-option (menu-option)
+  ((sprites  hud-sprite  2 :inline :offset  48)
+   )
+  )
+
+
 (deftype menu-format-card-option (menu-option)
   ()
   )

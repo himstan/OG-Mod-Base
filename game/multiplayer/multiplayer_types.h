@@ -114,4 +114,8 @@ struct MultiplayerData {
   std::thread discovery_thread;
   std::atomic<bool> host_discovery_active{false};
   std::atomic<bool> pending_full_sync{false};
+
+  // Reconnection tracking
+  uint32_t last_receive_time = 0;
+  int pre_reconnect_status = 0;
 };

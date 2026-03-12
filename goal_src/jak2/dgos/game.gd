@@ -490,6 +490,7 @@
   "mp-data.o" ;; added
   "mp-remote.o" ;; added
   "mp-role.o" ;; added
+  "mp-ui.o" ;; added
   "mp-main.o" ;; added
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added

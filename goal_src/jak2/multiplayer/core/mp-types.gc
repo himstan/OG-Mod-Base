@@ -191,6 +191,15 @@
   )
 
 
+(deftype mp-reconnect-dialog (process)
+  ()
+  (:state-methods
+    idle
+    die
+    )
+  )
+
+(define-extern pc-multi-debug-stop-receive (function uint none))
 (define-extern pc-multi-get-command-line-arg (function string string))
 (define-extern pc-multi-get-role (function int))
 (define-extern pc-multi-poll (function uint uint none))
@@ -206,6 +215,7 @@
 (define-extern pc-multi-stop-search (function none))
 (define-extern pc-multi-start-search (function none))
 (define-extern pc-multi-disconnect (function none))
+(define-extern mp-reconnect-dialog-init (function none :behavior mp-reconnect-dialog))
 (define-extern mp-send-world-event (function uint uint none))
 (define-extern mp-receive-world-event (function uint uint none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
@@ -233,6 +243,8 @@
 (define-perm *multi-remote-first-seen?* symbol #t)
 (define-perm *multi-remote-render-pos* vector (new 'static 'vector))
 (define-perm *multi-remote-render-quat* structure (new 'static 'structure))
+(define-perm *mp-reconnect-process* handle (the-as handle #f))
+(define-perm *mp-reconnect-menu-active?* symbol #f)
 
 ;; Track the manager via handle to prevent respawn loops
 (declare-type mp-target-proxy process-focusable)
@@ -266,6 +278,7 @@
 (define *mp-scene-name-scratch* (new 'global 'string 32 (the-as string #f)))
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #f)
+(define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
 
@@ -278,3 +291,5 @@
   "Is the local player the Client (Daxter)?"
   `(= (-> *local-info* role) 1)
   )
+
+

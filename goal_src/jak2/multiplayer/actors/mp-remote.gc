@@ -85,7 +85,7 @@
          (if (and *mp-remote-manager* (nonzero? *mp-remote-manager*) (!= (-> *mp-remote-manager* 0 status) (the-as symbol 'dead)))
              (begin
                (format 0 "[MP-Puppet] Deactivating puppet (Remote Status ~D)~%" remote-status)
-               (deactivate (-> *mp-remote-manager* 0))
+               (send-event (ppointer->process *mp-remote-manager*) 'die)
                (set! *mp-remote-manager* (the-as (pointer mp-manager) #f))))
          (set! *multi-remote-first-seen?* #t)
          )

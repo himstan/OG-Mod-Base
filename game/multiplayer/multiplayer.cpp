@@ -7,16 +7,35 @@
 #include "common/log/log.h"
 #include "game/kernel/common/kmachine.h"
 #include "game/kernel/jak2/kscheme.h"
+#include "enet/enet.h"
 #include <cstring>
 
 namespace {
 MultiplayerData gMultiplayerData;
+bool g_multi_debug_stop_receive = false;
 
 void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* remote) {
   ENetEvent event;
+  uint32_t current_time = enet_time_get();
+
   while (enet_host_service(gMultiplayerData.host, &event, 0) > 0) {
+    if (g_multi_debug_stop_receive) {
+      if (event.type == ENET_EVENT_TYPE_RECEIVE) {
+        enet_packet_destroy(event.packet);
+      }
+      continue;
+    }
+
     switch (event.type) {
-      case ENET_EVENT_TYPE_RECEIVE: {
+      case ENET_EVENT_TYPE_RECEIVE:
+        gMultiplayerData.last_receive_time = current_time;
+        
+        // If we were reconnecting, restore the pre-reconnect status
+        if (gMultiplayerData.join_status == (int)MultiplayerStatus::RECONNECTING) {
+          lg::info("[Multiplayer] Data packet received. Connection restored. Resuming status {}...", gMultiplayerData.pre_reconnect_status);
+          gMultiplayerData.join_status = gMultiplayerData.pre_reconnect_status;
+        }
+
         if (event.packet->dataLength >= sizeof(PacketHeader)) {
           PacketHeader* header = (PacketHeader*)event.packet->data;
 
@@ -79,8 +98,8 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
         }
         enet_packet_destroy(event.packet);
         break;
-      }
       case ENET_EVENT_TYPE_CONNECT:
+        gMultiplayerData.last_receive_time = current_time; // Start the clock on connect
         if (gMultiplayerData.local_role == 1) {
           // Client successfully connected via ENet
           lg::info("[Multiplayer] Successfully connected to host.");
@@ -98,7 +117,17 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
         }
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
-        gMultiplayerData.join_status = (int)MultiplayerStatus::FAILED;
+        if (gMultiplayerData.local_role == 0) {
+          // Peer disconnected from host
+          uint32_t peer_net_id = 1; // For now we only have 1 client
+          lg::info("[Multiplayer] Client disconnected. Clearing remote entity.");
+          gMultiplayerData.remote_entities.erase(peer_net_id);
+          // Host stays in whatever status they were in (likely IN_GAME)
+        } else {
+          // Client lost connection to host
+          lg::warn("[Multiplayer] Disconnected from host.");
+          gMultiplayerData.join_status = (int)MultiplayerStatus::FAILED;
+        }
         break;
       default:
         break;
@@ -201,16 +230,48 @@ void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
+
+    // Throttle polling if not in-game to reduce overhead
+    // We only throttle during initial connection/searching (IDLE, SEARCHING, CONNECTING, etc.)
+    static uint32_t last_poll_tick = 0;
+    uint32_t current_time = enet_time_get();
+    
+    bool is_in_game = (gMultiplayerData.join_status == (int)MultiplayerStatus::IN_GAME);
+    bool is_reconnecting = (gMultiplayerData.join_status == (int)MultiplayerStatus::RECONNECTING);
+
+    if (!is_in_game && !is_reconnecting) {
+      if (current_time - last_poll_tick < 100) {
+        return;
+      }
+    }
+    
+    last_poll_tick = current_time;
+
     LocalPlayerInfoGOAL* local = (LocalPlayerInfoGOAL*)Ptr<u8>(local_ptr).c();
     RemotePlayerInfoGOAL* remote = (RemotePlayerInfoGOAL*)Ptr<u8>(remote_ptr).c();
     if (!local || !remote) return;
     handle_packet_receive(local, remote);
+
+    // Timeout Check: If we are in-game but haven't received anything in 10s, trigger Reconnecting UI
+    // Host only checks if at least one peer is connected. Client always checks.
+    bool should_check_timeout = (gMultiplayerData.local_role == 1) || 
+                               (gMultiplayerData.local_role == 0 && gMultiplayerData.host->connectedPeers > 0);
+
+    if (should_check_timeout &&
+        gMultiplayerData.join_status == (int)MultiplayerStatus::IN_GAME &&
+        gMultiplayerData.last_receive_time != 0 &&
+        current_time - gMultiplayerData.last_receive_time > 10000) {
+      lg::warn("[Multiplayer] Connection timed out (10s). Entering RECONNECTING state...");
+      gMultiplayerData.pre_reconnect_status = gMultiplayerData.join_status;
+      gMultiplayerData.join_status = (int)MultiplayerStatus::RECONNECTING;
+    }
   } catch (...) {
     lg::error("[Multiplayer] Exception in pc_multi_poll");
   }
 }
 
 void pc_multi_send_state(u32 local_ptr) {
+  if (g_multi_debug_stop_receive) return;
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host || local_ptr < 0x1000) return;
@@ -236,6 +297,7 @@ void pc_multi_receive_state(u32 remote_ptr) {
 }
 
 void pc_multi_send_events(u32 event_ptr) {
+  if (g_multi_debug_stop_receive) return;
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host || event_ptr < 0x1000) return;
@@ -346,6 +408,10 @@ u64 pc_multi_get_found_ip() {
   return make_string_from_c(gMultiplayerData.found_ip.c_str());
 }
 
+void pc_multi_debug_stop_receive(u32 val) {
+  g_multi_debug_stop_receive = (val != 0);
+}
+
 void init_multiplayer_pc_port() {
   using namespace jak2;
   make_function_symbol_from_c("pc-multi-setup-host", (void*)pc_multi_setup_host);
@@ -363,4 +429,5 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-get-role", (void*)pc_multi_get_role);
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);
+  make_function_symbol_from_c("pc-multi-debug-stop-receive", (void*)pc_multi_debug_stop_receive);
 }
