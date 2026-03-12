@@ -100,6 +100,7 @@ an orb |#
           ((and host-arg (nonzero? (-> host-arg allocated-length)))
            (format 0 "[MP-Auto] Hosting via CLI argument.~%")
            (pc-multi-setup-host)
+           (pc-multi-set-status 6)
            (set! (-> *local-info* sync-flag) (the-as uint 1))
            )
           ;; 2. Priority: CLI Client Flag
