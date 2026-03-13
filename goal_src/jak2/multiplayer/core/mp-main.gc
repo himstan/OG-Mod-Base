@@ -62,7 +62,13 @@
     (let ((status (pc-multi-get-status)))
       (if (or (= status 3) (= status 4) (= status 5) (= status 6) (= status 7) (= status 8))
           (begin
+            (when (not *mp-hijacks-applied?*)
+              (mp-apply-ai-hijacks)
+              (set! *mp-hijacks-applied?* #t))
+            
+            ;; poll MUST be first to read new packets
             (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
+            
             (pc-multi-receive-state (the-as uint *remote-info*))
             (pc-multi-receive-events (the-as uint *mp-event-buffer*))
             (pc-multi-receive-enemies (the-as uint *mp-enemy-buffer*))
@@ -155,6 +161,8 @@
 
     ;; 4. High-Frequency Local Updates
     (mp-extract-local-stats)
+    
+    ;; Process inbound events AFTER receiving them from bridge
     (mp-process-inbound-events)
 
     (mp-update-role-transformation)

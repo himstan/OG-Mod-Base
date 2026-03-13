@@ -168,12 +168,22 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('go-mp-sync) (go mp-enemy-sync-idle))
+      (('go-hostile) (go-virtual hostile))
       (('die)
        (set! (-> self hit-points) 0)
        (kill-prefer-falling self)
        #t
        )
       (('attack 'touch)
+       (let ((info (if (and block (nonzero? block) (nonzero? (-> block param 1))) (the-as attack-info (-> block param 1)) (the-as attack-info #f))))
+         (if (and info (= (-> info mode) 'mp-death))
+             (begin
+               (set! (-> self hit-points) 0)
+               (kill-prefer-falling self)
+               (return #t)
+               )
+             )
+         )
        (if (mp-enemy-should-process-damage? self) (general-event-handler self proc argc message block))
        #t
        )
@@ -290,6 +300,9 @@
                       )
                     )
                   )
+                
+                (format 0 "[MP] Initial authority for ~A (AID ~D) assigned to Role ~D. Pos: ~M ~M ~M~%" 
+                        e-proc enemy-aid (-> rec owner) (-> e-proc root trans x) (-> e-proc root trans y) (-> e-proc root trans z))
                 )
               )
 
@@ -423,11 +436,20 @@
                       (if (and remote-slot (< (- (current-time) (-> rec last-remote-seen)) (seconds 1)))
                           (begin
                             ;; Relaxed check: We only need 'root' to be valid to enter sync state.
-                            ;; 'draw' might initialize after entering the sync state.
                             (when (nonzero? (-> e-proc root))
                               (if (not (mp-enemy-in-sync-idle? e-proc))
-                                  (send-event e-proc 'go-mp-sync)
+                                  (begin
+                                    ;; Only attempt transition if not in "NONE" state (means wait-to-run is over)
+                                    (if (and (-> e-proc state) (!= (-> e-proc state name) #f))
+                                        (begin
+                                          (format 0 "[MP-Sync] Enemy ~A (AID ~D) NOT in sync state (Current: ~A). Sending 'go-mp-sync.~%" 
+                                                  e-proc enemy-aid (-> e-proc state name))
+                                          (send-event e-proc 'go-mp-sync)
+                                          )
+                                        )
+                                    )
                                   )
+                              
                               (if (and (mp-enemy-in-sync-idle? e-proc) (nonzero? (-> e-proc draw)))
                                   (mp-enemy-apply-state e-proc remote-slot)
                                   )
@@ -437,8 +459,24 @@
                             ;; Stale data or remote isn't syncing it anymore
                             (if (mp-enemy-in-sync-idle? e-proc)
                                 (begin
-                                  (format 0 "[MP] Remote sync stale for ~A (AID ~D). Reverting to hostile.~%" e-proc enemy-aid)
-                                  (send-event e-proc 'go-hostile)
+                                  ;; If we were already in death state, force local death resolution
+                                  (if (or (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))
+                                          (and remote-slot (= (-> remote-slot state) 2)))
+                                      (begin
+                                        (format 0 "[MP] Remote sync stale for ~A (AID ~D) during DEATH. Severing sync and killing locally.~%" e-proc enemy-aid)
+                                        (set! (-> rec owner) local-role)
+                                        ;; Mark as already synced so we don't send a redundant Type 5 back
+                                        (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
+                                        (set! (-> e-proc hit-points) 0)
+                                        (send-event e-proc 'die)
+                                        )
+                                      (begin
+                                        (format 0 "[MP] Remote sync stale for ~A (AID ~D). Reclaiming authority.~%" e-proc enemy-aid)
+                                        ;; Reclaim authority locally
+                                        (set! (-> rec owner) local-role)
+                                        (send-event e-proc 'go-hostile)
+                                        )
+                                      )
                                   )
                                 )
                             )

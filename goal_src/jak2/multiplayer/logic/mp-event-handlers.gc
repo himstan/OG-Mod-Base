@@ -49,7 +49,10 @@
     (if (and proc (nonzero? proc))
         (let ((attacker (mp-get-remote-target-process)))
           (format 0 "[MP-WorldEvent] Applying Authoritative hit to ~A from remote attacker ~A (AID ~D).~%" proc attacker aid)
-          (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5))))))
+          (set! *mp-processing-remote-event* #t)
+          (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5)))))
+          (set! *mp-processing-remote-event* #f)
+          )
         (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for AID ~D!~%" aid))
     )
   (none))
@@ -67,8 +70,12 @@
     (if (and proc (nonzero? proc))
         (begin
           (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
+          ;; Mark as already synced so we don't echo it back if we take ownership later
+          (logior! (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))
           ;; Send a special attack event that our hijack will catch to force death transition
+          (set! *mp-processing-remote-event* #t)
           (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))
+          (set! *mp-processing-remote-event* #f)
           )
         (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for death sync! AID ~D~%" aid)
         )

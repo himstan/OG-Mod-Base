@@ -5,26 +5,41 @@
 
 (defun mp-enemy-broadcast-attack ((e-proc enemy) (arg0 process) (arg3 event-message-block))
   "Handle attack sync logic for both Host and Client."
+  ;; (format 0 "[MP-Hit-Debug] Entered mp-enemy-broadcast-attack for ~A from attacker ~A~%" e-proc arg0)
+  
   (let ((aid (mp-get-enemy-aid e-proc)))
-    (when (nonzero? aid)
-      ;; Determine if the attacker is local (Target or one of its children/projectiles)
-      (let ((is-local-attacker? (mp-is-local-attacker? arg0)))
+    (if (zero? aid)
+        (return #f)
+        )
 
+    ;; Determine if the attacker is local (Target or one of its children/projectiles)
+    (let ((is-local-attacker? (mp-is-local-attacker? arg0))
+          (rec (mp-get-enemy-auth aid)))
+      
+      (when rec
         (if (mp-enemy-authoritative? e-proc)
             (begin
-              ;; Owner: If we hit it locally, broadcast the authoritative hit
-              (when is-local-attacker?
-                (format 0 "[MP-Owner] Authoritative local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
-                (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid))
+              ;; OWNER: If we hit it locally, broadcast the authoritative hit
+              (when (and is-local-attacker? (not *mp-processing-remote-event*))
+                (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+                  ;; Only broadcast if it's a NEW attack ID
+                  (when (and info (!= (-> info id) (-> rec last-attack-id)))
+                    (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ATTACK_ENEMY for AID ~D (AttackID ~D)~%" aid (-> info id))
+                    (set! (-> rec last-attack-id) (-> info id))
+                    (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
+                    )
+                  )
+                )
               )
             (begin
-              ;; Non-Owner: If we hit it locally, intercept and request hit from Owner
-              (when (and is-local-attacker? (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
+              ;; NON-OWNER: If we hit it locally, intercept and request hit from Owner
+              (when (and is-local-attacker? (not *mp-processing-remote-event*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
                 (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
-                  (when (and info (!= (-> info id) (-> e-proc incoming attack-id)))
-                    (format 0 "[MP-Non-Owner] Intercepted local hit on ~A (AID ~D). Requesting authoritative hit from Owner.~%" e-proc aid)
+                  ;; Only request if it's a new attack ID to avoid spamming the owner
+                  (when (and info (!= (-> info id) (-> rec last-attack-id)))
+                    (format 0 "[MP-Hit-Debug]   >> [NON-OWNER] REQUESTING hit for AID ~D (AttackID ~D)~%" aid (-> info id))
+                    (set! (-> rec last-attack-id) (-> info id))
                     (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
-                    ;; We return #t to swallow the hit locally; the Owner will process it and sync the result back.
                     (return #t)
                     )
                   )
@@ -35,13 +50,14 @@
       )
     )
   #f)
+
 (defun mp-enemy-broadcast-death ((e-proc enemy))
   "Broadcast death start from Owner to Non-Owners."
-  (when (mp-enemy-authoritative? e-proc)
-    (let ((aid (mp-get-enemy-aid e-proc)))
-      (when (nonzero? aid)
-        (format 0 "[MP-Owner] Authoritative death started: ~A (AID ~D). Broadcasting.~%" e-proc aid)
-        (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))))
+  (let ((aid (mp-get-enemy-aid e-proc)))
+    (when (and (nonzero? aid) (mp-enemy-authoritative? e-proc) (not *mp-processing-remote-event*))
+      (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ENEMY_DEATH for AID ~D~%" aid)
+      (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))
+    )
   (none))
 
 ;; --- Method Hijack Implementations ---
@@ -55,12 +71,17 @@
 (defun mp-general-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   "Intercept attacks and sync them across the network."
   (case arg2
+    (('go-mp-sync)
+     (go-process this mp-enemy-sync-idle)
+     (return #t)
+     )
     (('attack)
-     (when (and (not *mp-processing-remote-event*) (-> this entity))
-       (let ((lev (-> this entity extra level)))
-         (when (and lev (= (-> lev status) 'active))
-           (if (mp-enemy-broadcast-attack this arg0 arg3)
-               (return #t)))))))
+     (format 0 "[MP-Hit-Debug] Hijack caught 'attack event for ~A from ~A~%" this arg0)
+     (if (mp-enemy-broadcast-attack this arg0 arg3)
+         (return #t)
+         )
+     )
+    )
   (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f))
 
 (defun mp-enemy-take-damage-hijack ((this enemy) (arg0 process) (arg1 event-message-block))
@@ -83,6 +104,13 @@
       (if *old-enemy-dying* (*old-enemy-dying* this)))
   (none))
 
+(defun mp-enemy-dying-nav-hijack ((this nav-enemy))
+  "Sync death start for nav-enemies."
+  (mp-enemy-broadcast-death (the-as enemy this))
+  (if (mp-enemy-should-process-damage? (the-as enemy this))
+      (if *old-enemy-dying* (*old-enemy-dying* (the-as enemy this))))
+  (none))
+
 ;; --- Global Hook Application ---
 
 (defun mp-apply-enemy-hijacks ()
@@ -98,7 +126,7 @@
 
   (when (not *old-enemy-dying*) (set! *old-enemy-dying* (the-as (function enemy none) (method-of-type enemy dying))))
   (defmethod dying ((this enemy)) (mp-enemy-dying-hijack this))
-  (defmethod dying ((this nav-enemy)) (mp-enemy-dying-hijack (the-as enemy this)))
+  (defmethod dying ((this nav-enemy)) (mp-enemy-dying-nav-hijack this))
 
   (when (not *old-enemy-take-damage*)
     (set! *old-enemy-take-damage* (the-as (function enemy process event-message-block int) (method-of-type enemy take-damage-from-attack))))

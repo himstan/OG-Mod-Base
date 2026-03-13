@@ -340,7 +340,7 @@ void pc_multi_send_events(u32 event_ptr) {
   if (g_multi_debug_stop_receive) return;
   using namespace jak2;
   try {
-    if (!gMultiplayerData.initialized || !gMultiplayerData.host || event_ptr < 0x1000) return;
+    if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
     MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
     if (!events) return;
     
@@ -353,25 +353,30 @@ void pc_multi_send_events(u32 event_ptr) {
         out_event.header.sequenceNum = ++gMultiplayerData.last_out_event_seq;
         // Copy the entire 48-byte GOAL mp-event structure (etype + pad + data)
         memcpy(out_event.raw_data, &events->out_events[i], 48);
-        MultiplayerManager::broadcast(gMultiplayerData, 1, out_event, ENET_PACKET_FLAG_RELIABLE);
+        int exclude_peer = (int)gMultiplayerData.local_role;
+        MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, out_event, ENET_PACKET_FLAG_RELIABLE);
         lg::info("  [Event] Type: {}", events->out_events[i].etype);
-      }
-    }
-    events->out_count = 0; // Clear after sending
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_send_events");
-  }
-}
+        }
+        }
+        events->out_count = 0; // Clear after sending
+        } catch (...) {
+        lg::error("[Multiplayer] Exception in pc_multi_send_events");
+        }
+        }
 
-void pc_multi_receive_events(u32 event_ptr) {
-  using namespace jak2;
-  try {
-    if (!gMultiplayerData.initialized || !gMultiplayerData.host || event_ptr < 0x1000) return;
-    MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
-    if (!events) return;
+        void pc_multi_receive_events(u32 event_ptr) {
+        using namespace jak2;
+        try {
+        if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
+        MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
+        if (!events) return;
 
-    // Batched Inbound Events - APPEND only, do not clear (GOAL clears at end of frame)
-    while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
+        // Batched Inbound Events - APPEND only, do not clear (GOAL clears at end of frame)
+        if (!gMultiplayerData.inbound_events.empty()) {
+        lg::info("[Multiplayer] Pushing {} events to GOAL", gMultiplayerData.inbound_events.size());
+        }
+
+        while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
       auto& event = gMultiplayerData.inbound_events.front();
       // Copy the entire 48-byte structure back to GOAL
       memcpy(&events->in_events[events->in_count], event.raw_data, 48);

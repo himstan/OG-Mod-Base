@@ -97,11 +97,14 @@
     (none))
 
 (defun mp-is-local-attacker? ((proc process))
-  "Is the process either the local target or a direct child (e.g., projectile)?"
+  "Is the process either the local target or in its parentage (e.g., projectile)?"
   (if (or (not proc) (zero? proc)) (return #f))
-  (if (= proc *target*) (return #t))
-  (if (and (-> proc parent) (nonzero? (-> proc parent)) (= (ppointer->process (-> proc parent)) *target*))
-      (return #t))
+  (let ((curr proc))
+    (while (and curr (nonzero? curr))
+      (if (= curr *target*) (return #t))
+      (set! curr (if (and (-> curr parent) (nonzero? (-> curr parent))) (the-as process (ppointer->process (-> curr parent))) (the-as process #f)))
+      )
+    )
   #f)
 
 (defun mp-get-remote-target-process ()
@@ -143,14 +146,16 @@
   (none))
 
 (defun mp-send-world-event ((etype uint) (aid uint))
+  "Send a world event to the network buffer (Outbound)."
   ;; GUARD: Only send if synced and in-game
   (if (or (not *multi-sync-enabled?*) (!= (pc-multi-get-status) 6))
       (return #f))
 
   (let ((q-idx *mp-event-queue-write-ptr*))
+    (format 0 "[MP-Queue-Debug] Queueing event ~D for AID ~D at index ~D~%" etype aid q-idx)
     (let ((evt (the-as mp-world-event (-> *mp-event-queue* q-idx))))
       (set! (-> evt etype) etype)
-      (set! (-> evt aid) aid)
+      (set! (-> evt aid) (the-as uint32 aid))
       )
     (set! *mp-event-queue-write-ptr* (logand (+ q-idx 1) 31))
     )
