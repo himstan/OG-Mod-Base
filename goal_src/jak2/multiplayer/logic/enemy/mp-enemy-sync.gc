@@ -1,24 +1,10 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-;; --- State Packing & Application ---
+(define-extern mp-get-enemy-auth (function uint mp-enemy-auth-record))
+(define-extern mp-get-free-enemy-auth (function mp-enemy-auth-record))
 
-(defun mp-calc-corrected-speed ((target-f float) (cur-f float) (total-f float) (base-speed float) (loop? symbol))
-  "Apply P-Correction to close the sync gap."
-  (let ((error (- target-f cur-f)))
-    (if loop?
-        (begin
-          (if (< error (* -0.5 total-f)) (+! error total-f))
-          (if (> error (* 0.5 total-f)) (-! error total-f))
-          )
-        )
-    (let ((speed (+ base-speed (* error 0.1))))
-      (if (< speed 0.1) (set! speed 0.1))
-      (if (> speed 5.0) (set! speed 5.0))
-      speed
-      )
-    )
-  )
+;; --- State Packing & Application ---
 
 (defun mp-enemy-pack-state ((e-proc enemy) (slot mp-enemy-state) (aid uint))
   "Pack local enemy state into a sync slot (Owner Side)."
@@ -44,16 +30,6 @@
       )
     (set! (-> slot anim-index) anim-idx)
     (set! (-> slot anim-frame) anim-frame)
-    
-    ;; Delta-frame for speed calculation on remote end
-    (let ((prev-frame 0.0))
-      (dotimes (j 24)
-        (if (= (-> *mp-enemy-buffer* local-enemies j actor-id) aid)
-            (set! prev-frame (-> *mp-enemy-buffer* local-enemies j anim-frame))
-            )
-        )
-      (set! (-> slot last-anim-frame) prev-frame)
-      )
     )
 
   (set! (-> slot hp) (-> e-proc hit-points))
@@ -77,73 +53,59 @@
 
 (defun mp-enemy-apply-state ((e-proc enemy) (slot mp-enemy-state))
   "Apply remote sync data to local enemy proxy (Non-Owner Side)."
-  ;; Position & Rotation
-  (set! (-> e-proc root trans x) (-> slot x))
-  (set! (-> e-proc root trans y) (-> slot y))
-  (set! (-> e-proc root trans z) (-> slot z))
-  (set! (-> e-proc root quat x) (-> slot quat-x))
-  (set! (-> e-proc root quat y) (-> slot quat-y))
-  (set! (-> e-proc root quat z) (-> slot quat-z))
-  (set! (-> e-proc root quat w) (-> slot quat-w))
+  ;; GUARD: Don't apply to dead or uninitialized processes
+  (when (and e-proc (nonzero? e-proc) (not (logtest? (-> e-proc mask) (process-mask sleep))) (!= (-> e-proc status) 'dead))
+    ;; Position & Rotation
+    (set! (-> e-proc root trans x) (-> slot x))
+    (set! (-> e-proc root trans y) (-> slot y))
+    (set! (-> e-proc root trans z) (-> slot z))
+    (set! (-> e-proc root quat x) (-> slot quat-x))
+    (set! (-> e-proc root quat y) (-> slot quat-y))
+    (set! (-> e-proc root quat z) (-> slot quat-z))
+    (set! (-> e-proc root quat w) (-> slot quat-w))
 
-  ;; Animation Update
-  (let ((anim-idx (-> slot anim-index))
-        (anim-frame (-> slot anim-frame))
-        (last-anim-frame (-> slot last-anim-frame)))
-    (when (and (>= anim-idx 0) (< anim-idx (-> e-proc draw art-group length)))
-      (let ((target-anim (the-as art-joint-anim (-> e-proc draw art-group data anim-idx))))
-        (when (and target-anim (= (-> target-anim type) art-joint-anim))
-          (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
-            (if (!= (-> e-proc skel channel 0 frame-group) target-anim)
-                (begin
-                  (set! (-> e-proc skel channel 0 frame-group) target-anim)
-                  (set! (-> e-proc skel channel 0 frame-num) anim-frame)
-                  )
-                )
-            (let ((delta-f (- anim-frame last-anim-frame)))
-              (if (< delta-f 0.0) (set! delta-f (+ delta-f (the float (-> target-anim frames num-frames)))))
-              (let ((base-speed (mp-calc-anim-speed delta-f (the-as time-frame 0) (-> target-anim speed)))
-                    (cur-frame (-> e-proc skel channel 0 frame-num))
-                    (total-f (the float (-> target-anim frames num-frames))))
-                (if (> (abs (- anim-frame cur-frame)) 10.0)
-                    (set! (-> e-proc skel channel 0 frame-num) anim-frame)
-                    (set! (-> e-proc water-surface-height) (mp-calc-corrected-speed anim-frame cur-frame total-f base-speed #t))
-                    )
-                )
-              )
+    ;; Update Auth Record with Target Data (Animation logic moved to state)
+    (let ((enemy-aid (mp-get-enemy-aid e-proc)))
+      (when (nonzero? enemy-aid)
+        (let ((rec (mp-get-enemy-auth enemy-aid))
+              (packet-id (-> *remote-info* packet-id)))
+          (when (and rec (!= packet-id (-> rec last-anim-packet)))
+            (set! (-> rec last-anim-index) (the-as int32 (-> slot anim-index)))
+            (set! (-> rec last-remote-frame) (-> slot anim-frame))
+            (set! (-> rec last-anim-packet) packet-id)
+            (set! (-> rec last-arrival-time) (-> *display* game-clock frame-counter))
             )
           )
         )
       )
-    )
 
-  ;; HP & State Transitions
-  (let ((old-hp (-> e-proc hit-points))
-        (new-hp (-> slot hp)))
-    (when (!= old-hp new-hp)
-      (if (and (< new-hp old-hp) (> new-hp 0))
-          ;; HP dropped: Send an attack event to trigger a flinch locally
-          (send-event e-proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-hp-sync) (damage (the float (- old-hp new-hp))))))
-          ;; HP increased or dropped to 0: just set it (death handled by state flag below)
-          (set! (-> e-proc hit-points) new-hp)
-          )
+    ;; HP & State Transitions
+    (let ((old-hp (-> e-proc hit-points))
+          (new-hp (-> slot hp)))
+      (when (!= old-hp new-hp)
+        (if (and (< new-hp old-hp) (> new-hp 0))
+            ;; HP dropped: Send an attack event to trigger a flinch locally
+            (send-event e-proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-hp-sync) (damage (the float (- old-hp new-hp))))))
+            ;; HP increased or dropped to 0: just set it (death handled by state flag below)
+            (set! (-> e-proc hit-points) new-hp)
+            )
+        )
       )
-    )
 
-  (when (and (= (-> slot state) 2) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-    (format 0 "[MP-Client] Sync-Death visuals triggered for ~A.~%" e-proc)
-    (logior! (-> e-proc enemy-flags) (enemy-flag death-start))
-    (when (nonzero? (-> e-proc draw))
-      (set! (-> e-proc draw death-effect) (the-as uint 1))
-      (set! (-> e-proc draw death-timer) (the-as uint 60))
-      (set! (-> e-proc draw death-timer-org) (the-as uint 60))
-      (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))
+    (when (and (= (-> slot state) 2) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
+      (logior! (-> e-proc enemy-flags) (enemy-flag death-start))
+      (when (nonzero? (-> e-proc draw))
+        (set! (-> e-proc draw death-effect) (the-as uint 1))
+        (set! (-> e-proc draw death-timer) (the-as uint 60))
+        (set! (-> e-proc draw death-timer-org) (the-as uint 60))
+        (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))
+        )
       )
-    )
 
-  (if (type? (-> e-proc root) collide-shape)
-      (update-transforms (-> e-proc root))
-      )
+    (if (type? (-> e-proc root) collide-shape)
+        (update-transforms (-> e-proc root))
+        )
+    )
   (none)
   )
 
@@ -190,12 +152,104 @@
       )
     )
   :code (behavior ()
-    (loop
-      (let ((speed (-> self water-surface-height)))
-        (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
-        (ja :num! (loop! speed))
+    (let ((current-anim-index -1)
+          (local-anim-packet (the-as uint 0)))
+      (loop
+        (let ((enemy-aid (mp-get-enemy-aid self)))
+          (when (nonzero? enemy-aid)
+            (let ((rec (mp-get-enemy-auth enemy-aid)))
+              (when (and rec (>= (-> rec last-anim-index) 0) (-> self draw) (nonzero? (-> self draw)) 
+                         (< (-> rec last-anim-index) (-> self draw art-group length)))
+                (let ((target-anim (the-as art-joint-anim (-> self draw art-group data (-> rec last-anim-index)))))
+                  
+                  ;; CRITICAL SAFETY: Ensure target-anim and its frames pointer are strictly valid
+                  (when (and (nonzero? target-anim) (= (-> target-anim type) art-joint-anim) 
+                             (nonzero? (-> target-anim frames)) (nonzero? (-> target-anim frames num-frames)))
+                    (when (and (-> self skel) (nonzero? (-> self skel)))
+                      
+                      ;; A. State Change or Missing Channel Recovery
+                      (let ((chan0 (-> self skel channel 0)))
+                        (when (and (nonzero? chan0) (or (!= (-> rec last-anim-packet) local-anim-packet)
+                                                        (!= (-> chan0 frame-group) target-anim)))
+                          (if (!= current-anim-index (-> rec last-anim-index))
+                              (begin
+                                ;; Low-level channel initialization (Bypass macros)
+                                (set! (-> self skel root-channel) (-> self skel channel))
+                                (set! (-> self skel active-channels) 1)
+                                (set! (-> chan0 frame-group) target-anim)
+                                (set! (-> chan0 frame-num) (-> rec last-remote-frame))
+                                (set! (-> chan0 dist) 0.0)
+                                (set! (-> chan0 frame-interp 0) 0.0)
+                                (set! (-> chan0 frame-interp 1) 0.0)
+                                (set! current-anim-index (-> rec last-anim-index))
+                                (set! (-> rec client-speed) 1.0)
+                                )
+                              (begin
+                                ;; Speed Smoothing (EMA)
+                                (let ((delta-f (- (-> rec last-remote-frame) (-> chan0 frame-num)))
+                                      (delta-c (- (-> *remote-info* clock) (-> rec last-remote-clock))))
+                                  (if (< delta-f -10.0) (set! delta-f (+ delta-f (the float (-> target-anim frames num-frames)))))
+                                  (let ((raw-speed (mp-calc-anim-speed delta-f (the-as time-frame delta-c) (-> target-anim speed))))
+                                    (set! (-> rec client-speed) (lerp (-> rec client-speed) raw-speed *mp-anim-speed-lerp*))
+                                    )
+                                  )
+                                )
+                              )
+                          (set! (-> rec last-remote-clock) (-> *remote-info* clock))
+                          (set! local-anim-packet (-> rec last-anim-packet))
+                          )
+                        )
+                          
+                      ;; B. Per-Frame Prediction & Smoothing
+                      (let* ((chan0 (-> self skel channel 0))
+                             (cur-frame (-> chan0 frame-num))
+                             (total-f (the float (-> target-anim frames num-frames)))
+                             (time-since-arrival (- (-> *display* game-clock frame-counter) (-> rec last-arrival-time)))
+                             (latency-estimate (+ (the float time-since-arrival) (* *mp-anim-ping-buffer* *mp-anim-latency-factor*)))
+                             (max-lat (the float (the int *mp-anim-max-latency*))))
+                        
+                        (if (> latency-estimate max-lat) (set! latency-estimate max-lat))
+                        
+                        (let ((predicted-target (+ (-> rec last-remote-frame) (* (/ latency-estimate *mp-anim-ticks-to-frames*) (-> rec client-speed)))))
+                          (set! predicted-target (- predicted-target *mp-anim-safety-buffer*))
+                          
+                          (let ((is-looping? (mp-anim-loops? target-anim)))
+                            (if (> (abs (- predicted-target cur-frame)) *mp-anim-snap-threshold*)
+                                (set! (-> chan0 frame-num) predicted-target)
+                                (begin
+                                  (if *mp-anim-smooth-sync?*
+                                      (set! (-> rec anim-speed) (mp-calc-corrected-speed predicted-target cur-frame total-f (-> rec client-speed) is-looping?))
+                                      (set! (-> rec anim-speed) (-> rec client-speed))
+                                      )
+                                  )
+                                )
+                            )
+                          )
+                        )
+                      
+                      ;; C. Evaluation (Final NULL checks)
+                      (let ((chan0 (-> self skel channel 0)))
+                        (when (and (nonzero? chan0) (nonzero? (-> chan0 frame-group)) (nonzero? (-> chan0 frame-group frames)))
+                          (let ((speed (-> rec anim-speed)))
+                            (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
+                            ;; Direct call to evaluator functions with correct argument counts
+                            (if (mp-anim-loops? (the-as art-joint-anim (-> chan0 frame-group)))
+                                (num-func-loop! chan0 speed 0.0 0.0)
+                                (num-func-seek! chan0 (the float (1- (-> (the-as art-joint-anim (-> chan0 frame-group)) frames num-frames))) speed 0.0)
+                                )
+                            (set! (-> chan0 eval-time) (the-as uint (current-time)))
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        (suspend)
         )
-      (suspend)
       )
     )
   :post mp-enemy-sync-post-behavior
@@ -207,7 +261,6 @@
     (dotimes (i 128)
       (let ((rec (-> *mp-enemy-auth* i)))
         (when (= (-> rec aid) u32-aid)
-          ;; (format 0 "[MP-Auth] Record found for AID ~D at index ~D.~%" u32-aid i)
           (return rec)
           )
         )
@@ -220,8 +273,15 @@
   (dotimes (i 128)
     (let ((rec (-> *mp-enemy-auth* i)))
       (when (= (-> rec aid) 0)
-          ;; Pre-initialize so the cleanup loop doesn't nuke it immediately
+          ;; Pre-initialize tracking variables
           (set! (-> rec last-remote-seen) (current-time))
+          (set! (-> rec client-speed) 1.0)
+          (set! (-> rec anim-speed) 1.0)
+          (set! (-> rec last-anim-index) -1)
+          (set! (-> rec last-remote-frame) 0.0)
+          (set! (-> rec last-remote-clock) 0)
+          (set! (-> rec last-arrival-time) (-> *display* game-clock frame-counter))
+          (set! (-> rec last-anim-packet) (the-as uint 0))
           (return rec)
           )
       )
@@ -321,17 +381,13 @@
                   (set! (-> rec last-remote-seen) (current-time))
 
                   ;; --- Rule: Dual Authority Resolution (Host Priority) ---
-                  ;; If we are Client and Host also claims ownership, we MUST yield immediately UNLESS we are aggro or just transferred.
                   (when (and (= local-role 1) (= (-> remote-slot owner) 0) (= (-> rec owner) 1))
                     (if (or (and (-> rec is-aggro) (not (= (-> remote-slot is-aggro) 1)))
                             (< (- (current-time) (-> rec last-transfer-time)) (seconds 2))) ;; Grace period for transition
-                        ;; I am aggro or just took ownership, Host is not or stale. I keep it.
                         (none)
-                        ;; Otherwise, Host wins conflict.
                         (begin
                           (format 0 "[MP] Dual authority detected for ~A (AID ~D). Client yielding to Host.~%" e-proc enemy-aid)
                           (set! (-> rec owner) 0)
-                          ;; Match Host's aggro state
                           (set! (-> rec is-aggro) (= (-> remote-slot is-aggro) 1))
                           )
                         )
@@ -339,20 +395,18 @@
 
                   (cond
                     ((and (= (-> remote-slot is-aggro) 1) (not (-> rec is-aggro)) (>= (- (current-time) (-> rec last-transfer-time)) (seconds 2)))
-                     ;; Remote entered combat, yield
                      (set! (-> rec owner) remote-role)
                      (set! (-> rec is-aggro) #t)
                      )
                     ((and (= (-> remote-slot owner) remote-role) (not (-> rec is-aggro)) (>= (- (current-time) (-> rec last-transfer-time)) (seconds 2)))
-                     ;; Remote claims via proximity, evaluate if we should accept
                      (let ((local-dist (vector-vector-distance (-> e-proc root trans) (-> *target* control trans)))
                            (rem-pos (new 'stack 'vector)))
                        (set! (-> rem-pos x) (-> *remote-info* x))
                        (set! (-> rem-pos y) (-> *remote-info* y))
                        (set! (-> rem-pos z) (-> *remote-info* z))
                        (let ((remote-dist (vector-vector-distance (-> e-proc root trans) rem-pos)))
-                         (if (or (and (= local-role 1) (= remote-role 0)) ;; Client yields to Host
-                                 (and (= local-role 0) (> local-dist (+ remote-dist (meters 15))))) ;; Host yields if far
+                         (if (or (and (= local-role 1) (= remote-role 0))
+                                 (and (= local-role 0) (> local-dist (+ remote-dist (meters 15)))))
                              (set! (-> rec owner) remote-role)
                              )
                          )
@@ -365,20 +419,16 @@
                 (when (and (not (-> rec is-aggro)) 
                            (or (>= (the-as int (-> e-proc focus aware)) (the-as int (enemy-aware enemy-aware-3)))
                                (nonzero? (-> e-proc incoming attack-id))))
-                  ;; Send request instead of taking it immediately
-                  ;; GUARD: Only request if we don't ALREADY own it
                   (if (!= (-> rec owner) local-role)
                       (begin
                         (when (>= (- (current-time) (-> rec last-transfer-time)) (seconds 2))
                           (format 0 "[MP] Requesting authority over ~A (AID ~D) - Local Aggro Detected!~%" e-proc enemy-aid)
                           (mp-send-world-event MP_EVENT_ENEMY_AUTHORITY_REQUEST enemy-aid)
                           (set! (-> rec last-transfer-time) (current-time))
-                          ;; Pre-emptively set aggro so we don't spam requests
                           (set! (-> rec is-aggro) #t)
                           )
                         )
                       (begin
-                        ;; Already owner, just update aggro state
                         (set! (-> rec is-aggro) #t)
                         )
                       )
@@ -386,7 +436,6 @@
 
                 ;; 4. Local Proximity Claim
                 (when (and (not (-> rec is-aggro)) (>= (- (current-time) (-> rec last-transfer-time)) (seconds 5)) (and *target* (nonzero? *target*)))
-                  ;; Check if local is closer than remote
                   (let ((local-dist (vector-vector-distance (-> e-proc root trans) (-> *target* control trans)))
                         (rem-pos (new 'stack 'vector)))
                     (set! (-> rem-pos x) (-> *remote-info* x))
@@ -394,9 +443,8 @@
                     (set! (-> rem-pos z) (-> *remote-info* z))
                     (let ((remote-dist (vector-vector-distance (-> e-proc root trans) rem-pos)))
                       (when (and (< local-dist (-> e-proc enemy-info notice-distance))
-                                 (< local-dist (- remote-dist (meters 10)))) ;; Must be significantly closer
+                                 (< local-dist (- remote-dist (meters 10))))
                         (when (!= (-> rec owner) local-role)
-                          ;; Send request instead of taking it immediately
                           (format 0 "[MP] Requesting authority over ~A (AID ~D) via proximity.~%" e-proc enemy-aid)
                           (mp-send-world-event MP_EVENT_ENEMY_AUTHORITY_REQUEST enemy-aid)
                           (set! (-> rec last-transfer-time) (current-time))
@@ -432,14 +480,11 @@
                       )
                     (begin
                       ;; APPLY REMOTE STATE
-                      ;; Check packet freshness (must have seen a remote packet for this AID within 1 second)
                       (if (and remote-slot (< (- (current-time) (-> rec last-remote-seen)) (seconds 1)))
                           (begin
-                            ;; Relaxed check: We only need 'root' to be valid to enter sync state.
                             (when (nonzero? (-> e-proc root))
                               (if (not (mp-enemy-in-sync-idle? e-proc))
                                   (begin
-                                    ;; Only attempt transition if not in "NONE" state (means wait-to-run is over)
                                     (if (and (-> e-proc state) (!= (-> e-proc state name) #f))
                                         (begin
                                           (format 0 "[MP-Sync] Enemy ~A (AID ~D) NOT in sync state (Current: ~A). Sending 'go-mp-sync.~%" 
@@ -465,14 +510,12 @@
                                       (begin
                                         (format 0 "[MP] Remote sync stale for ~A (AID ~D) during DEATH. Severing sync and killing locally.~%" e-proc enemy-aid)
                                         (set! (-> rec owner) local-role)
-                                        ;; Mark as already synced so we don't send a redundant Type 5 back
                                         (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
                                         (set! (-> e-proc hit-points) 0)
                                         (send-event e-proc 'die)
                                         )
                                       (begin
                                         (format 0 "[MP] Remote sync stale for ~A (AID ~D). Reclaiming authority.~%" e-proc enemy-aid)
-                                        ;; Reclaim authority locally
                                         (set! (-> rec owner) local-role)
                                         (send-event e-proc 'go-hostile)
                                         )
@@ -488,8 +531,6 @@
             )
 
           ;; Check for remote death aids to cleanly despawn
-          ;; RULE: Only Clients (Role 1) process sync-aids from the Host (Role 0).
-          ;; The Host is the authority on permanent entity deaths.
           (when (= (-> *local-info* role) 1)
             (dotimes (i (the-as int (-> *remote-info* sync-aids-count)))
               (when (= (-> *remote-info* sync-aids i) (the-as uint32 enemy-aid))
@@ -516,7 +557,6 @@
       (when (nonzero? (-> rec aid))
         (if (>= (- (current-time) (-> rec last-remote-seen)) (seconds 10))
             (begin
-              ;; (format 0 "[MP] Clearing stale authority record for AID ~D.~%" (-> rec aid))
               (set! (-> rec aid) (the-as uint32 0))
               )
             )
@@ -524,7 +564,6 @@
       )
     )
 
-  ;; (format 0 "[MP-Debug] Enemy Sync Tick - Local Count: ~D, Remote Count: ~D~%" (-> *mp-enemy-buffer* local-count) (-> *mp-enemy-buffer* remote-count))
   (set! (-> *mp-enemy-buffer* local-count) (the-as uint 0))
   (iterate-process-tree *active-pool* mp-sync-enemies-update-callback *kernel-context*)
   (mp-enemy-debug-draw)

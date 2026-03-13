@@ -202,6 +202,14 @@
    (last-transfer-time time-frame)
    (last-remote-seen   time-frame)
    (last-attack-id     uint32)
+   ;; --- Animation Fidelity Tracking ---
+   (client-speed       float)
+   (anim-speed         float)
+   (last-remote-frame  float)
+   (last-remote-clock  time-frame)
+   (last-anim-index    int32)
+   (last-arrival-time  time-frame)
+   (last-anim-packet   uint32)
    )
   )
 

@@ -6,6 +6,10 @@
 (define-extern num-func-seek! (function joint-control-channel float float float float :behavior process))
 (define-extern num-func-none (function joint-control-channel float float float float :behavior process))
 
+(define-extern mp-calc-anim-speed (function float time-frame float float))
+(define-extern mp-calc-corrected-speed (function float float float float symbol float))
+(define-extern mp-anim-loops? (function art-joint-anim symbol))
+
 (defun mp-anim-loops? ((anim art-joint-anim))
   "Determine if an animation should loop based on its name. (Authority)"
   (if (or (not anim) (zero? anim)) (return #f))
