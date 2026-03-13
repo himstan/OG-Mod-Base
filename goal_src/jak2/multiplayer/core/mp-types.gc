@@ -50,24 +50,11 @@
       (+! i 1))
     hash))
 
-;; --- Types & Externs ---
-
-(define *local-riding?* #f)
-(define *mp-processing-remote-event* #f)
-(define-perm *mp-last-remote-scene-active* uint (the uint 0))
-(define *mp-remote-wants-skip* #f)
-(define *mp-local-wants-skip* #f)
+;; --- Type Definitions ---
 
 (declare-type process-drawable process)
 (declare-type process-focusable process-drawable)
 (declare-type enemy process-focusable)
-
-;; --- Enemy Hijack Variables ---
-(define *old-enemy-method-97* (the-as (function enemy process) #f))
-(define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
-(define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
-(define *old-enemy-dying* (the-as (function enemy none) #f))
-(define *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) #f))
 
 (deftype mp-enemy-state (structure)
   ((actor-id    uint32)
@@ -187,27 +174,100 @@
    (local-enemies mp-enemy-state 24 :inline)
    (remote-count  uint32)
    (remote-enemies mp-enemy-state 24 :inline)
+   (last-sync-time uint64)
    )
-  :size-assert 3104)
+  :size-assert 3112)
 
 (deftype mp-enemy-auth-record (structure)
   ((aid                 uint32)
    (owner               uint8)
    (is-aggro            symbol)
-   (last-transfer-time  time-frame))
+   (last-transfer-time  time-frame)
+   (last-remote-seen    time-frame))
   )
 
-(define *mp-enemy-buffer* (new 'static 'mp-enemy-sync-buffer))
-(define *mp-enemy-auth* (new 'static 'inline-array mp-enemy-auth-record 128))
-
-;; Helper macros to access sidekick sync data
-(defmacro mp-sidekick-anim ()
-  `(-> *remote-info* sidekick-anim)
+(declare-type mp-target-proxy process-focusable)
+(deftype mp-manager (process)
+  ((root                basic)
+   (remote-id           uint32)
+   (remote-role         int32)
+   (manipy-proc         handle)
+   (proxy-proc          handle)
+   (spawn-timer         time-frame)
+   (last-anim-packet    uint32)
+   (anim-speed          float)
+   (client-speed        float)
+   (last-arrival-time   time-frame)
+   (last-remote-clock   time-frame)
+   (last-remote-frame   float)
+   (last-remote-sidekick-frame float)
+   )
+  (:state-methods
+    idle)
   )
 
-(defmacro mp-sidekick-frame ()
-  `(-> *remote-info* sidekick-frame)
+;; --- Global Variables ---
+
+(define-perm *local-info* local-player-info (new 'static 'local-player-info))
+(define-perm *remote-info* remote-player-info (new 'static 'remote-player-info))
+(define-perm *mp-event-buffer* mp-event-buffer (new 'static 'mp-event-buffer))
+(define-perm *mp-enemy-buffer* mp-enemy-sync-buffer (new 'static 'mp-enemy-sync-buffer))
+(define-perm *mp-enemy-auth* (inline-array mp-enemy-auth-record) (new 'static 'inline-array mp-enemy-auth-record 128))
+
+;; Queue for outbound events to prevent overwriting when multiple things happen in 1 frame
+(define-perm *mp-event-queue* (inline-array mp-event) (new 'static 'inline-array mp-event 32))
+(define-perm *mp-event-queue-write-ptr* int 0)
+(define-perm *mp-event-queue-read-ptr* int 0)
+
+(define *local-riding?* #f)
+(define *mp-processing-remote-event* #f)
+(define-perm *mp-last-remote-scene-active* uint (the uint 0))
+(define *mp-remote-wants-skip* #f)
+(define *mp-local-wants-skip* #f)
+
+(define-perm *multi-sync-enabled?* symbol #f)
+(define-perm *multi-last-sync-frame* time-frame (seconds 0))
+(define-perm *multi-last-in-event-seq* uint (the-as uint 0))
+(define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-interp-angle* float 0.0)
+(define-perm *multi-remote-first-seen?* symbol #t)
+(define-perm *multi-remote-render-pos* vector (new 'static 'vector))
+(define-perm *multi-remote-render-quat* structure (new 'static 'structure))
+(define-perm *mp-reconnect-process* handle (the-as handle #f))
+(define-perm *mp-reconnect-menu-active?* symbol #f)
+(define-perm *mp-host-left-menu-active?* symbol #f)
+
+(define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
+(define-perm *multi-manager-handle* handle (the-as handle #f))
+
+(define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
+(define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
+(define *mp-scene-name-scratch* (new 'global 'string 32 (the-as string #f)))
+(define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
+(define-perm *mp-debug-draw* symbol #f)
+(define-perm *mp-debug-simulate-loss?* symbol #f)
+(define-perm *mp-debug-simulate-loss-time* time-frame 0)
+(define-perm *mp-hijacks-applied?* symbol #f)
+(define *mp-daxter-damage-mult* 2.0)
+
+;; --- Enemy Hijack Variables ---
+(define *old-enemy-method-97* (the-as (function enemy process) #f))
+(define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
+(define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
+(define *old-enemy-dying* (the-as (function enemy none) #f))
+(define *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) #f))
+
+;; --- Function Implementations ---
+
+(defun mp-sidekick-anim ()
+  (-> *remote-info* sidekick-anim)
   )
+
+(defun mp-sidekick-frame ()
+  (-> *remote-info* sidekick-frame)
+  )
+
+;; --- Macro Definitions ---
 
 (defmacro set-mp-sidekick-anim! (val)
   `(set! (-> *local-info* sidekick-anim) ,val)
@@ -217,14 +277,22 @@
   `(set! (-> *local-info* sidekick-frame) ,val)
   )
 
-
-(deftype mp-reconnect-dialog (process)
-  ()
-  (:state-methods
-    idle
-    die
-    )
+(defmacro mp-is-jak? ()
+  "Is the local player the Host (Jak)?"
+  `(= (-> *local-info* role) 0)
   )
+
+(defmacro mp-is-daxter? ()
+  "Is the local player the Client (Daxter)?"
+  `(= (-> *local-info* role) 1)
+  )
+
+(defmacro mp-enemy-should-process-damage? (e-proc)
+  "Should the local machine process damage/state changes? (Owner OR Remote Event)"
+  `(or (mp-enemy-authoritative? ,e-proc) *mp-processing-remote-event*)
+  )
+
+;; --- Extern Declarations ---
 
 (define-extern pc-multi-debug-stop-receive (function uint none))
 (define-extern pc-multi-get-ticks (function uint64))
@@ -243,11 +311,6 @@
 (define-extern pc-multi-stop-search (function none))
 (define-extern pc-multi-start-search (function none))
 (define-extern pc-multi-disconnect (function none))
-(define-extern mp-reconnect-dialog-init (function none :behavior mp-reconnect-dialog))
-(define-extern mp-send-world-event (function uint uint none))
-(define-extern mp-receive-world-event (function uint uint none))
-(define-extern mp-airlock-remote-ready? (function vector symbol))
-(declare-type enemy process-focusable)
 (define-extern find-enemy-by-aid (function uint enemy))
 (define-extern mp-get-enemy-aid (function enemy uint))
 (define-extern mp-enemy-broadcast-attack (function enemy process event-message-block symbol))
@@ -255,88 +318,15 @@
 (define-extern mp-enemy-pack-state (function enemy mp-enemy-state uint none))
 (define-extern mp-enemy-apply-state (function enemy mp-enemy-state none))
 (define-extern iterate-process-tree (function process-tree (function object object) kernel-context object))
-(define-extern mp-sync-enemies-host (function none))
-(define-extern mp-sync-enemies-client (function none))
 (define-extern mp-apply-enemy-hijacks (function none))
 (define-extern mp-enemy-sync-idle (state enemy))
-
-;; Queue for outbound events to prevent overwriting when multiple things happen in 1 frame
-(define-perm *mp-event-queue* (inline-array mp-event) (new 'static 'inline-array mp-event 32))
-(define-perm *mp-event-queue-write-ptr* int 0)
-(define-perm *mp-event-queue-read-ptr* int 0)
-
-;; Persistent globals
-(define-perm *local-info* local-player-info (new 'static 'local-player-info))
-(define-perm *remote-info* remote-player-info (new 'static 'remote-player-info))
-(define-perm *mp-event-buffer* mp-event-buffer (new 'static 'mp-event-buffer))
-(define-perm *multi-sync-enabled?* symbol #f)
-(define-perm *multi-last-sync-frame* time-frame (seconds 0))
-(define-perm *multi-last-in-event-seq* uint (the-as uint 0))
-(define-perm *multi-remote-interp-pos* vector (new 'static 'vector))
-(define-perm *multi-remote-interp-angle* float 0.0)
-(define-perm *multi-remote-first-seen?* symbol #t)
-(define-perm *multi-remote-render-pos* vector (new 'static 'vector))
-(define-perm *multi-remote-render-quat* structure (new 'static 'structure))
-(define-perm *mp-reconnect-process* handle (the-as handle #f))
-(define-perm *mp-reconnect-menu-active?* symbol #f)
-(define-perm *mp-host-left-menu-active?* symbol #f)
-
-;; Track the manager via handle to prevent respawn loops
-(declare-type mp-target-proxy process-focusable)
-(deftype mp-manager (process)
-  ((root                basic)
-   (remote-id           uint32)
-   (remote-role         int32)
-   (manipy-proc         handle)
-   (proxy-proc          handle)
-   (spawn-timer         time-frame)
-   (last-anim-packet    uint32)
-   (anim-speed          float)
-   (client-speed        float)
-   (last-arrival-time   time-frame)
-
-   (last-remote-clock   time-frame)
-
-   (last-remote-frame   float)
-   (last-remote-sidekick-frame float)
-   )
-  (:state-methods
-    idle)
-  )
-
-(define-perm *mp-remote-manager* (pointer mp-manager) (the-as (pointer mp-manager) #f))
-(define-perm *multi-manager-handle* handle (the-as handle #f))
-(define-perm *multi-remote-spawn-time* time-frame 0)
-
-(define *mp-nametag-string* (new 'global 'string 128 (the-as string #f)))
-(define *mp-local-nametag-string* (new 'global 'string 128 (the-as string #f)))
-(define *mp-scene-name-scratch* (new 'global 'string 32 (the-as string #f)))
-(define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
-(define-perm *mp-debug-draw* symbol #f)
-(define-perm *mp-debug-simulate-loss?* symbol #f)
-(define-perm *mp-debug-simulate-loss-time* time-frame 0)
-(define-perm *mp-hijacks-applied?* symbol #f)
-(define *mp-daxter-damage-mult* 2.0)
-
 (define-extern pc-multi-send-enemies (function uint none))
 (define-extern pc-multi-receive-enemies (function uint none))
-
-(defmacro mp-is-jak? ()
-  "Is the local player the Host (Jak)?"
-  `(= (-> *local-info* role) 0)
-  )
-
-(defmacro mp-is-daxter? ()
-  "Is the local player the Client (Daxter)?"
-  `(= (-> *local-info* role) 1)
-  )
-
+(define-extern pc-multi-get-enemy-sync-time (function uint64))
 (define-extern mp-sync-enemies-update (function none))
 (define-extern mp-enemy-authoritative? (function enemy symbol))
-
-(defmacro mp-enemy-should-process-damage? (e-proc)
-  "Should the local machine process damage/state changes? (Owner OR Remote Event)"
-  `(or (mp-enemy-authoritative? ,e-proc) *mp-processing-remote-event*)
-  )
-
-
+(define-extern mp-sidekick-anim (function int))
+(define-extern mp-sidekick-frame (function float))
+(define-extern mp-send-world-event (function uint uint none))
+(define-extern mp-receive-world-event (function uint uint none))
+(define-extern mp-airlock-remote-ready? (function vector symbol))

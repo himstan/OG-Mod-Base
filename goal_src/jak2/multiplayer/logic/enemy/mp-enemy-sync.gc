@@ -3,10 +3,26 @@
 
 ;; --- State Packing & Application ---
 
+(defun mp-calc-corrected-speed ((target-f float) (cur-f float) (total-f float) (base-speed float) (loop? symbol))
+  "Apply P-Correction to close the sync gap."
+  (let ((error (- target-f cur-f)))
+    (if loop?
+        (begin
+          (if (< error (* -0.5 total-f)) (+! error total-f))
+          (if (> error (* 0.5 total-f)) (-! error total-f))
+          )
+        )
+    (let ((speed (+ base-speed (* error 0.1))))
+      (if (< speed 0.1) (set! speed 0.1))
+      (if (> speed 5.0) (set! speed 5.0))
+      speed
+      )
+    )
+  )
+
 (defun mp-enemy-pack-state ((e-proc enemy) (slot mp-enemy-state) (aid uint))
-  "Pack local enemy state into a sync slot (Host Side)."
+  "Pack local enemy state into a sync slot (Owner Side)."
   (set! (-> slot actor-id) (the-as uint32 aid))
-  ;; Position & Rotation (Alignment Safe individual sets)
   (set! (-> slot x) (-> e-proc root trans x))
   (set! (-> slot y) (-> e-proc root trans y))
   (set! (-> slot z) (-> e-proc root trans z))
@@ -14,66 +30,54 @@
   (set! (-> slot quat-y) (-> e-proc root quat y))
   (set! (-> slot quat-z) (-> e-proc root quat z))
   (set! (-> slot quat-w) (-> e-proc root quat w))
-
-  ;; Animation Sync
-  (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)) (nonzero? (-> e-proc draw)))
-      (let ((chan (-> e-proc skel channel 0)))
-        (if (and (nonzero? chan) (nonzero? (-> chan frame-group)) (nonzero? (-> e-proc draw art-group)))
-            (begin
-              (let ((prev-frame 0.0))
-                (dotimes (j 24)
-                  (if (= (-> *mp-enemy-buffer* local-enemies j actor-id) aid)
-                      (set! prev-frame (-> *mp-enemy-buffer* local-enemies j anim-frame))
-                      )
-                  )
-                (set! (-> slot last-anim-frame) prev-frame)
-                )
-              (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
-              (set! (-> slot anim-frame) (-> chan frame-num))
-              )
-            (begin
-              (set! (-> slot anim-index) -1)
-              (set! (-> slot anim-frame) 0.0)
-              )
-            )
-        )
-      (begin
-        (set! (-> slot anim-index) -1)
-        (set! (-> slot anim-frame) 0.0)
-        )
-      )
-
-  ;; HP & State (1 = Alive, 2 = Dying)
-  (set! (-> slot hp) (-> e-proc hit-points))
-  (set! (-> slot state) (the-as uint32 (if (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) 2 1)))
-
-  ;; Focus Targeting
-  (let ((f-handle (-> e-proc focus handle)))
-    (set! (-> slot focus-aid) (the-as uint32 0))
-    (when (and (!= f-handle (the-as handle #f)) (nonzero? (the-as int f-handle)))
-      (let ((target-proc (handle->process-safe f-handle)))
-        (when target-proc
-          (cond
-            ((= target-proc (handle->process-safe (-> *local-info* player-procs 0)))
-             (set! (-> slot focus-aid) (the-as uint32 1))
-             )
-            ((= target-proc (handle->process-safe (-> *local-info* player-procs 1)))
-             (set! (-> slot focus-aid) (the-as uint32 2))
-             )
-            ((-> target-proc entity)
-             (set! (-> slot focus-aid) (the-as uint32 (-> target-proc entity aid)))
-             )
-            )
+  
+  ;; Animation State
+  (let ((anim-idx -1)
+        (anim-frame 0.0))
+    (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
+      (let ((fgroup (-> e-proc skel channel 0 frame-group)))
+        (when (and fgroup (nonzero? fgroup))
+          (set! anim-idx (-> fgroup master-art-group-index))
+          (set! anim-frame (-> e-proc skel channel 0 frame-num))
           )
         )
       )
+    (set! (-> slot anim-index) anim-idx)
+    (set! (-> slot anim-frame) anim-frame)
+    
+    ;; Delta-frame for speed calculation on remote end
+    (let ((prev-frame 0.0))
+      (dotimes (j 24)
+        (if (= (-> *mp-enemy-buffer* local-enemies j actor-id) aid)
+            (set! prev-frame (-> *mp-enemy-buffer* local-enemies j anim-frame))
+            )
+        )
+      (set! (-> slot last-anim-frame) prev-frame)
+      )
+    )
+
+  (set! (-> slot hp) (-> e-proc hit-points))
+  
+  ;; State Flag (0 = Hostile/Normal, 1 = Attacking, 2 = DeathStart)
+  (let ((estate (the uint 0)))
+    (if (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))
+        (set! estate (the uint 2))
+        )
+    (set! (-> slot state) estate)
+    )
+  
+  (set! (-> slot focus-aid) (the-as uint32 0))
+  (let ((focus (handle->process (-> e-proc focus handle))))
+    (if (and focus (= focus *target*))
+        (set! (-> slot focus-aid) (the-as uint32 (-> *local-info* role)))
+        )
     )
   (none)
   )
 
 (defun mp-enemy-apply-state ((e-proc enemy) (slot mp-enemy-state))
-  "Apply remote sync data to local enemy proxy (Client Side)."
-  ;; Position & Rotation (Alignment Safe individual sets)
+  "Apply remote sync data to local enemy proxy (Non-Owner Side)."
+  ;; Position & Rotation
   (set! (-> e-proc root trans x) (-> slot x))
   (set! (-> e-proc root trans y) (-> slot y))
   (set! (-> e-proc root trans z) (-> slot z))
@@ -98,7 +102,7 @@
                 )
             (let ((delta-f (- anim-frame last-anim-frame)))
               (if (< delta-f 0.0) (set! delta-f (+ delta-f (the float (-> target-anim frames num-frames)))))
-              (let ((base-speed (mp-calc-anim-speed delta-f 0 (-> target-anim speed)))
+              (let ((base-speed (mp-calc-anim-speed delta-f (the-as time-frame 0) (-> target-anim speed)))
                     (cur-frame (-> e-proc skel channel 0 frame-num))
                     (total-f (the float (-> target-anim frames num-frames))))
                 (if (> (abs (- anim-frame cur-frame)) 10.0)
@@ -214,9 +218,13 @@
   (mp-is-jak?) ;; fallback to host if unknown
   )
 
+(defun mp-enemy-in-sync-idle? ((e-proc enemy))
+  (and (-> e-proc state) (= (-> e-proc state name) 'mp-enemy-sync-idle))
+  )
+
 (defun mp-sync-enemies-update-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc enemy))
       (let ((e-proc (the-as enemy proc))
             (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (!= enemy-aid 0)
@@ -233,6 +241,7 @@
                 (set! (-> rec aid) (the-as uint32 enemy-aid))
                 (set! (-> rec is-aggro) #f)
                 (set! (-> rec last-transfer-time) 0)
+                (set! (-> rec last-remote-seen) 0)
                 ;; Default to local owner, unless remote claims it first
                 (set! (-> rec owner) local-role)
                 (dotimes (i (the-as int (-> *mp-enemy-buffer* remote-count)))
@@ -240,7 +249,11 @@
                     (when (= (-> slot actor-id) (the-as uint32 enemy-aid))
                       ;; Remote is already broadcasting it
                       (if (or (= (-> slot is-aggro) 1) (= (-> slot owner) remote-role))
-                          (set! (-> rec owner) remote-role)
+                          (begin
+                            (format 0 "[MP] Found remote claim for spawned enemy ~A (AID ~D). Yielding authority.~%" e-proc enemy-aid)
+                            (set! (-> rec owner) remote-role)
+                            (set! (-> rec last-remote-seen) (current-time))
+                            )
                           )
                       )
                     )
@@ -260,6 +273,7 @@
                   )
 
                 (when remote-slot
+                  (set! (-> rec last-remote-seen) (current-time))
                   (cond
                     ((and (= (-> remote-slot is-aggro) 1) (not (-> rec is-aggro)))
                      ;; Remote entered combat, yield
@@ -330,27 +344,31 @@
                         )
 
                       ;; Ensure we are NOT in idle sync
-                      (if (= (-> e-proc state name) 'mp-enemy-sync-idle)
+                      (if (mp-enemy-in-sync-idle? e-proc)
                           (send-event e-proc 'go-hostile)
                           )
                       )
                     (begin
                       ;; APPLY REMOTE STATE
-                      (if remote-slot
+                      ;; Check packet freshness (must have seen a remote packet for this AID within 1 second)
+                      (if (and remote-slot (< (- (current-time) (-> rec last-remote-seen)) (seconds 1)))
                           (begin
                             (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
-                              (if (not (and (-> e-proc state) (= (-> e-proc state name) 'mp-enemy-sync-idle)))
+                              (if (not (mp-enemy-in-sync-idle? e-proc))
                                   (send-event e-proc 'go-mp-sync)
                                   )
-                              (if (-> e-proc state)
+                              (if (mp-enemy-in-sync-idle? e-proc)
                                   (mp-enemy-apply-state e-proc remote-slot)
                                   )
                               )
                             )
                           (begin
-                            ;; Remote isn't syncing it anymore, maybe it died or went out of range
-                            (if (= (-> e-proc state name) 'mp-enemy-sync-idle)
-                                (send-event e-proc 'go-hostile)
+                            ;; Stale data or remote isn't syncing it anymore
+                            (if (mp-enemy-in-sync-idle? e-proc)
+                                (begin
+                                  (format 0 "[MP] Remote sync stale for ~A (AID ~D). Reverting to hostile.~%" e-proc enemy-aid)
+                                  (send-event e-proc 'go-hostile)
+                                  )
                                 )
                             )
                           )
@@ -378,6 +396,7 @@
   )
 
 (defun mp-sync-enemies-update ()
+  ;; (format 0 "[MP-Debug] Enemy Sync Tick - Local Count: ~D, Remote Count: ~D~%" (-> *mp-enemy-buffer* local-count) (-> *mp-enemy-buffer* remote-count))
   (set! (-> *mp-enemy-buffer* local-count) (the-as uint 0))
   (iterate-process-tree *active-pool* mp-sync-enemies-update-callback *kernel-context*)
   (none)

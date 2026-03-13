@@ -17,7 +17,7 @@
 
 (defun mp-find-enemy-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc process-drawable))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc process-drawable))
       (let ((e-proc (the-as enemy proc))
             (e-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (= e-aid *mp-search-enemy-aid*)

@@ -71,6 +71,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
             gMultiplayerData.remote_enemy_buffer.remote_count = enemy_sync->count;
             memcpy(gMultiplayerData.remote_enemy_buffer.remote_enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
+            gMultiplayerData.last_enemy_sync_time = current_time;
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
@@ -365,11 +366,17 @@ void pc_multi_receive_enemies(u32 buffer_ptr) {
     // Copy from the C++ buffer to GOAL
     buffer->remote_count = gMultiplayerData.remote_enemy_buffer.remote_count;
     memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * 24);
-    // Clear C++ buffer count so we don't process stale data multiple times if no new packets arrive
-    gMultiplayerData.remote_enemy_buffer.remote_count = 0;
+    buffer->last_sync_time = gMultiplayerData.last_enemy_sync_time;
+    // Note: We no longer clear remote_count here to prevent flickering. 
+    // GOAL will check last-sync-time if it needs to know if data is stale.
   } catch (...) {
     lg::error("[Multiplayer] Exception in pc_multi_receive_enemies");
   }
+}
+
+
+u64 pc_multi_get_enemy_sync_time() {
+  return gMultiplayerData.last_enemy_sync_time;
 }
 
 void pc_multi_disconnect() {
@@ -464,6 +471,7 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-receive-events", (void*)pc_multi_receive_events);
   make_function_symbol_from_c("pc-multi-send-enemies", (void*)pc_multi_send_enemies);
   make_function_symbol_from_c("pc-multi-receive-enemies", (void*)pc_multi_receive_enemies);
+  make_function_symbol_from_c("pc-multi-get-enemy-sync-time", (void*)pc_multi_get_enemy_sync_time);
   make_function_symbol_from_c("pc-multi-get-role", (void*)pc_multi_get_role);
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);

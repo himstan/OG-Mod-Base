@@ -52,15 +52,20 @@
   (none))
 
 (defun mp-event-handler-enemy-death ((aid uint))
-  (let ((proc (find-enemy-by-aid aid)))
-    (when (and proc (nonzero? proc))
-      (format 0 "[MP-WorldEvent] Authoritative death received for ~A (AID ~D).~%" proc aid)
-      (let ((ent (-> proc entity)))
-        (if (and ent (nonzero? ent))
-            (logior! (-> ent extra perm status) (entity-perm-status dead))))
+  (let ((proc (find-enemy-by-aid aid))
+        (ent (entity-by-aid aid)))
+    
+    (when (and ent (nonzero? ent))
+      (format 0 "[MP-WorldEvent] Marking entity as dead for AID ~D.~%" aid)
+      (logior! (-> ent extra perm status) (entity-perm-status dead))
+      )
 
+    (when (and proc (nonzero? proc))
+      (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
       ;; Send a special attack event that our hijack will catch to force death transition
-      (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))))
+      (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))
+      )
+    )
   (none))
 
 (defun mp-event-handler-player-hit ((aid uint))

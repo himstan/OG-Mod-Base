@@ -95,6 +95,7 @@ struct MPEnemySyncBufferGOAL {
   uint32_t remote_count;
   uint8_t pad2[12];
   MPEnemyState remote_enemies[24];
+  uint64_t last_sync_time;
 };
 
 struct MultiplayerData {
@@ -110,6 +111,7 @@ struct MultiplayerData {
   std::unordered_map<uint32_t, RemoteEntityState> remote_entities;
   std::vector<PacketGameEvent> inbound_events;
   MPEnemySyncBufferGOAL remote_enemy_buffer;
+  uint32_t last_enemy_sync_time = 0;
 
   // New fields for joining/searching
   std::atomic<int> join_status{0}; // 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
