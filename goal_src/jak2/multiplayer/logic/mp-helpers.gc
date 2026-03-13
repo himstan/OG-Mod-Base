@@ -1,10 +1,10 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-(define-extern num-func-loop! (function joint-control-channel float float float float))
-(define-extern num-func-loop-speedless! (function joint-control-channel float float float float))
-(define-extern num-func-seek! (function joint-control-channel float float float float))
-(define-extern num-func-none (function joint-control-channel float float float float))
+(define-extern num-func-loop! (function joint-control-channel float float float float :behavior process))
+(define-extern num-func-loop-speedless! (function joint-control-channel float float float float :behavior process))
+(define-extern num-func-seek! (function joint-control-channel float float float float :behavior process))
+(define-extern num-func-none (function joint-control-channel float float float float :behavior process))
 
 (defun mp-anim-loops? ((anim art-joint-anim))
   "Determine if an animation should loop based on its name. (Authority)"
@@ -96,10 +96,6 @@
     (set! (-> out-frame 0) res-frame))
     (none))
 
-(define *old-enemy-method-97* (the-as (function enemy process) #f))
-(define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
-(define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
-
 (defun mp-get-remote-target-process ()
   (let ((rem-role (if (mp-is-jak?) 1 0)))
     (let ((remote-h (-> *local-info* player-procs rem-role)))
@@ -109,75 +105,6 @@
                 proc
                 (the-as process-focusable #f)))
           (the-as process-focusable #f)))))
-
-(defun mp-enemy-method-97-hijack ((this enemy))
-  ;; 1. Standard Engine Targets
-  ;; Since proxy is now in *collide-player-list*, the native method-97 will find it!
-  (if *old-enemy-method-97*
-      (*old-enemy-method-97* this)
-      (the-as process #f)
-      ))
-
-(define *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) #f))
-
-(defun mp-general-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-  (case arg2
-    (('attack)
-     (when (and (not *mp-processing-remote-event*) (-> this entity))
-       (let ((lev (-> this entity extra level)))
-         (when (and lev (= (-> lev status) 'active))
-           (let ((aid (the-as uint 0)))
-             (if (-> this entity) (set! aid (-> this entity aid)))
-             (if (and (type? this citizen) (!= (-> (the-as citizen this) traffic-id) -1))
-                 (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen this) traffic-id))))))
-             (when (nonzero? aid)
-               (if (mp-is-jak?)
-                   (begin
-                     (when (= arg0 *target*)
-                       (format 0 "[MP-Host] Local hit on ~A (AID ~D). Broadcasting.~%" this aid)
-                       (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)))
-                   (begin
-                     (when (and (= arg0 *target*) (not (logtest? (-> this enemy-flags) (enemy-flag death-start))))
-                       (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
-                         (when (and info (!= (-> info id) (-> this incoming attack-id)))
-                           (set! (-> info id) (-> info id))
-                           (format 0 "[MP-Client] Intercepted local hit on ~A (AID ~D, ID ~D). Requesting authoritative hit from Host.~%" this aid (-> info id))
-                           (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)))
-                       (return #t)))))))))))
-  (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f))
-
-(defun mp-enemy-take-damage-hijack ((this enemy) (arg0 process) (arg1 event-message-block))
-  (let ((info (if (and arg1 (nonzero? arg1) (nonzero? (-> arg1 param 1))) (the-as attack-info (-> arg1 param 1)) (the-as attack-info #f))))
-    ;; 1. Special Case: Remote-forced death (via 'mp-death' mode)
-    (when (and info (= (-> info mode) 'mp-death))
-      (format 0 "[MP-Lifecycle] Remote-forced death for ~A (AID ~D) via 'mp-death mode.~%" this (if (-> this entity) (-> this entity aid) 0))
-      (set! (-> this hit-points) 0)
-      (kill-prefer-falling this)
-      (return 0))
-    )
-
-  ;; 2. Host Authority: Only the Host actually processes damage and state changes.
-  (if (or (mp-is-jak?) *mp-processing-remote-event*)
-      (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)
-      0))
-
-(define *old-enemy-dying* (the-as (function enemy none) #f))
-
-(defun mp-enemy-dying-hijack ((this enemy))
-  ;; GUARD: Only Host is authoritative over the "start of death".
-  (when (and (mp-is-jak?) (not *mp-processing-remote-event*))
-    (let ((aid (the-as uint 0)))
-      (if (-> this entity) (set! aid (-> this entity aid)))
-      (if (and (type? this citizen) (!= (-> (the-as citizen this) traffic-id) -1))
-          (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen this) traffic-id))))))
-      (when (nonzero? aid)
-        (format 0 "[MP-Host] Authoritative death started: ~A (AID ~D). Broadcasting.~%" this aid)
-        (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))))
-
-  ;; Call original method
-  (if (or (mp-is-jak?) *mp-processing-remote-event*)
-      (if *old-enemy-dying* (*old-enemy-dying* this)))
-  (none))
 
 (define *old-process-entity-status* (the-as (function process entity-perm-status symbol entity-perm-status) #f))
 
@@ -195,74 +122,17 @@
   )
 
 (defun mp-apply-ai-hijacks ()
-  (when (not *old-enemy-method-97*)
-    (set! *old-enemy-method-97* (the-as (function enemy process) (method-of-type enemy enemy-method-97))))
-  (defmethod enemy-method-97 ((this enemy))
-    (mp-enemy-method-97-hijack this))
+  "Main entry point for applying engine-wide multiplayer hijacks."
+  
+  ;; 1. Enemy Hijacks
+  (mp-apply-enemy-hijacks)
 
-  ;; Global Visibility Hijack: Ensure AI "sees" the proxy
-  (when (not *old-enemy-method-99*)
-      (set! *old-enemy-method-99* (the-as (function enemy process-focusable symbol) (method-of-type enemy enemy-method-99))))
-  (defmethod enemy-method-99 ((this enemy) (arg0 process-focusable))
-    (if (type? arg0 mp-target-proxy)
-        #t ;; Always "see" the proxy
-        (if *old-enemy-method-99*
-            (*old-enemy-method-99* this arg0)
-            #f)))
-
-  (when (not *old-enemy-dying*)
-    (set! *old-enemy-dying* (the-as (function enemy none) (method-of-type enemy dying))))
-
-  (defmethod dying ((this enemy))
-    (mp-enemy-dying-hijack this))
-
-  (defmethod dying ((this nav-enemy))
-    (mp-enemy-dying-hijack (the-as enemy this)))
-
-  (when (not *old-enemy-take-damage*)
-    (set! *old-enemy-take-damage* (the-as (function enemy process event-message-block int) (method-of-type enemy take-damage-from-attack))))
-  (defmethod take-damage-from-attack ((this enemy) (arg0 process) (arg1 event-message-block))
-    (mp-enemy-take-damage-hijack this arg0 arg1))
-
-  (defmethod take-damage-from-attack ((this nav-enemy) (arg0 process) (arg1 event-message-block))
-    (mp-enemy-take-damage-hijack (the-as enemy this) arg0 arg1))
-
-  (when (not *old-general-event-handler*)
-    (set! *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) (method-of-type enemy general-event-handler))))
-
-  (defmethod general-event-handler ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-    (mp-general-event-handler-hijack this arg0 arg1 arg2 arg3))
-
+  ;; 2. Entity Status Hijack
   (when (not *old-process-entity-status*)
     (set! *old-process-entity-status* process-entity-status!)
     (set! process-entity-status! mp-process-entity-status-hijack))
 
   (none))
-
-;; --- Search Helpers ---
-
-(define *mp-search-enemy-res* (the-as enemy #f))
-(define *mp-search-enemy-aid* (the-as uint 0))
-
-(defun mp-find-enemy-callback ((p process-tree))
-  (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc process-drawable))
-      (let ((e-proc (the-as enemy proc))
-            (e-aid (the-as uint 0)))
-        (if (-> e-proc entity)
-            (set! e-aid (-> e-proc entity aid))
-            (if (and (type? e-proc citizen) (!= (-> (the-as citizen e-proc) traffic-id) -1))
-                (set! e-aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen e-proc) traffic-id)))))))
-        (when (= e-aid *mp-search-enemy-aid*)
-          (set! *mp-search-enemy-res* e-proc)
-          (return #f)))))
-  #t)
-
-(defun find-enemy-by-aid ((aid uint))
-  (set! *mp-search-enemy-aid* aid)
-  (set! *mp-search-enemy-res* (the-as enemy #f))
-  (iterate-process-tree *active-pool* mp-find-enemy-callback *kernel-context*)
-  *mp-search-enemy-res*)
 
 (defun mp-send-world-event ((etype uint) (aid uint))
   ;; GUARD: Only send if synced and in-game
@@ -307,270 +177,3 @@
                   (set! min-dist dist)
                   (set! closest-proc (the-as process-focusable remote))))))))
     closest-proc))
-
-;; --- Enemy Sync Logic ---
-
-(defun mp-enemy-sync-post-behavior ()
-  (with-pp
-    (let ((self (the-as enemy pp)))
-      (when (and self (type? self enemy))
-        ;; Prevent local AI/physics from moving the puppet while we sync it
-        (if (nonzero? (-> self root)) (vector-reset! (-> self root transv)))
-        (common-post self)
-        (if (and (nonzero? (-> self root)) (type? (-> self root) collide-shape))
-            (update-transforms (-> self root))))))
-  (none))
-
-(defstate mp-enemy-sync-idle (enemy)
-  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
-    (case message
-      (('go-mp-sync) (go mp-enemy-sync-idle))
-      (('die)
-       (format 0 "[MP-Client] Sync-driven death transition for ~A.~%" self)
-       (set! (-> self hit-points) 0)
-       (kill-prefer-falling self)
-       #t)
-      (('attack 'touch)
-       (if (or (mp-is-jak?) *mp-processing-remote-event*)
-           (general-event-handler self proc argc message block))
-       #t)))
-  :code (behavior ()
-    (loop
-      (let ((speed (-> self water-surface-height)))
-        (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
-        (ja :num! (loop! speed)))
-      (suspend)))
-  :post mp-enemy-sync-post-behavior)
-
-(defun mp-sync-enemies-host-callback ((p process-tree))
-  (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
-      (let ((e-proc (the-as enemy proc))
-            (aid (the-as uint 0)))
-        (if (-> e-proc entity)
-            (set! aid (-> e-proc entity aid))
-            (if (and (type? e-proc citizen) (!= (-> (the-as citizen e-proc) traffic-id) -1))
-                (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen e-proc) traffic-id)))))))
-
-        ;; 1. Death detection (Host -> Client)
-        (let ((is-dying? (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-          (when (and (!= aid 0) is-dying?)
-            ;; Use bit 43 as our "MP death event sent" flag to avoid spamming
-            (when (not (logtest? (-> e-proc enemy-flags) (enemy-flag enemy-flag43)))
-              (format 0 "[MP-Host] Authoritative death detected: ~A (AID ~D). Broadcasting.~%" e-proc aid)
-              (mp-send-world-event MP_EVENT_ENEMY_DEATH aid)
-              (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))))
-
-          (if (and (!= (-> e-proc status) 'dead)
-                   (!= aid 0)
-                   (nonzero? (-> e-proc root))
-                   (< (-> *local-info* enemy-count) (the-as uint 24)))
-              (let ((slot (-> *local-info* enemies (-> *local-info* enemy-count))))
-                (set! (-> slot actor-id) aid)
-                ;; ALIGNMENT SAFE: Individual float sets
-                (set! (-> slot x) (-> e-proc root trans x))
-                (set! (-> slot y) (-> e-proc root trans y))
-                (set! (-> slot z) (-> e-proc root trans z))
-                (set! (-> slot quat-x) (-> e-proc root quat x))
-                (set! (-> slot quat-y) (-> e-proc root quat y))
-                (set! (-> slot quat-z) (-> e-proc root quat z))
-                (set! (-> slot quat-w) (-> e-proc root quat w))
-                (if (and (-> e-proc skel) (nonzero? (-> e-proc skel)) (nonzero? (-> e-proc draw)))
-                    (let ((chan (-> e-proc skel channel 0)))
-                      (if (and (nonzero? chan) (nonzero? (-> chan frame-group)) (nonzero? (-> e-proc draw art-group)))
-                            (begin
-                            (let ((prev-frame 0.0))
-                              (dotimes (j 24)
-                                (if (= (-> *local-info* enemies j actor-id) aid)
-                                    (set! prev-frame (-> *local-info* enemies j anim-frame))))
-                              (set! (-> slot last-anim-frame) prev-frame))
-                            (set! (-> slot anim-index) (-> chan frame-group master-art-group-index))
-                            (set! (-> slot anim-frame) (-> chan frame-num)))
-                          (begin
-                            (set! (-> slot anim-index) -1)
-                            (set! (-> slot anim-frame) 0.0))))
-                    ;; Fallback if skeleton is currently unloaded
-                    (begin
-                      (set! (-> slot anim-index) -1)
-                      (set! (-> slot anim-frame) 0.0)))
-                (set! (-> slot hp) (-> e-proc hit-points))
-                ;; State 1 = Alive, State 2 = Dying
-                (set! (-> slot state) (the-as uint (if is-dying? 2 1)))
-
-                ;; Sync Focus Target
-                (let ((f-handle (-> e-proc focus handle)))
-                  (set! (-> slot focus-aid) (the-as uint 0))
-                  (when (and (!= f-handle (the-as handle #f)) (nonzero? (the-as int f-handle)))
-                    (let ((target-proc (handle->process-safe f-handle)))
-                      (when target-proc
-                        (cond
-                          ((= target-proc (handle->process-safe (-> *local-info* player-procs 0)))
-                           (set! (-> slot focus-aid) (the-as uint 1))) ;; ID 1 = Player 0 (Jak)
-                          ((= target-proc (handle->process-safe (-> *local-info* player-procs 1)))
-                           (set! (-> slot focus-aid) (the-as uint 2))) ;; ID 2 = Player 1 (Daxter)
-                          ((-> target-proc entity)
-                           (set! (-> slot focus-aid) (-> target-proc entity aid))))))))
-
-                (1+! (-> *local-info* enemy-count))))))))
-  #t)
-
-(defun mp-sync-enemies-host ()
-  (set! (-> *local-info* enemy-count) (the-as uint 0))
-  (iterate-process-tree *active-pool* mp-sync-enemies-host-callback *kernel-context*)
-  (none))
-
-(defun mp-sync-enemies-client-callback ((p process-tree))
-  (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
-      (let ((e-proc (the-as enemy proc))
-            (aid (the-as uint 0)))
-        (if (-> e-proc entity)
-            (set! aid (-> e-proc entity aid))
-            (if (and (type? e-proc citizen) (!= (-> (the-as citizen e-proc) traffic-id) -1))
-                (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen e-proc) traffic-id)))))))
-        (when (!= aid 0)
-          ;; 1. Check if Host says it's ALIVE and synced
-          (let ((host-synced? #f))
-            (dotimes (i (the-as int (-> *local-info* enemy-count)))
-              (let ((slot (-> *local-info* enemies i)))
-                (when (= (-> slot actor-id) aid)
-                  (set! host-synced? #t)
-                  (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
-                    (if (not (and (-> e-proc state) (= (-> e-proc state name) 'mp-enemy-sync-idle)))
-                        (send-event e-proc 'go-mp-sync))
-
-                    ;; ONLY sync data if the process has actually started running (state != #f)
-                    (when (-> e-proc state)
-                      ;; ALIGNMENT SAFE: Individual float sets
-                      (set! (-> e-proc root trans x) (-> slot x))
-                      (set! (-> e-proc root trans y) (-> slot y))
-                      (set! (-> e-proc root trans z) (-> slot z))
-                      (set! (-> e-proc root quat x) (-> slot quat-x))
-                      (set! (-> e-proc root quat y) (-> slot quat-y))
-                      (set! (-> e-proc root quat z) (-> slot quat-z))
-                      (set! (-> e-proc root quat w) (-> slot quat-w))
-
-                      (let ((anim-idx (-> slot anim-index))
-                            (anim-frame (-> slot anim-frame))
-                            (last-anim-frame (-> slot last-anim-frame)))
-                        (when (and (>= anim-idx 0) (< anim-idx (-> e-proc draw art-group length)))
-                          (let ((target-anim (the-as art-joint-anim (-> e-proc draw art-group data anim-idx))))
-                            (when (and target-anim (= (-> target-anim type) art-joint-anim))
-                              (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
-                                (if (!= (-> e-proc skel channel 0 frame-group) target-anim)
-                                    (begin
-                                      (set! (-> e-proc skel channel 0 frame-group) target-anim)
-                                      (set! (-> e-proc skel channel 0 frame-num) anim-frame)
-                                      )
-                                    )
-                                (let ((delta-f (- anim-frame last-anim-frame)))
-                                  (if (< delta-f 0.0)
-                                      (set! delta-f (+ delta-f (the float (-> target-anim frames num-frames)))))
-                                  
-                                  (let ((base-speed (mp-calc-anim-speed delta-f 0 (-> target-anim speed)))
-                                        (cur-frame (-> e-proc skel channel 0 frame-num))
-                                        (total-f (the float (-> target-anim frames num-frames))))
-                                    
-                                    (if (> (abs (- anim-frame cur-frame)) 10.0)
-                                        (set! (-> e-proc skel channel 0 frame-num) anim-frame)
-                                        (set! (-> e-proc water-surface-height) (mp-calc-corrected-speed anim-frame cur-frame total-f base-speed #t))
-                                        )
-                                    )
-                                  ))))))
-
-                      (set! (-> e-proc hit-points) (-> slot hp))
-
-                      ;; Focus is deliberately NOT set here on the Client!
-                      ;; Setting the focus handle to the remote player (a manipy) causes the engine's
-                      ;; native AI (common-post) to crash because manipy lacks 'focus-status'.
-                      ;; Debug drawing now reads directly from the sync slot.
-
-                      ;; Special Case: Transition to death visuals without leaving mp-enemy-sync-idle
-                      (when (and (= (-> slot state) 2) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-                        (format 0 "[MP-Client] Sync-Death visuals triggered for ~A (AID ~D).~%" e-proc aid)
-                        (logior! (-> e-proc enemy-flags) (enemy-flag death-start))
-                        (when (nonzero? (-> e-proc draw))
-                          (set! (-> e-proc draw death-effect) (the-as uint 1))
-                          (set! (-> e-proc draw death-timer) (the-as uint 60))
-                          (set! (-> e-proc draw death-timer-org) (the-as uint 60))
-                          (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))))
-
-                      (if (type? (-> e-proc root) collide-shape)
-                          (update-transforms (-> e-proc root)))))
-                  (return #t))))
-
-            ;; 2. If it was hijacked but Host STOPPED syncing it, release it locally
-            (when (and (not host-synced?) (= (-> e-proc state name) 'mp-enemy-sync-idle))
-              (if (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))
-                  (begin
-                    (format 0 "[MP-Client] Sync-Death cleanup complete for ~A. Deactivating.~%" e-proc)
-                    (let ((ent (-> e-proc entity))) (if (and ent (nonzero? ent)) (logior! (-> ent extra perm status) (entity-perm-status dead))))
-                    (deactivate e-proc))
-                  (begin
-                    (format 0 "[MP-Client] Host stopped syncing ~A. Releasing to native AI.~%" e-proc)
-                    (send-event e-proc 'go-hostile)))))
-
-          ;; 3. Check if Host says it's DEAD (Sync-AIDs list)
-          (dotimes (i (the-as int (-> *local-info* sync-aids-count)))
-            (when (= (-> *local-info* sync-aids i) aid)
-              (format 0 "[MP-Client] Authoritative kill received for ~A (AID ~D) via sync-aids list.~%" e-proc aid)
-              (let ((ent (-> e-proc entity))) (if (and ent (nonzero? ent)) (logior! (-> ent extra perm status) (entity-perm-status dead))))
-              (deactivate e-proc)
-              (return (the-as symbol 'dead))))
-          ))))
-  #t)
-
-(defun mp-sync-enemies-client ()
-  (when (nonzero? (-> *local-info* enemy-count))
-    (iterate-process-tree *active-pool* mp-sync-enemies-client-callback *kernel-context*)
-    )
-  (none))
-
-(defun mp-debug-draw-health-callback ((p process-tree))
-  (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc process-drawable))
-      (let ((e-proc (the-as enemy proc)))
-        (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
-          (let ((pos (new 'stack-no-clear 'vector)))
-            (vector-copy! pos (-> e-proc root trans))
-            (set! (-> pos y) (+ (-> pos y) (meters 2.5)))
-
-            ;; 1. HP
-            (let ((hp-val (-> e-proc hit-points)))
-              (add-debug-text-3d #t (bucket-id debug-no-zbuf1) (the-as string (format #f "HP: ~D" hp-val)) pos (font-color white) (the-as vector2h #f)))
-            (set! (-> pos y) (+ (-> pos y) (meters 0.4)))
-
-            ;; 2. Aggro Target (Read from sync slot directly on Client)
-            (let ((target-name "None")
-                  (aid (the-as uint 0)))
-              (if (-> e-proc entity)
-                  (set! aid (-> e-proc entity aid))
-                  (if (and (type? e-proc citizen) (!= (-> (the-as citizen e-proc) traffic-id) -1))
-                      (set! aid (the-as uint (logior #x80000000 (the-as int (-> (the-as citizen e-proc) traffic-id)))))))
-
-              (if (mp-is-jak?)
-                  ;; Host: Read native focus
-                  (let ((target (handle->process-safe (-> e-proc focus handle))))
-                    (if target (set! target-name (the-as string (format #f "~A" target)))))
-                  ;; Client: Read synced focus
-                  (dotimes (i (the-as int (-> *local-info* enemy-count)))
-                    (let ((slot (-> *local-info* enemies i)))
-                      (when (= (-> slot actor-id) aid)
-                        (cond
-                          ((= (-> slot focus-aid) 1) (set! target-name "Jak (Host)"))
-                          ((= (-> slot focus-aid) 2) (set! target-name "Daxter (Client)"))
-                          ((nonzero? (-> slot focus-aid)) (set! target-name "NPC/Entity"))
-                          (else (set! target-name "None")))))))
-
-              (add-debug-text-3d #t (bucket-id debug-no-zbuf1) (the-as string (format #f "Target: ~S" target-name)) pos (font-color cyan) (the-as vector2h #f)))
-            (set! (-> pos y) (+ (-> pos y) (meters 0.4)))
-            )
-          )
-        )
-      )
-    )
-  #t)
-
-(defun mp-debug-draw-health ()
-  (iterate-process-tree *active-pool* mp-debug-draw-health-callback *kernel-context*)
-  (none))

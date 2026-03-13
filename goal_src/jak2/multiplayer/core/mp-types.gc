@@ -58,6 +58,17 @@
 (define *mp-remote-wants-skip* #f)
 (define *mp-local-wants-skip* #f)
 
+(declare-type process-drawable process)
+(declare-type process-focusable process-drawable)
+(declare-type enemy process-focusable)
+
+;; --- Enemy Hijack Variables ---
+(define *old-enemy-method-97* (the-as (function enemy process) #f))
+(define *old-enemy-method-99* (the-as (function enemy process-focusable symbol) #f))
+(define *old-enemy-take-damage* (the-as (function enemy process event-message-block int) #f))
+(define *old-enemy-dying* (the-as (function enemy none) #f))
+(define *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) #f))
+
 (deftype mp-enemy-state (structure)
   ((actor-id    uint32)
    (x           float)
@@ -220,11 +231,17 @@
 (define-extern mp-send-world-event (function uint uint none))
 (define-extern mp-receive-world-event (function uint uint none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
-(define-extern *kernel-context* kernel-context)
 (declare-type enemy process-focusable)
+(define-extern find-enemy-by-aid (function uint enemy))
+(define-extern mp-get-enemy-aid (function enemy uint))
+(define-extern mp-enemy-broadcast-attack (function enemy process event-message-block symbol))
+(define-extern mp-enemy-broadcast-death (function enemy none))
+(define-extern mp-enemy-pack-state (function enemy mp-enemy-state uint none))
+(define-extern mp-enemy-apply-state (function enemy mp-enemy-state none))
 (define-extern iterate-process-tree (function process-tree (function object object) kernel-context object))
 (define-extern mp-sync-enemies-host (function none))
 (define-extern mp-sync-enemies-client (function none))
+(define-extern mp-apply-enemy-hijacks (function none))
 (define-extern mp-enemy-sync-idle (state enemy))
 
 ;; Queue for outbound events to prevent overwriting when multiple things happen in 1 frame
@@ -293,6 +310,16 @@
 (defmacro mp-is-daxter? ()
   "Is the local player the Client (Daxter)?"
   `(= (-> *local-info* role) 1)
+  )
+
+(defmacro mp-enemy-authoritative? ()
+  "Is the local machine authoritative over AI state? (Host-only)"
+  `(and (mp-is-jak?) (not *mp-processing-remote-event*))
+  )
+
+(defmacro mp-enemy-should-process-damage? ()
+  "Should the local machine process damage/state changes? (Host OR Remote Event)"
+  `(or (mp-is-jak?) *mp-processing-remote-event*)
   )
 
 

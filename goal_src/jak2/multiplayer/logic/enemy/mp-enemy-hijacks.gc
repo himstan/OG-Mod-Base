@@ -1,0 +1,107 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Damage & Death Broadcasting ---
+
+(defun mp-enemy-broadcast-attack ((e-proc enemy) (arg0 process) (arg3 event-message-block))
+  "Handle attack sync logic for both Host and Client."
+  (let ((aid (mp-get-enemy-aid e-proc)))
+    (when (nonzero? aid)
+      (if (mp-is-jak?)
+          (begin
+            ;; Host: If we hit it locally, broadcast the authoritative hit
+            (when (= arg0 *target*)
+              (format 0 "[MP-Host] Local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
+              (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid))
+            )
+          (begin
+            ;; Client: If we hit it locally, intercept and request hit from Host
+            (when (and (= arg0 *target*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
+              (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+                (when (and info (!= (-> info id) (-> e-proc incoming attack-id)))
+                  (format 0 "[MP-Client] Intercepted local hit on ~A (AID ~D). Requesting Host authority.~%" e-proc aid)
+                  (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
+                  (return #t)
+                  )
+                )
+              )
+            )
+          )
+      )
+    )
+  #f)
+
+(defun mp-enemy-broadcast-death ((e-proc enemy))
+  "Broadcast death start from Host to Clients."
+  (when (mp-enemy-authoritative?)
+    (let ((aid (mp-get-enemy-aid e-proc)))
+      (when (nonzero? aid)
+        (format 0 "[MP-Host] Authoritative death started: ~A (AID ~D). Broadcasting.~%" e-proc aid)
+        (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))))
+  (none))
+
+;; --- Method Hijack Implementations ---
+
+(defun mp-enemy-method-97-hijack ((this enemy))
+  "Ensure enemies can target the local player even if they are hijacked."
+  (if *old-enemy-method-97*
+      (*old-enemy-method-97* this)
+      (the-as process #f)))
+
+(defun mp-general-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  "Intercept attacks and sync them across the network."
+  (case arg2
+    (('attack)
+     (when (and (not *mp-processing-remote-event*) (-> this entity))
+       (let ((lev (-> this entity extra level)))
+         (when (and lev (= (-> lev status) 'active))
+           (if (mp-enemy-broadcast-attack this arg0 arg3)
+               (return #t)))))))
+  (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f))
+
+(defun mp-enemy-take-damage-hijack ((this enemy) (arg0 process) (arg1 event-message-block))
+  "Authority check for enemy damage."
+  (let ((info (if (and arg1 (nonzero? arg1) (nonzero? (-> arg1 param 1))) (the-as attack-info (-> arg1 param 1)) (the-as attack-info #f))))
+    (when (and info (= (-> info mode) 'mp-death))
+      (format 0 "[MP-Lifecycle] Remote-forced death for ~A via 'mp-death mode.~%" this)
+      (set! (-> this hit-points) 0)
+      (kill-prefer-falling this)
+      (return 0)))
+
+  (if (mp-enemy-should-process-damage?)
+      (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)
+      0))
+
+(defun mp-enemy-dying-hijack ((this enemy))
+  "Sync death start."
+  (mp-enemy-broadcast-death this)
+  (if (mp-enemy-should-process-damage?)
+      (if *old-enemy-dying* (*old-enemy-dying* this)))
+  (none))
+
+;; --- Global Hook Application ---
+
+(defun mp-apply-enemy-hijacks ()
+  "Apply all enemy-related method hijacks."
+  (when (not *old-enemy-method-97*)
+    (set! *old-enemy-method-97* (the-as (function enemy process) (method-of-type enemy enemy-method-97))))
+  (defmethod enemy-method-97 ((this enemy)) (mp-enemy-method-97-hijack this))
+
+  (when (not *old-enemy-method-99*)
+      (set! *old-enemy-method-99* (the-as (function enemy process-focusable symbol) (method-of-type enemy enemy-method-99))))
+  (defmethod enemy-method-99 ((this enemy) (arg0 process-focusable))
+    (if (type? arg0 mp-target-proxy) #t (if *old-enemy-method-99* (*old-enemy-method-99* this arg0) #f)))
+
+  (when (not *old-enemy-dying*) (set! *old-enemy-dying* (the-as (function enemy none) (method-of-type enemy dying))))
+  (defmethod dying ((this enemy)) (mp-enemy-dying-hijack this))
+  (defmethod dying ((this nav-enemy)) (mp-enemy-dying-hijack (the-as enemy this)))
+
+  (when (not *old-enemy-take-damage*)
+    (set! *old-enemy-take-damage* (the-as (function enemy process event-message-block int) (method-of-type enemy take-damage-from-attack))))
+  (defmethod take-damage-from-attack ((this enemy) (arg0 process) (arg1 event-message-block)) (mp-enemy-take-damage-hijack this arg0 arg1))
+  (defmethod take-damage-from-attack ((this nav-enemy) (arg0 process) (arg1 event-message-block)) (mp-enemy-take-damage-hijack (the-as enemy this) arg0 arg1))
+
+  (when (not *old-general-event-handler*)
+    (set! *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) (method-of-type enemy general-event-handler))))
+  (defmethod general-event-handler ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block)) (mp-general-event-handler-hijack this arg0 arg1 arg2 arg3))
+  (none))
