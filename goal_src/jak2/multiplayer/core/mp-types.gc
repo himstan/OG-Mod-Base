@@ -85,7 +85,9 @@
    (state      uint32)
    (focus-aid  uint32)
    (attack-flag uint8)
-   (pad         uint8 7))
+   (owner       uint8)
+   (is-aggro    uint8)
+   (pad         uint8 5))
   )
 
 (defenum mp-scene-state (uint32)
@@ -168,13 +170,9 @@
    (task-mask   uint8 64)
    (sync-aids-count uint32)
    (sync-aids   uint32 128)
-   ;; AI / Enemy Sync
-   (enemy-count uint32)
-   (pad-enemy   uint8 12)
-   (enemies     mp-enemy-state 24 :inline)
    (player-procs handle 2)
    )
-  :size-assert 2288)
+  :size-assert 736)
 
 (deftype mp-event-buffer (structure)
   ((out-count uint32)
@@ -183,6 +181,24 @@
    (in-events  mp-event 16 :inline :offset 800) ;; 16 * 48 = 768. Ends at 800 + 768 = 1568
    )
   :size-assert 1568)
+
+(deftype mp-enemy-sync-buffer (structure)
+  ((local-count   uint32)
+   (local-enemies mp-enemy-state 24 :inline)
+   (remote-count  uint32)
+   (remote-enemies mp-enemy-state 24 :inline)
+   )
+  :size-assert 3104)
+
+(deftype mp-enemy-auth-record (structure)
+  ((aid                 uint32)
+   (owner               uint8)
+   (is-aggro            symbol)
+   (last-transfer-time  time-frame))
+  )
+
+(define *mp-enemy-buffer* (new 'static 'mp-enemy-sync-buffer))
+(define *mp-enemy-auth* (new 'static 'inline-array mp-enemy-auth-record 128))
 
 ;; Helper macros to access sidekick sync data
 (defmacro mp-sidekick-anim ()
@@ -302,6 +318,9 @@
 (define-perm *mp-hijacks-applied?* symbol #f)
 (define *mp-daxter-damage-mult* 2.0)
 
+(define-extern pc-multi-send-enemies (function uint none))
+(define-extern pc-multi-receive-enemies (function uint none))
+
 (defmacro mp-is-jak? ()
   "Is the local player the Host (Jak)?"
   `(= (-> *local-info* role) 0)
@@ -312,14 +331,12 @@
   `(= (-> *local-info* role) 1)
   )
 
-(defmacro mp-enemy-authoritative? ()
-  "Is the local machine authoritative over AI state? (Host-only)"
-  `(and (mp-is-jak?) (not *mp-processing-remote-event*))
-  )
+(define-extern mp-sync-enemies-update (function none))
+(define-extern mp-enemy-authoritative? (function enemy symbol))
 
-(defmacro mp-enemy-should-process-damage? ()
-  "Should the local machine process damage/state changes? (Host OR Remote Event)"
-  `(or (mp-is-jak?) *mp-processing-remote-event*)
+(defmacro mp-enemy-should-process-damage? (e-proc)
+  "Should the local machine process damage/state changes? (Owner OR Remote Event)"
+  `(or (mp-enemy-authoritative? ,e-proc) *mp-processing-remote-event*)
   )
 
 

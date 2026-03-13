@@ -7,19 +7,19 @@
   "Handle attack sync logic for both Host and Client."
   (let ((aid (mp-get-enemy-aid e-proc)))
     (when (nonzero? aid)
-      (if (mp-is-jak?)
+      (if (mp-enemy-authoritative? e-proc)
           (begin
-            ;; Host: If we hit it locally, broadcast the authoritative hit
+            ;; Owner: If we hit it locally, broadcast the authoritative hit
             (when (= arg0 *target*)
-              (format 0 "[MP-Host] Local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
+              (format 0 "[MP-Owner] Local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
               (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid))
             )
           (begin
-            ;; Client: If we hit it locally, intercept and request hit from Host
+            ;; Non-Owner: If we hit it locally, intercept and request hit from Owner
             (when (and (= arg0 *target*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
               (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
                 (when (and info (!= (-> info id) (-> e-proc incoming attack-id)))
-                  (format 0 "[MP-Client] Intercepted local hit on ~A (AID ~D). Requesting Host authority.~%" e-proc aid)
+                  (format 0 "[MP-Non-Owner] Intercepted local hit on ~A (AID ~D). Requesting authority hit.~%" e-proc aid)
                   (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
                   (return #t)
                   )
@@ -32,11 +32,11 @@
   #f)
 
 (defun mp-enemy-broadcast-death ((e-proc enemy))
-  "Broadcast death start from Host to Clients."
-  (when (mp-enemy-authoritative?)
+  "Broadcast death start from Owner to Non-Owners."
+  (when (mp-enemy-authoritative? e-proc)
     (let ((aid (mp-get-enemy-aid e-proc)))
       (when (nonzero? aid)
-        (format 0 "[MP-Host] Authoritative death started: ~A (AID ~D). Broadcasting.~%" e-proc aid)
+        (format 0 "[MP-Owner] Authoritative death started: ~A (AID ~D). Broadcasting.~%" e-proc aid)
         (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))))
   (none))
 
@@ -68,14 +68,14 @@
       (kill-prefer-falling this)
       (return 0)))
 
-  (if (mp-enemy-should-process-damage?)
+  (if (mp-enemy-should-process-damage? this)
       (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)
       0))
 
 (defun mp-enemy-dying-hijack ((this enemy))
   "Sync death start."
   (mp-enemy-broadcast-death this)
-  (if (mp-enemy-should-process-damage?)
+  (if (mp-enemy-should-process-damage? this)
       (if *old-enemy-dying* (*old-enemy-dying* this)))
   (none))
 

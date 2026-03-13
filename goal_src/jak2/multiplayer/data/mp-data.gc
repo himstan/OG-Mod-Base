@@ -28,7 +28,6 @@
     ;; Extraction of dead/collected aids (HOST ONLY)
     (if (mp-is-jak?)
         (begin
-          (mp-sync-enemies-host)
           (let ((count 0))
             ;; 1. Global Task State (Shelved)
 

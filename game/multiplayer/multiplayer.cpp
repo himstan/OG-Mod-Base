@@ -69,10 +69,8 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
           } else if (header->type == PacketType::ENEMY_SYNC &&
                      event.packet->dataLength == sizeof(PacketEnemySync)) {
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
-            if (gMultiplayerData.local_role == 1) {
-              local->enemy_count = enemy_sync->count;
-              memcpy(local->enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
-            }
+            gMultiplayerData.remote_enemy_buffer.remote_count = enemy_sync->count;
+            memcpy(gMultiplayerData.remote_enemy_buffer.remote_enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
@@ -178,15 +176,6 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
     memcpy(sync.sync_aids, local->sync_aids, sizeof(uint32_t) * 128);
     sync.clock = local->clock;
     MultiplayerManager::broadcast(gMultiplayerData, 1, sync, ENET_PACKET_FLAG_RELIABLE);
-  }
-
-  if (gMultiplayerData.local_role == 0 && local->enemy_count > 0) {
-    PacketEnemySync enemy_packet;
-    enemy_packet.header.type = PacketType::ENEMY_SYNC;
-    enemy_packet.header.sequenceNum = gMultiplayerData.sequence_num;
-    enemy_packet.count = local->enemy_count;
-    memcpy(enemy_packet.enemies, local->enemies, sizeof(MPEnemyState) * 24);
-    MultiplayerManager::broadcast(gMultiplayerData, 0, enemy_packet, ENET_PACKET_FLAG_UNSEQUENCED);
   }
 }
 
@@ -345,6 +334,44 @@ void pc_multi_receive_events(u32 event_ptr) {
   }
 }
 
+void pc_multi_send_enemies(u32 buffer_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || buffer_ptr < 0x1000) return;
+    MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
+    if (!buffer || buffer->local_count == 0) return;
+
+    PacketEnemySync enemy_packet;
+    enemy_packet.header.type = PacketType::ENEMY_SYNC;
+    enemy_packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
+    enemy_packet.count = buffer->local_count;
+    memcpy(enemy_packet.enemies, buffer->local_enemies, sizeof(MPEnemyState) * 24);
+    
+    // Broadcast to all peers (Host to Client, Client to Host)
+    int exclude_peer = (int)gMultiplayerData.local_role;
+    MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, enemy_packet, ENET_PACKET_FLAG_UNSEQUENCED);
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_send_enemies");
+  }
+}
+
+void pc_multi_receive_enemies(u32 buffer_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || buffer_ptr < 0x1000) return;
+    MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
+    if (!buffer) return;
+
+    // Copy from the C++ buffer to GOAL
+    buffer->remote_count = gMultiplayerData.remote_enemy_buffer.remote_count;
+    memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * 24);
+    // Clear C++ buffer count so we don't process stale data multiple times if no new packets arrive
+    gMultiplayerData.remote_enemy_buffer.remote_count = 0;
+  } catch (...) {
+    lg::error("[Multiplayer] Exception in pc_multi_receive_enemies");
+  }
+}
+
 void pc_multi_disconnect() {
   MultiplayerManager::disconnect(gMultiplayerData);
 }
@@ -435,6 +462,8 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-receive-state", (void*)pc_multi_receive_state);
   make_function_symbol_from_c("pc-multi-send-events", (void*)pc_multi_send_events);
   make_function_symbol_from_c("pc-multi-receive-events", (void*)pc_multi_receive_events);
+  make_function_symbol_from_c("pc-multi-send-enemies", (void*)pc_multi_send_enemies);
+  make_function_symbol_from_c("pc-multi-receive-enemies", (void*)pc_multi_receive_enemies);
   make_function_symbol_from_c("pc-multi-get-role", (void*)pc_multi_get_role);
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);
   make_function_symbol_from_c("pc-multi-get-command-line-arg", (void*)pc_multi_get_command_line_arg);

@@ -22,8 +22,8 @@
             (begin
               (let ((prev-frame 0.0))
                 (dotimes (j 24)
-                  (if (= (-> *local-info* enemies j actor-id) aid)
-                      (set! prev-frame (-> *local-info* enemies j anim-frame))
+                  (if (= (-> *mp-enemy-buffer* local-enemies j actor-id) aid)
+                      (set! prev-frame (-> *mp-enemy-buffer* local-enemies j anim-frame))
                       )
                   )
                 (set! (-> slot last-anim-frame) prev-frame)
@@ -159,7 +159,7 @@
        #t
        )
       (('attack 'touch)
-       (if (mp-enemy-should-process-damage?) (general-event-handler self proc argc message block))
+       (if (mp-enemy-should-process-damage? self) (general-event-handler self proc argc message block))
        #t
        )
       )
@@ -176,71 +176,193 @@
   :post mp-enemy-sync-post-behavior
   )
 
-(defun mp-sync-enemies-host-callback ((p process-tree))
-  (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
-      (let ((e-proc (the-as enemy proc))
-            (aid (mp-get-enemy-aid (the-as enemy proc))))
-        (when (!= aid 0)
-          ;; Authoritative Death Detection
-          (when (and (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) (not (logtest? (-> e-proc enemy-flags) (enemy-flag enemy-flag43))))
-            (mp-send-world-event MP_EVENT_ENEMY_DEATH aid)
-            (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
+(defun mp-get-enemy-auth ((enemy-aid uint))
+  "Get the authority record for an enemy AID."
+  (let ((u32-aid (the-as uint32 enemy-aid)))
+    (dotimes (i 128)
+      (let ((rec (-> *mp-enemy-auth* i)))
+        (if (= (-> rec aid) u32-aid)
+            (return rec)
             )
-          (when (and (!= (-> e-proc status) 'dead) (nonzero? (-> e-proc root)) (< (-> *local-info* enemy-count) (the-as uint 24)))
-            (mp-enemy-pack-state e-proc (-> *local-info* enemies (-> *local-info* enemy-count)) aid)
-            (1+! (-> *local-info* enemy-count))
-            )
-          )
         )
       )
     )
-  #t
+  (the-as mp-enemy-auth-record #f)
   )
 
-(defun mp-sync-enemies-host ()
-  (set! (-> *local-info* enemy-count) (the-as uint 0))
-  (iterate-process-tree *active-pool* mp-sync-enemies-host-callback *kernel-context*)
-  (none)
+(defun mp-get-free-enemy-auth ()
+  (dotimes (i 128)
+    (let ((rec (-> *mp-enemy-auth* i)))
+      (if (= (-> rec aid) 0)
+          (return rec)
+          )
+      )
+    )
+  (the-as mp-enemy-auth-record #f)
   )
 
-(defun mp-sync-enemies-client-callback ((p process-tree))
+(defun mp-enemy-authoritative? ((e-proc enemy))
+  (let ((enemy-aid (mp-get-enemy-aid e-proc)))
+    (when (nonzero? enemy-aid)
+      (let ((rec (mp-get-enemy-auth enemy-aid)))
+        (if rec
+            (return (= (-> rec owner) (-> *local-info* role)))
+            )
+        )
+      )
+    )
+  (mp-is-jak?) ;; fallback to host if unknown
+  )
+
+(defun mp-sync-enemies-update-callback ((p process-tree))
   (let ((proc (the-as process p)))
     (when (and proc (logtest? (-> proc mask) (process-mask enemy guard)) (type? proc enemy))
       (let ((e-proc (the-as enemy proc))
-            (aid (mp-get-enemy-aid (the-as enemy proc))))
-        (when (!= aid 0)
-          (let ((host-synced? #f))
-            (dotimes (i (the-as int (-> *local-info* enemy-count)))
-              (let ((slot (-> *local-info* enemies i)))
-                (when (= (-> slot actor-id) aid)
-                  (set! host-synced? #t)
-                  (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
-                    (if (not (and (-> e-proc state) (= (-> e-proc state name) 'mp-enemy-sync-idle)))
-                        (send-event e-proc 'go-mp-sync)
-                        )
-                    (if (-> e-proc state)
-                        (mp-enemy-apply-state e-proc slot)
-                        )
+            (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
+        (when (!= enemy-aid 0)
+          ;; --- Authority Resolution ---
+          (let ((rec (mp-get-enemy-auth enemy-aid))
+                (local-role (the-as uint8 (-> *local-info* role)))
+                (remote-role (the-as uint8 (if (= (-> *local-info* role) 0) 1 0)))
+                )
+            
+            ;; 1. Initialization (Load Order / Remote Claim)
+            (when (not rec)
+              (set! rec (mp-get-free-enemy-auth))
+              (when rec
+                (set! (-> rec aid) (the-as uint32 enemy-aid))
+                (set! (-> rec is-aggro) #f)
+                (set! (-> rec last-transfer-time) 0)
+                ;; Default to local owner, unless remote claims it first
+                (set! (-> rec owner) local-role)
+                (dotimes (i (the-as int (-> *mp-enemy-buffer* remote-count)))
+                  (let ((slot (-> *mp-enemy-buffer* remote-enemies i)))
+                    (when (= (-> slot actor-id) (the-as uint32 enemy-aid))
+                      ;; Remote is already broadcasting it
+                      (if (or (= (-> slot is-aggro) 1) (= (-> slot owner) remote-role))
+                          (set! (-> rec owner) remote-role)
+                          )
+                      )
                     )
-                  (return #t)
                   )
                 )
               )
-            (when (and (not host-synced?) (= (-> e-proc state name) 'mp-enemy-sync-idle))
-              (if (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))
-                  (begin
-                    (let ((ent (-> e-proc entity)))
-                      (if (and ent (nonzero? ent)) (logior! (-> ent extra perm status) (entity-perm-status dead)))
-                      )
-                    (deactivate e-proc)
+
+            (when rec
+              ;; 2. Remote Claim Processing
+              (let ((remote-slot (the-as mp-enemy-state #f)))
+                (dotimes (i (the-as int (-> *mp-enemy-buffer* remote-count)))
+                  (let ((slot (-> *mp-enemy-buffer* remote-enemies i)))
+                    (if (= (-> slot actor-id) (the-as uint32 enemy-aid))
+                        (set! remote-slot slot)
+                        )
                     )
-                  (send-event e-proc 'go-hostile)
                   )
+
+                (when remote-slot
+                  (cond
+                    ((and (= (-> remote-slot is-aggro) 1) (not (-> rec is-aggro)))
+                     ;; Remote entered combat, yield
+                     (set! (-> rec owner) remote-role)
+                     (set! (-> rec is-aggro) #t)
+                     )
+                    ((and (= (-> remote-slot owner) remote-role) (not (-> rec is-aggro)))
+                     ;; Remote claims via proximity, evaluate if we should accept
+                     (if (= remote-role 0) ;; Host always wins tie-breakers
+                         (set! (-> rec owner) remote-role)
+                         )
+                     )
+                    )
+                  )
+
+                ;; 3. Local Aggro Detection
+                (when (and (not (-> rec is-aggro)) 
+                           (or (>= (the-as int (-> e-proc focus aware)) (the-as int (enemy-aware enemy-aware-3)))
+                               (nonzero? (-> e-proc incoming attack-id))))
+                  (set! (-> rec is-aggro) #t)
+                  (set! (-> rec owner) local-role)
+                  (set! (-> rec last-transfer-time) (current-time))
+                  )
+
+                ;; 4. Local Proximity Claim
+                (when (and (not (-> rec is-aggro)) (>= (- (current-time) (-> rec last-transfer-time)) (seconds 5)) (and *target* (nonzero? *target*)))
+                  ;; Check if local is closer than remote
+                  (let ((local-dist (vector-vector-distance (-> e-proc root trans) (-> *target* control trans)))
+                        (remote-dist 99999999.0))
+                    (let ((rem-mgr (if *mp-remote-manager* (-> *mp-remote-manager* 0))))
+                      (if (and rem-mgr (nonzero? (the-as int rem-mgr)) (nonzero? (-> rem-mgr proxy-proc)))
+                          (let ((rem-proc (handle->process (-> rem-mgr proxy-proc))))
+                            (if rem-proc
+                                (set! remote-dist (vector-vector-distance (-> e-proc root trans) (-> (the-as process-drawable rem-proc) root trans)))
+                                )
+                            )
+                          )
+                      )
+
+                    (when (and (< local-dist (-> e-proc enemy-info notice-distance))
+                               (< local-dist (- remote-dist 20000.0))) ;; Must be significantly closer
+                      (when (!= (-> rec owner) local-role)
+                        (set! (-> rec owner) local-role)
+                        (set! (-> rec last-transfer-time) (current-time))
+                        (format 0 "[MP] Taking authority over ~A (AID ~D) via proximity.~%" e-proc enemy-aid)
+                        )
+                      )
+                    )
+                  )
+                
+                ;; --- Sync Execution ---
+                (if (= (-> rec owner) local-role)
+                    (begin
+                      ;; PACK LOCAL STATE
+                      (when (and (!= (-> e-proc status) 'dead) (nonzero? (-> e-proc root)) (< (-> *mp-enemy-buffer* local-count) (the-as uint 24)))
+                        (let ((slot (-> *mp-enemy-buffer* local-enemies (-> *mp-enemy-buffer* local-count))))
+                          (mp-enemy-pack-state e-proc slot enemy-aid)
+                          (set! (-> slot owner) local-role)
+                          (set! (-> slot is-aggro) (the-as uint (if (-> rec is-aggro) 1 0)))
+                          )
+                        (+! (-> *mp-enemy-buffer* local-count) 1)
+                        )
+
+                      ;; Authoritative Death Detection
+                      (when (and (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) (not (logtest? (-> e-proc enemy-flags) (enemy-flag enemy-flag43))))
+                        (mp-send-world-event MP_EVENT_ENEMY_DEATH enemy-aid)
+                        (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
+                        )
+
+                      ;; Ensure we are NOT in idle sync
+                      (if (= (-> e-proc state name) 'mp-enemy-sync-idle)
+                          (send-event e-proc 'go-hostile)
+                          )
+                      )
+                    (begin
+                      ;; APPLY REMOTE STATE
+                      (if remote-slot
+                          (begin
+                            (when (and (nonzero? (-> e-proc root)) (nonzero? (-> e-proc draw)))
+                              (if (not (and (-> e-proc state) (= (-> e-proc state name) 'mp-enemy-sync-idle)))
+                                  (send-event e-proc 'go-mp-sync)
+                                  )
+                              (if (-> e-proc state)
+                                  (mp-enemy-apply-state e-proc remote-slot)
+                                  )
+                              )
+                            )
+                          (begin
+                            ;; Remote isn't syncing it anymore, maybe it died or went out of range
+                            (if (= (-> e-proc state name) 'mp-enemy-sync-idle)
+                                (send-event e-proc 'go-hostile)
+                                )
+                            )
+                          )
+                      )
+                    )
+                )
               )
             )
+
+          ;; Check for remote death aids to cleanly despawn
           (dotimes (i (the-as int (-> *local-info* sync-aids-count)))
-            (when (= (-> *local-info* sync-aids i) aid)
+            (when (= (-> *local-info* sync-aids i) (the-as uint32 enemy-aid))
               (let ((ent (-> e-proc entity)))
                 (if (and ent (nonzero? ent)) (logior! (-> ent extra perm status) (entity-perm-status dead)))
                 )
@@ -255,9 +377,8 @@
   #t
   )
 
-(defun mp-sync-enemies-client ()
-  (when (nonzero? (-> *local-info* enemy-count))
-    (iterate-process-tree *active-pool* mp-sync-enemies-client-callback *kernel-context*)
-    )
+(defun mp-sync-enemies-update ()
+  (set! (-> *mp-enemy-buffer* local-count) (the-as uint 0))
+  (iterate-process-tree *active-pool* mp-sync-enemies-update-callback *kernel-context*)
   (none)
   )

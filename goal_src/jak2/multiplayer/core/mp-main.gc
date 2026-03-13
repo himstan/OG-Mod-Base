@@ -43,6 +43,7 @@
     ;; We always send the state packet because it contains our 'status' field
     (pc-multi-send-state (the-as uint *local-info*))
     (pc-multi-send-events (the-as uint *mp-event-buffer*))
+    (pc-multi-send-enemies (the-as uint *mp-enemy-buffer*))
     )
   (none))
 
@@ -62,6 +63,7 @@
             (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
             (pc-multi-receive-state (the-as uint *remote-info*))
             (pc-multi-receive-events (the-as uint *mp-event-buffer*))
+            (pc-multi-receive-enemies (the-as uint *mp-enemy-buffer*))
             (set! (-> *local-info* role) (pc-multi-get-role)))
           (begin
             (set! (-> *local-info* role) -1)

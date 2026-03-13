@@ -482,8 +482,8 @@
   "orb-placer.o"  ;; added
   "mp-helpers.o" ;; added
   "mp-enemy-h.o" ;; added
-  "mp-enemy-hijacks.o" ;; added
   "mp-enemy-sync.o" ;; added
+  "mp-enemy-hijacks.o" ;; added
   "mp-debug.o" ;; added
   "mp-actor.o" ;; added
   "mp-clock.o" ;; added

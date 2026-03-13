@@ -76,7 +76,9 @@ struct MPEnemyState {
   uint32_t state;
   uint32_t focus_aid;
   uint8_t attack_flag;
-  uint8_t pad[7];
+  uint8_t owner;
+  uint8_t is_aggro;
+  uint8_t pad[5];
 };
 
 struct PacketEnemySync {
