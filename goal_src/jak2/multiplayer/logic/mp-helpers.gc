@@ -96,6 +96,14 @@
     (set! (-> out-frame 0) res-frame))
     (none))
 
+(defun mp-is-local-attacker? ((proc process))
+  "Is the process either the local target or a direct child (e.g., projectile)?"
+  (if (or (not proc) (zero? proc)) (return #f))
+  (if (= proc *target*) (return #t))
+  (if (and (-> proc parent) (nonzero? (-> proc parent)) (= (ppointer->process (-> proc parent)) *target*))
+      (return #t))
+  #f)
+
 (defun mp-get-remote-target-process ()
   (let ((rem-role (if (mp-is-jak?) 1 0)))
     (let ((remote-h (-> *local-info* player-procs rem-role)))

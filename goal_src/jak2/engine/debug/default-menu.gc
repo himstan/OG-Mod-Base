@@ -4237,6 +4237,10 @@
              "Network"
              (flag "Simulate Connection Loss" *mp-debug-simulate-loss?* dm-boolean-toggle-pick-func)
              )
+           (menu
+             "Enemies"
+             (flag "Authority Debug Draw" *mp-enemy-debug-auth?* dm-boolean-toggle-pick-func)
+             )
            )
         )
       )

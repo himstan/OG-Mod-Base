@@ -7,30 +7,34 @@
   "Handle attack sync logic for both Host and Client."
   (let ((aid (mp-get-enemy-aid e-proc)))
     (when (nonzero? aid)
-      (if (mp-enemy-authoritative? e-proc)
-          (begin
-            ;; Owner: If we hit it locally, broadcast the authoritative hit
-            (when (= arg0 *target*)
-              (format 0 "[MP-Owner] Local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
-              (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid))
-            )
-          (begin
-            ;; Non-Owner: If we hit it locally, intercept and request hit from Owner
-            (when (and (= arg0 *target*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-              (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
-                (when (and info (!= (-> info id) (-> e-proc incoming attack-id)))
-                  (format 0 "[MP-Non-Owner] Intercepted local hit on ~A (AID ~D). Requesting authority hit.~%" e-proc aid)
-                  (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
-                  (return #t)
+      ;; Determine if the attacker is local (Target or one of its children/projectiles)
+      (let ((is-local-attacker? (mp-is-local-attacker? arg0)))
+
+        (if (mp-enemy-authoritative? e-proc)
+            (begin
+              ;; Owner: If we hit it locally, broadcast the authoritative hit
+              (when is-local-attacker?
+                (format 0 "[MP-Owner] Authoritative local hit on ~A (AID ~D). Broadcasting.~%" e-proc aid)
+                (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid))
+              )
+            (begin
+              ;; Non-Owner: If we hit it locally, intercept and request hit from Owner
+              (when (and is-local-attacker? (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
+                (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+                  (when (and info (!= (-> info id) (-> e-proc incoming attack-id)))
+                    (format 0 "[MP-Non-Owner] Intercepted local hit on ~A (AID ~D). Requesting authoritative hit from Owner.~%" e-proc aid)
+                    (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
+                    ;; We return #t to swallow the hit locally; the Owner will process it and sync the result back.
+                    (return #t)
+                    )
                   )
                 )
               )
             )
-          )
+        )
       )
     )
   #f)
-
 (defun mp-enemy-broadcast-death ((e-proc enemy))
   "Broadcast death start from Owner to Non-Owners."
   (when (mp-enemy-authoritative? e-proc)

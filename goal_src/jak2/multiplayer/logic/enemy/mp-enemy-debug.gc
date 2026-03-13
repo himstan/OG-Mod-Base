@@ -1,0 +1,46 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Globals ---
+(define *mp-enemy-debug-auth?* #f)
+
+;; --- Drawing ---
+
+(defun-debug mp-enemy-debug-draw-callback ((p process-tree))
+  (let ((proc (the-as process p)))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc enemy))
+      (let ((e-proc (the-as enemy proc))
+            (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
+        (when (!= enemy-aid 0)
+          (let ((rec (mp-get-enemy-auth enemy-aid))
+                (text-pos (new 'stack 'vector)))
+            (vector-copy! text-pos (-> e-proc root trans))
+            (+! (-> text-pos y) (meters 2.5)) ;; Offset above head
+            
+            (if rec
+                (let ((owner-role (-> rec owner))
+                      (is-aggro (-> rec is-aggro)))
+                  ;; Use add-debug-text-3d with format directly. 
+                  ;; The engine's debug text system copies the string into its own internal buffer.
+                  (let ((color (if (= owner-role (-> *local-info* role)) (font-color green) (font-color red))))
+                    (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                       (the-as string (format #f "AID: ~D~%Owner: Role ~D~%Aggro: ~A" enemy-aid owner-role is-aggro))
+                                       text-pos color (the-as vector2h #f))
+                    )
+                  )
+                (add-debug-text-3d #t (bucket-id debug-no-zbuf1) "NO AUTH RECORD" text-pos (font-color orange) (the-as vector2h #f))
+                )
+            )
+          )
+        )
+      )
+    )
+  #t
+  )
+
+(defun-debug mp-enemy-debug-draw ()
+  (when *mp-enemy-debug-auth?*
+    (iterate-process-tree *active-pool* mp-enemy-debug-draw-callback *kernel-context*)
+    )
+  (none)
+  )

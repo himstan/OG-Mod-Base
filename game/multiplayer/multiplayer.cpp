@@ -67,11 +67,51 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             lg::info("[Multiplayer] Received Game Event: Type {}", etype);
             gMultiplayerData.inbound_events.push_back(*evt);
           } else if (header->type == PacketType::ENEMY_SYNC &&
-                     event.packet->dataLength == sizeof(PacketEnemySync)) {
+                     event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
-            gMultiplayerData.remote_enemy_buffer.remote_count = enemy_sync->count;
-            memcpy(gMultiplayerData.remote_enemy_buffer.remote_enemies, enemy_sync->enemies, sizeof(MPEnemyState) * 24);
+            
+            // Validate count against packet size to prevent buffer overflow
+            size_t expected_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyState) * enemy_sync->count);
+            if (event.packet->dataLength < expected_size) {
+              lg::error("[Multiplayer] Malformed ENEMY_SYNC packet: size {} < expected {}", event.packet->dataLength, expected_size);
+              enet_packet_destroy(event.packet);
+              continue;
+            }
+
             gMultiplayerData.last_enemy_sync_time = current_time;
+
+            // Persistent Merge: Instead of overwriting the whole buffer, 
+            // we update specific slots or find empty ones.
+            for (uint32_t i = 0; i < enemy_sync->count; i++) {
+              MPEnemyState* incoming = &enemy_sync->enemies[i];
+              if (incoming->actor_id == 0) continue;
+
+              bool found = false;
+              for (uint32_t j = 0; j < 24; j++) {
+                if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == incoming->actor_id) {
+                  // Update existing slot
+                  memcpy(&gMultiplayerData.remote_enemy_buffer.remote_enemies[j], incoming, sizeof(MPEnemyState));
+                  gMultiplayerData.remote_enemy_buffer.remote_enemies[j].last_updated = current_time;
+                  found = true;
+                  break;
+                }
+              }
+
+              if (!found) {
+                // Find empty slot
+                for (uint32_t j = 0; j < 24; j++) {
+                  if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == 0) {
+                    memcpy(&gMultiplayerData.remote_enemy_buffer.remote_enemies[j], incoming, sizeof(MPEnemyState));
+                    gMultiplayerData.remote_enemy_buffer.remote_enemies[j].last_updated = current_time;
+                    found = true;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Tell GOAL to scan all slots (GOAL will check if actor_id != 0)
+            gMultiplayerData.remote_enemy_buffer.remote_count = 24;
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
@@ -244,6 +284,14 @@ void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
 
     current_time = enet_time_get();
 
+    // Stale Enemy Cleanup: Clear slots if not updated in 2 seconds
+    for (uint32_t i = 0; i < 24; i++) {
+      if (gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id != 0 &&
+          current_time - gMultiplayerData.remote_enemy_buffer.remote_enemies[i].last_updated > 2000) {
+        gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id = 0;
+      }
+    }
+
     // Timeout Check: If we are in-game but haven't received anything in 10s, trigger Reconnecting UI
     // Host only checks if at least one peer is connected. Client always checks.
     bool should_check_timeout = (gMultiplayerData.local_role == 1) || 
@@ -342,15 +390,23 @@ void pc_multi_send_enemies(u32 buffer_ptr) {
     MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
     if (!buffer || buffer->local_count == 0) return;
 
+    // Constrain count to buffer limits
+    uint32_t count = buffer->local_count;
+    if (count > 24) count = 24;
+
     PacketEnemySync enemy_packet;
     enemy_packet.header.type = PacketType::ENEMY_SYNC;
     enemy_packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
-    enemy_packet.count = buffer->local_count;
-    memcpy(enemy_packet.enemies, buffer->local_enemies, sizeof(MPEnemyState) * 24);
+    enemy_packet.count = count;
+    enemy_packet.timestamp = enet_time_get();
+    memcpy(enemy_packet.enemies, buffer->local_enemies, sizeof(MPEnemyState) * count);
     
-    // Broadcast to all peers (Host to Client, Client to Host)
+    // Calculate actual size: Header + count + timestamp + (N * EnemyState)
+    size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyState) * count);
+
+    // Broadcast to all peers
     int exclude_peer = (int)gMultiplayerData.local_role;
-    MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, enemy_packet, ENET_PACKET_FLAG_UNSEQUENCED);
+    MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &enemy_packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
   } catch (...) {
     lg::error("[Multiplayer] Exception in pc_multi_send_enemies");
   }

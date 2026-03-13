@@ -17,7 +17,8 @@
 
 (defun mp-find-enemy-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc process-drawable))
+    ;; Broaden mask to find suspended or differently masked enemies
+    (when (and proc (type? proc process-drawable))
       (let ((e-proc (the-as enemy proc))
             (e-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (= e-aid *mp-search-enemy-aid*)
@@ -31,3 +32,5 @@
   (set! *mp-search-enemy-res* (the-as enemy #f))
   (iterate-process-tree *active-pool* mp-find-enemy-callback *kernel-context*)
   *mp-search-enemy-res*)
+
+(define-extern mp-enemy-debug-draw (function none))

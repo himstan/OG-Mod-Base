@@ -95,6 +95,21 @@ void MultiplayerManager::disconnect(MultiplayerData& data) {
   lg::info("[Multiplayer] Disconnected.");
 }
 
+void MultiplayerManager::broadcast(MultiplayerData& data,
+                                   int channel,
+                                   const void* packet_data,
+                                   size_t size,
+                                   ENetPacketFlag flags) {
+  if (!data.host)
+    return;
+  ENetPacket* packet = enet_packet_create(packet_data, size, flags);
+  if (data.local_role == 0) {
+    enet_host_broadcast(data.host, channel, packet);
+  } else if (data.server_peer) {
+    enet_peer_send(data.server_peer, channel, packet);
+  }
+}
+
 void MultiplayerManager::send_to_peer(ENetPeer* peer,
                                       int channel,
                                       const void* packet_data,

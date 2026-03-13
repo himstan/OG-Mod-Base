@@ -79,11 +79,14 @@ struct MPEnemyState {
   uint8_t owner;
   uint8_t is_aggro;
   uint8_t pad[5];
+  uint64_t last_updated; // Cross-referenced with C++ enet_time_get()
+  uint8_t pad_align[8];  // Pad to 80 bytes (16-byte alignment from GOAL)
 };
 
 struct PacketEnemySync {
   PacketHeader header;
   uint32_t count;
+  uint64_t timestamp;
   MPEnemyState enemies[24];
 };
 

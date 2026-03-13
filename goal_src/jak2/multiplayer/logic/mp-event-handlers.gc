@@ -44,14 +44,18 @@
   (none))
 
 (defun mp-event-handler-attack-enemy ((aid uint))
+  (format 0 "[MP-WorldEvent] Received MP_EVENT_ATTACK_ENEMY for AID ~D.~%" aid)
   (let ((proc (find-enemy-by-aid aid)))
-    (when (and proc (nonzero? proc))
-      (let ((attacker (mp-get-remote-target-process)))
-        (format 0 "[MP-WorldEvent] Applying Authoritative hit to ~A from remote attacker ~A (AID ~D).~%" proc attacker aid)
-        (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5))))))))
+    (if (and proc (nonzero? proc))
+        (let ((attacker (mp-get-remote-target-process)))
+          (format 0 "[MP-WorldEvent] Applying Authoritative hit to ~A from remote attacker ~A (AID ~D).~%" proc attacker aid)
+          (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5))))))
+        (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for AID ~D!~%" aid))
+    )
   (none))
 
 (defun mp-event-handler-enemy-death ((aid uint))
+  (format 0 "[MP-WorldEvent] Received MP_EVENT_ENEMY_DEATH for AID ~D.~%" aid)
   (let ((proc (find-enemy-by-aid aid))
         (ent (entity-by-aid aid)))
     
@@ -60,11 +64,14 @@
       (logior! (-> ent extra perm status) (entity-perm-status dead))
       )
 
-    (when (and proc (nonzero? proc))
-      (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
-      ;; Send a special attack event that our hijack will catch to force death transition
-      (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))
-      )
+    (if (and proc (nonzero? proc))
+        (begin
+          (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
+          ;; Send a special attack event that our hijack will catch to force death transition
+          (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))
+          )
+        (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for death sync! AID ~D~%" aid)
+        )
     )
   (none))
 
@@ -103,4 +110,45 @@
   (when *scene-player*
     (format 0 "[MP-WorldEvent] All players skipped. Aborting locally.~%")
     (send-event (ppointer->process *scene-player*) 'abort))
+  (none))
+
+(defun mp-event-handler-authority-request ((aid uint))
+  "Remote side wants authority over an enemy."
+  (let ((rec (mp-get-enemy-auth aid))
+        (local-role (the-as uint8 (-> *local-info* role)))
+        (remote-role (the-as uint8 (if (= (-> *local-info* role) 0) 1 0))))
+    (when rec
+      (format 0 "[MP-WorldEvent] Remote (Role ~D) requested authority over AID ~D.~%" remote-role aid)
+      ;; Decision Logic:
+      ;; If we are Host (0), we evaluate.
+      ;; If we are Client (1), we always yield to Host.
+      (let ((should-yield? #f))
+        (if (= local-role 0)
+            ;; Host logic: Yield if we aren't currently aggroed.
+            (if (not (-> rec is-aggro))
+                (set! should-yield? #t))
+            ;; Client logic: Always yield to Host.
+            (set! should-yield? #t))
+        
+        (when should-yield?
+          (format 0 "[MP-WorldEvent] Yielding authority of AID ~D to remote.~%" aid)
+          (set! (-> rec owner) remote-role)
+          (set! (-> rec last-transfer-time) (current-time)) ;; Prevent re-acquisition during handover
+          (mp-send-world-event MP_EVENT_ENEMY_AUTHORITY_ACK aid)
+          )
+        )
+      )
+    )
+  (none))
+
+(defun mp-event-handler-authority-ack ((aid uint))
+  "Remote side granted us authority over an enemy."
+  (let ((rec (mp-get-enemy-auth aid))
+        (local-role (the-as uint8 (-> *local-info* role))))
+    (when rec
+      (format 0 "[MP-WorldEvent] Remote granted authority over AID ~D. Taking ownership.~%" aid)
+      (set! (-> rec owner) local-role)
+      (set! (-> rec last-transfer-time) (current-time))
+      )
+    )
   (none))
