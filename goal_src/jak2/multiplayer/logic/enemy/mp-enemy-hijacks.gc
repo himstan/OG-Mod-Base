@@ -17,35 +17,41 @@
           (rec (mp-get-enemy-auth aid)))
       
       (when rec
-        (if (mp-enemy-authoritative? e-proc)
-            (begin
-              ;; OWNER: If we hit it locally, broadcast the authoritative hit
-              (when (and is-local-attacker? (not *mp-processing-remote-event*))
-                (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+        ;; THROTTLING: If we've already processed this attack ID locally, block it entirely
+        (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+          (when (and info (= (-> info id) (-> rec last-local-attack-id)))
+            ;; (format 0 "[MP-Hit-Debug]   >> Throttled local repeat of AttackID ~D~%" (-> info id))
+            (return #t) ;; Block the engine handler
+            )
+          
+          (if (mp-enemy-authoritative? e-proc)
+              (begin
+                ;; OWNER: If we hit it locally, broadcast the authoritative hit
+                (when (and is-local-attacker? (not *mp-processing-remote-event*))
                   ;; Only broadcast if it's a NEW attack ID
                   (when (and info (!= (-> info id) (-> rec last-attack-id)))
                     (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ATTACK_ENEMY for AID ~D (AttackID ~D)~%" aid (-> info id))
                     (set! (-> rec last-attack-id) (-> info id))
+                    (set! (-> rec last-local-attack-id) (-> info id))
                     (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
                     )
                   )
                 )
-              )
-            (begin
-              ;; NON-OWNER: If we hit it locally, intercept and request hit from Owner
-              (when (and is-local-attacker? (not *mp-processing-remote-event*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-                (let ((info (if (and arg3 (nonzero? arg3)) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+              (begin
+                ;; NON-OWNER: If we hit it locally, intercept and request hit from Owner
+                (when (and is-local-attacker? (not *mp-processing-remote-event*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
                   ;; Only request if it's a new attack ID to avoid spamming the owner
                   (when (and info (!= (-> info id) (-> rec last-attack-id)))
                     (format 0 "[MP-Hit-Debug]   >> [NON-OWNER] REQUESTING hit for AID ~D (AttackID ~D)~%" aid (-> info id))
                     (set! (-> rec last-attack-id) (-> info id))
+                    (set! (-> rec last-local-attack-id) (-> info id))
                     (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
-                    (return #t)
+                    ;; (return #t) ;; Intercept: Don't let the engine process it yet (Host will send it back)
                     )
                   )
                 )
               )
-            )
+          )
         )
       )
     )
@@ -76,13 +82,21 @@
      (return #t)
      )
     (('attack)
-     (format 0 "[MP-Hit-Debug] Hijack caught 'attack event for ~A from ~A~%" this arg0)
+     ;; (format 0 "[MP-Hit-Debug] Hijack caught 'attack event for ~A from ~A~%" this arg0)
      (if (mp-enemy-broadcast-attack this arg0 arg3)
          (return #t)
          )
+     ;; For attacks that weren't intercepted/throttled, always allow the original handler to run
+     ;; so the enemy can transition to its 'hit' or 'knocked' states locally.
+     (if *old-general-event-handler* (return (*old-general-event-handler* this arg0 arg1 arg2 arg3)))
      )
     )
-  (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f))
+  
+  ;; For all other events (notice, touch, etc.), only process if authoritative
+  (if (mp-enemy-should-process-damage? this)
+      (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f)
+      #f)
+  )
 
 (defun mp-enemy-take-damage-hijack ((this enemy) (arg0 process) (arg1 event-message-block))
   "Authority check for enemy damage."
@@ -93,9 +107,20 @@
       (kill-prefer-falling this)
       (return 0)))
 
-  (if (mp-enemy-should-process-damage? this)
+  (if (mp-enemy-authoritative? this)
       (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)
-      0))
+      (begin
+        ;; NON-OWNER: Allow local flinch but revert HP
+        (let ((old-hp (-> this hit-points)))
+          (let ((res (if *old-enemy-take-damage* (*old-enemy-take-damage* this arg0 arg1) 0)))
+            ;; Revert health - the Host will send the real value later
+            (set! (-> this hit-points) old-hp)
+            res
+            )
+          )
+        )
+      )
+  )
 
 (defun mp-enemy-dying-hijack ((this enemy))
   "Sync death start."

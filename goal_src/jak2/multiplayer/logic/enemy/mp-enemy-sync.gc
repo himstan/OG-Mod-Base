@@ -55,6 +55,16 @@
   "Apply remote sync data to local enemy proxy (Non-Owner Side)."
   ;; GUARD: Don't apply to dead or uninitialized processes
   (when (and e-proc (nonzero? e-proc) (not (logtest? (-> e-proc mask) (process-mask sleep))) (!= (-> e-proc status) 'dead))
+    
+    ;; REACTIVE STATE GUARD: 
+    ;; If the enemy is currently in a hit or knocked state locally, 
+    ;; DO NOT snap position/anim. Let the local engine finish the reaction.
+    (let ((cur-state (if (-> e-proc state) (-> e-proc state name) #f)))
+      (when (or (= cur-state 'hit) (= cur-state 'knocked) (= cur-state 'knocked-vicinity))
+        (return #f)
+        )
+      )
+
     ;; Position & Rotation
     (set! (-> e-proc root trans x) (-> slot x))
     (set! (-> e-proc root trans y) (-> slot y))
@@ -93,13 +103,9 @@
       )
 
     (when (and (= (-> slot state) 2) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-      (logior! (-> e-proc enemy-flags) (enemy-flag death-start))
-      (when (nonzero? (-> e-proc draw))
-        (set! (-> e-proc draw death-effect) (the-as uint 1))
-        (set! (-> e-proc draw death-timer) (the-as uint 60))
-        (set! (-> e-proc draw death-timer-org) (the-as uint 60))
-        (set! (-> e-proc draw death-draw-overlap) (the-as uint 4))
-        )
+      ;; Use the engine's built-in death logic instead of manual field manipulation to avoid crashes
+      (set! (-> e-proc hit-points) 0)
+      (send-event e-proc 'die)
       )
 
     (if (type? (-> e-proc root) collide-shape)
@@ -136,7 +142,7 @@
        (kill-prefer-falling self)
        #t
        )
-      (('attack 'touch)
+      (('attack)
        (let ((info (if (and block (nonzero? block) (nonzero? (-> block param 1))) (the-as attack-info (-> block param 1)) (the-as attack-info #f))))
          (if (and info (= (-> info mode) 'mp-death))
              (begin
@@ -146,7 +152,7 @@
                )
              )
          )
-       (if (mp-enemy-should-process-damage? self) (general-event-handler self proc argc message block))
+       (general-event-handler self proc argc message block)
        #t
        )
       )
@@ -468,9 +474,9 @@
                         )
 
                       ;; Authoritative Death Detection
-                      (when (and (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) (not (logtest? (-> e-proc enemy-flags) (enemy-flag enemy-flag43))))
+                      (when (and (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) (not (logtest? (-> e-proc enemy-flags) (enemy-flag mp-synced-death))))
                         (mp-send-world-event MP_EVENT_ENEMY_DEATH enemy-aid)
-                        (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
+                        (logior! (-> e-proc enemy-flags) (enemy-flag mp-synced-death))
                         )
 
                       ;; Ensure we are NOT in idle sync
@@ -485,13 +491,17 @@
                             (when (nonzero? (-> e-proc root))
                               (if (not (mp-enemy-in-sync-idle? e-proc))
                                   (begin
-                                    (if (and (-> e-proc state) (!= (-> e-proc state name) #f))
-                                        (begin
-                                          (format 0 "[MP-Sync] Enemy ~A (AID ~D) NOT in sync state (Current: ~A). Sending 'go-mp-sync.~%" 
-                                                  e-proc enemy-aid (-> e-proc state name))
-                                          (send-event e-proc 'go-mp-sync)
+                                    (let ((cur-state (if (-> e-proc state) (-> e-proc state name) #f)))
+                                      ;; GUARD: If we are in a reactive state locally, DO NOT force back to sync-idle.
+                                      ;; This lets the local engine finish its knockdown/flinch animations.
+                                      (if (and cur-state (not (member cur-state '(hit knocked knocked-vicinity stagger get-up-front get-up-back die die-falling die-fast die-now))))
+                                          (begin
+                                            (format 0 "[MP-Sync] Enemy ~A (AID ~D) in thinking state (~A). Snapping back to 'go-mp-sync.~%" 
+                                                    e-proc enemy-aid cur-state)
+                                            (send-event e-proc 'go-mp-sync)
+                                            )
                                           )
-                                        )
+                                      )
                                     )
                                   )
                               
@@ -510,7 +520,7 @@
                                       (begin
                                         (format 0 "[MP] Remote sync stale for ~A (AID ~D) during DEATH. Severing sync and killing locally.~%" e-proc enemy-aid)
                                         (set! (-> rec owner) local-role)
-                                        (logior! (-> e-proc enemy-flags) (enemy-flag enemy-flag43))
+                                        (logior! (-> e-proc enemy-flags) (enemy-flag mp-synced-death))
                                         (set! (-> e-proc hit-points) 0)
                                         (send-event e-proc 'die)
                                         )

@@ -64,7 +64,7 @@
                           (let ((perm (-> ent perm))
                                 (proc (-> ent process)))
                             (when (or (logtest? (-> perm status) (entity-perm-status dead))
-                                      (and proc (nonzero? proc) (type? proc enemy) (logtest? (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))))
+                                      (and proc (nonzero? proc) (type? proc enemy) (logtest? (-> (the-as enemy proc) enemy-flags) (enemy-flag mp-synced-death))))
                               (let ((already-in? #f))
                                 (dotimes (j count)
                                   (if (= (-> *local-info* sync-aids j) (the-as uint (-> ent aid)))

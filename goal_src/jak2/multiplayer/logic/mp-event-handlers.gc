@@ -71,7 +71,7 @@
         (begin
           (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
           ;; Mark as already synced so we don't echo it back if we take ownership later
-          (logior! (-> (the-as enemy proc) enemy-flags) (enemy-flag enemy-flag43))
+          (logior! (-> (the-as enemy proc) enemy-flags) (enemy-flag mp-synced-death))
           ;; Send a special attack event that our hijack will catch to force death transition
           (set! *mp-processing-remote-event* #t)
           (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))

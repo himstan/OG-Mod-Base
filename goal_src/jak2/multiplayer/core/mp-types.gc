@@ -202,6 +202,7 @@
    (last-transfer-time time-frame)
    (last-remote-seen   time-frame)
    (last-attack-id     uint32)
+   (last-local-attack-id uint32)
    ;; --- Animation Fidelity Tracking ---
    (client-speed       float)
    (anim-speed         float)

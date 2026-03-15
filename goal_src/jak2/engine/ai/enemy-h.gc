@@ -60,6 +60,7 @@
    (enemy-flag41 41)
    (enemy-flag42 42)
    (enemy-flag43 43)
+   (mp-synced-death 44)
    )
 ;; ---enemy-flag
 
