@@ -142,20 +142,8 @@
        (kill-prefer-falling self)
        #t
        )
-      (('attack)
-       (let ((info (if (and block (nonzero? block) (nonzero? (-> block param 1))) (the-as attack-info (-> block param 1)) (the-as attack-info #f))))
-         (if (and info (= (-> info mode) 'mp-death))
-             (begin
-               (set! (-> self hit-points) 0)
-               (kill-prefer-falling self)
-               (return #t)
-               )
-             )
-         )
-       (general-event-handler self proc argc message block)
-       #t
-       )
       )
+    (general-event-handler self proc argc message block)
     )
   :code (behavior ()
     (let ((current-anim-index -1)
@@ -333,7 +321,10 @@
                 (set! (-> rec is-aggro) #f)
                 (set! (-> rec last-transfer-time) 0)
                 (set! (-> rec last-remote-seen) (current-time))
-                
+                (set! (-> rec last-attack-id) 0)
+                (set! (-> rec last-local-attack-id) 0)
+                (set! (-> rec last-local-attack-time) 0)
+                (set! (-> rec last-anim-index) -1)
                 ;; Default to local owner
                 (set! (-> rec owner) local-role)
                 
