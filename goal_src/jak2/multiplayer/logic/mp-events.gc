@@ -50,7 +50,9 @@
        )
       ((= state (the-as uint (mp-scene-state skipped)))
        (format 0 "[MP-SceneEvent] Logic: All-Skipped~%")
+       (set! *mp-processing-remote-event* #t)
        (mp-event-handler-scene-skipped (the uint 0))
+       (set! *mp-processing-remote-event* #f)
        )
       (else
        (format 0 "[MP-SceneEvent] Logic: Unknown State ~D~%" state)

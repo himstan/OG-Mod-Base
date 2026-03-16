@@ -48,6 +48,12 @@ struct PacketPlayerState {
   uint64_t clock;
   float last_anim_frame;
   float last_sidekick_frame;
+  // World Sync Fields (Continuous Sync)
+  float money;
+  float gems;
+  float skill;
+  uint8_t task_mask[64];
+  uint8_t active_task_mask[64];
 };
 
 struct PacketGameEvent {
@@ -100,6 +106,7 @@ struct PacketFullSync {
   uint32_t host_node;
   char host_continue[32];
   uint8_t task_mask[64];
+  uint8_t active_task_mask[64];
   uint32_t sync_aids_count;
   uint32_t riding;
   uint32_t sync_aids[128];

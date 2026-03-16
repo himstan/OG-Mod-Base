@@ -161,6 +161,7 @@
 
     ;; 4. High-Frequency Local Updates
     (mp-extract-local-stats)
+    (mp-apply-remote-world-state)
     
     ;; Process inbound events AFTER receiving them from bridge
     (mp-process-inbound-events)

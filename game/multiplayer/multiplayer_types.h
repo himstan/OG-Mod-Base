@@ -53,7 +53,22 @@ struct RemotePlayerInfoGOAL {
   uint64_t clock;
   float last_anim_frame;
   float last_sidekick_frame;
-  uint8_t pad[8];
+  uint8_t pad[4];
+  // World Sync Fields (Mirrored from local-player-info)
+  float money;
+  float gems;
+  float skill;
+  float sync_money;
+  float sync_gems;
+  float sync_skill;
+  uint32_t sync_flag;
+  uint32_t host_task;
+  uint32_t host_node;
+  uint8_t host_continue[32];
+  uint8_t task_mask[64];
+  uint8_t active_task_mask[64];
+  uint32_t sync_aids_count;
+  uint32_t sync_aids[128];
 };
 
 struct LocalPlayerInfoGOAL {
@@ -83,6 +98,7 @@ struct LocalPlayerInfoGOAL {
   uint32_t host_node;
   uint8_t host_continue[32];
   uint8_t task_mask[64];
+  uint8_t active_task_mask[64];
   uint32_t sync_aids_count;
   uint32_t sync_aids[128];
   uint64_t player_procs[2];

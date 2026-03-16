@@ -59,6 +59,14 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
               entity.last_sidekick_frame = state->last_sidekick_frame;
               entity.clock = state->clock;
               entity.last_sequence_num = state->header.sequenceNum;
+
+              if (state->netId == 0) { // If this is the Host
+                remote->money = state->money;
+                remote->gems = state->gems;
+                remote->skill = state->skill;
+                memcpy(remote->task_mask, state->task_mask, 64);
+                memcpy(remote->active_task_mask, state->active_task_mask, 64);
+              }
             }
           } else if (header->type == PacketType::EVENT_GAME &&
                      event.packet->dataLength == sizeof(PacketGameEvent)) {
@@ -128,6 +136,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             local->host_node = full_sync->host_node;
             memcpy(local->host_continue, full_sync->host_continue, 32);
             memcpy(local->task_mask, full_sync->task_mask, 64);
+            memcpy(local->active_task_mask, full_sync->active_task_mask, 64);
             local->sync_aids_count = (full_sync->sync_aids_count > 128) ? 128 : full_sync->sync_aids_count;
             local->riding = full_sync->riding;
             memcpy(local->sync_aids, full_sync->sync_aids, sizeof(uint32_t) * 128);
@@ -193,6 +202,11 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.sidekick_frame = local->sidekick_frame;
   local_state.last_sidekick_frame = local->last_sidekick_frame;
   local_state.clock = local->clock;
+  local_state.money = local->money;
+  local_state.gems = local->gems;
+  local_state.skill = local->skill;
+  memcpy(local_state.task_mask, local->task_mask, 64);
+  memcpy(local_state.active_task_mask, local->active_task_mask, 64);
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
 
   if (gMultiplayerData.local_role == 0 && gMultiplayerData.pending_full_sync) {
@@ -212,6 +226,7 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
     sync.host_node = local->host_node;
     memcpy(sync.host_continue, local->host_continue, 32);
     memcpy(sync.task_mask, local->task_mask, 64);
+    memcpy(sync.active_task_mask, local->active_task_mask, 64);
     sync.sync_aids_count = (local->sync_aids_count > 128) ? 128 : local->sync_aids_count;
     sync.riding = local->riding;
     memcpy(sync.sync_aids, local->sync_aids, sizeof(uint32_t) * 128);

@@ -1282,6 +1282,8 @@
           )
         )
       )
+    (set! *mp-local-wants-skip* #f)
+    (set! *mp-remote-wants-skip* #f)
     (if (and (-> self wait) *target* (focus-test? *target* grabbed))
         (go-virtual release)
         )
@@ -1585,57 +1587,76 @@
 ;; WARN: Using new Jak 2 rtype-of
 ;; WARN: Using new Jak 2 rtype-of
 ;; WARN: Using new Jak 2 rtype-of
-(defbehavior scene-player-init scene-player ((arg0 object) (arg1 symbol) (arg2 string))
+(defbehavior scene-player-init scene-player ((scene-obj object) (wait-sym symbol) (continue-name string))
   "`object` arg can be an `(array scene)`, `pair of scene` or a `scene`"
   ;; Force dismount if we are in target-ride-along (Daxter on Jak)
   (when (and *target* (-> *target* next-state) (= (-> *target* next-state name) 'target-ride-along))
     (format 0 "[MP-Scene] Force dismounting from target-ride-along...~%")
     (send-event *target* 'change-mode 'normal #f)
     )
+
+  ;; og:preserve-this check if we should cancel this scene early
+  (let ((first-scene-obj (cond
+                           ((type? scene-obj string)
+                            (scene-lookup (the-as string scene-obj))
+                            )
+                           ((type? scene-obj array)
+                            (-> (the-as (array scene) scene-obj) 0)
+                            )
+                           ((type? scene-obj pair)
+                            (the-as scene (car (the-as pair scene-obj)))
+                            )
+                           (else
+                             (the-as scene scene-obj)
+                             )
+                           )
+                         )
+        )
+    (when (and (type? first-scene-obj scene) (string= (-> first-scene-obj name) *mp-last-scene-name*))
+      (format 0 "[MP-Scene] Cancelling scene '~S' as it is the same as the last one.~%" (-> first-scene-obj name))
+      (deactivate self)
+      (return #f)
+      )
+    )
+
   (process-entity-set! self (the-as entity #f))
   ;; og:preserve-this changed from 512
   (stack-size-set! (-> self main-thread) 768)
   (set! (-> self root) (new 'process 'trsqv))
-  (case (rtype-of arg0)
+  (case (rtype-of scene-obj)
     ((array)
-     (set! (-> self scene-list) (new 'process 'boxed-array scene (-> (the-as (array scene) arg0) length)))
-     (dotimes (v1-7 (-> self scene-list length))
-       (set! (-> self scene-list v1-7) (-> (the-as (array scene) arg0) v1-7))
+     (let ((arg-array (the-as (array scene) scene-obj)))
+       (set! (-> self scene-list) (new 'process 'boxed-array scene (-> arg-array length)))
+       (dotimes (i (-> self scene-list length))
+         (set! (-> self scene-list i) (-> arg-array i))
+         )
        )
      )
     ((pair)
-     (let ((s3-0 (method-of-type array new))
-           (s2-0 'process)
-           (s1-0 array)
-           (s0-0 scene)
-           (a0-14 arg0)
-           )
-       (set! (-> self scene-list)
-             (the-as (array scene) (s3-0 s2-0 s1-0 s0-0 ((method-of-type (rtype-of a0-14) length) a0-14)))
-             )
-       )
-     (dotimes (s3-1 (-> self scene-list length))
-       (set! (-> self scene-list s3-1) (the-as scene (ref arg0 s3-1)))
+     (let ((arg-pair (the-as pair scene-obj)))
+       (set! (-> self scene-list) (new 'process 'boxed-array scene (length arg-pair)))
+       (dotimes (i (-> self scene-list length))
+         (set! (-> self scene-list i) (the-as scene (ref arg-pair i)))
+         )
        )
      )
     (else
       (set! (-> self scene-list) (new 'process 'boxed-array scene 1))
-      (set! (-> self scene-list 0) (the-as scene arg0))
+      (set! (-> self scene-list 0) (the-as scene scene-obj))
       )
     )
-  (set! (-> self preload-continue) arg2)
+  (set! (-> self preload-continue) continue-name)
   (set! (-> self camera) (the-as handle #f))
-  (set! (-> self wait) arg1)
+  (set! (-> self wait) wait-sym)
   (set! (-> self pre-cut-frame) #f)
-  (set! (-> self aborted?) #f)
   (set! (-> self draw) (new 'process 'draw-control self #f))
   (set! (-> self skel) (new 'process 'joint-control 48))
   (set! (-> self anim) (new 'static 'spool-anim))
   (set! (-> self next-anim) (new 'static 'spool-anim))
-  (dotimes (s4-1 (-> self scene-list length))
-    (let ((v1-29 (scene-lookup (-> self scene-list s4-1))))
-      (if v1-29
-          (set! (-> self scene-list s4-1) v1-29)
+  (dotimes (i (-> self scene-list length))
+    (let ((sc (scene-lookup (-> self scene-list i))))
+      (if sc
+          (set! (-> self scene-list i) sc)
           )
       )
     )
@@ -1651,28 +1672,27 @@
       (set! (-> self scene) #f)
       )
     )
+  (set! (-> self aborted?) (if (and (-> self scene) (string= (-> self scene name) *mp-last-scene-name*)) #t #f))
   (set! (-> self gui-id) (add-process
                            *gui-control*
                            self
                            (gui-channel movie)
                            (gui-action play)
-                           (the-as string (cond
-                                            ((= (rtype-of arg0) string)
-                                             (empty)
-                                             arg0
-                                             )
-                                            (else
+                           (the-as string (if (= (rtype-of scene-obj) string)
+                                              scene-obj
                                               "movie"
-                                              )
-                                            )
-                                   )
+                                              ))
                            -99.0
                            0
                            )
         )
   (set! *scene-player* (the-as (pointer scene-player) (process->ppointer self)))
 
-  (when (and (not *mp-processing-remote-event*) (-> self scene))
+  (when (-> self scene)
+    (copy-string<-string *mp-last-scene-name* (-> self scene name))
+    )
+
+  (when (and (not (or *mp-processing-remote-event* *mp-remote-wants-skip* *mp-local-wants-skip*)) (-> self scene) (not (-> self aborted?)))
     (format 0 "[MP-Scene] Broadcasting scene start: ~S~%" (-> self scene name))
     (mp-send-scene-event (mp-scene-state started) (-> self scene name)))
 
@@ -1683,7 +1703,7 @@
   (set-setting! 'speech-control #f 0.0 0)
   (set-setting! 'allow-progress #f 0.0 0)
   (apply-settings *setting-control*)
-  (go-virtual wait arg1)
+  (go-virtual wait wait-sym)
   (none)
   )
 

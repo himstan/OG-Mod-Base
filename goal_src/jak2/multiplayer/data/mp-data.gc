@@ -29,7 +29,34 @@
     (if (mp-is-jak?)
         (begin
           (let ((count 0))
-            ;; 1. Global Task State (Shelved)
+            ;; 1. Global Task State (Syncing the entire node closure mask)
+            (let ((mask (-> *local-info* task-mask)))
+              (let ((nodes (-> *game-info* sub-task-list)))
+                (when nodes
+                  (dotimes (i (min 512 (-> nodes length)))
+                    (let ((byte-idx (/ i 8))
+                          (bit-idx (logand i 7))
+                          (node (-> nodes data i)))
+                      (let ((flags (-> node flags)))
+                        (if (logtest? flags (game-task-node-flag closed))
+                            (logior! (-> mask byte-idx) (ash 1 bit-idx))
+                            (logand! (-> mask byte-idx) (lognot (ash 1 bit-idx)))
+                            )
+                        ;; Use the higher bits of the mask for 'active' status if needed, 
+                        ;; but for now let's just stick to 1 bit per node for 'closed'.
+                        ;; We'll use a second mask for 'active' (currently open) nodes.
+                        (let ((active-mask (-> *local-info* active-task-mask)))
+                           (if (task-node-open? (the-as game-task-node i))
+                               (logior! (-> active-mask byte-idx) (ash 1 bit-idx))
+                               (logand! (-> active-mask byte-idx) (lognot (ash 1 bit-idx)))
+                               )
+                           )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
 
             ;; 2. Continue Point Sync
             (let ((dst (-> *local-info* host-continue)))
