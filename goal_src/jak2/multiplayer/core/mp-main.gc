@@ -172,5 +172,6 @@
     (mp-update-camera-settings)
 
     (mp-draw-anim-debug)
+    (mp-draw-task-debug)
 
     (none)))

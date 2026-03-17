@@ -4241,6 +4241,10 @@
              "Enemies"
              (flag "Authority Debug Draw" *mp-enemy-debug-auth?* dm-boolean-toggle-pick-func)
              )
+          (menu
+            "Tasks"
+            (flag "Task Debug Draw" *mp-debug-task-sync* dm-boolean-toggle-pick-func)
+            )
            )
         )
       )

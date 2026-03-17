@@ -8,7 +8,14 @@
 
 (defun-debug mp-enemy-debug-draw-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc enemy))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy collectable)) (type? proc enemy) (not (type? proc civilian)))
+      (let ((is-culled (or (logtest? (-> (the-as process-drawable proc) draw status) (draw-control-status no-draw)) 
+                           (= (if (-> (the-as enemy proc) state) (-> (the-as enemy proc) state name) #f) 'inactive)
+                           (= (if (-> (the-as enemy proc) state) (-> (the-as enemy proc) state name) #f) 'process-drawable-art-error))))
+        (when is-culled
+          (return #t)
+          )
+        )
       (let ((e-proc (the-as enemy proc))
             (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (!= enemy-aid 0)

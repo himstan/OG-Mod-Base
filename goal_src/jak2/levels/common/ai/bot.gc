@@ -900,6 +900,17 @@
          )
        )
      )
+    (('mp-play-scene)
+     (scene-play this (the-as string (-> arg3 param 0)) #f)
+     )
+    (('mp-force-scene-step)
+      (let ((scene-name (the-as string (-> arg3 param 0))))
+        (when (scene-play this scene-name #f)
+          (skip-waypoint this)
+          #t
+          )
+        )
+      )
     (('draw)
      (cond
        ((-> arg3 param 0)
@@ -1171,17 +1182,23 @@ If the player is too far, play a warning speech."
   (none)
   )
 
-(defmethod scene-play ((this bot) (scene string) (grab? symbol))
-  "Spawn a [[scene-player]] process for the given scene."
-  (when (and (process-grab? this #t) (or grab? (process-grab? *target* #t)))
-    (process-grab? this #f)
-    (if (not grab?)
-        (process-grab? *target* #f)
-        )
-    (set! (-> this scene-player-handle)
-          (ppointer->handle (process-spawn scene-player :init scene-player-init scene #t #f))
-          )
-    #t
+(defmethod scene-play ((this bot) (scene string) (arg2 symbol))
+  (cond
+    ((handle->process (-> this scene-player-handle))
+     #f
+     )
+    ((and *scene-player* (type? (ppointer->process *scene-player*) scene-player))
+     ;; Link to the existing global scene player if it's already running!
+     (set! (-> this scene-player-handle) (ppointer->handle *scene-player*))
+     #t
+     )
+    (else
+      (process-grab? this #f)
+      (set! (-> this scene-player-handle)
+            (ppointer->handle (process-spawn scene-player :init scene-player-init scene #t #f))
+            )
+      #t
+      )
     )
   )
 

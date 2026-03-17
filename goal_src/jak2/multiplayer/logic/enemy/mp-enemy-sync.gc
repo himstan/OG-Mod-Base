@@ -56,11 +56,18 @@
   ;; GUARD: Don't apply to dead or uninitialized processes
   (when (and e-proc (nonzero? e-proc) (not (logtest? (-> e-proc mask) (process-mask sleep))) (!= (-> e-proc status) 'dead))
     
+    ;; HP drops or local triggers can start death.
+    ;; Once death has started locally, DO NOT let remote state override position or animations.
+    ;; This allows local physics (die-falling) to finish properly.
+    (when (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))
+      (return #f)
+      )
+
     ;; REACTIVE STATE GUARD: 
     ;; If the enemy is currently in a hit or knocked state locally, 
     ;; DO NOT snap position/anim. Let the local engine finish the reaction.
     (let ((cur-state (if (-> e-proc state) (-> e-proc state name) #f)))
-      (when (or (= cur-state 'hit) (= cur-state 'knocked) (= cur-state 'knocked-vicinity))
+      (when (or (= cur-state 'hit) (= cur-state 'knocked) (= cur-state 'knocked-vicinity) (= cur-state 'stagger))
         (return #f)
         )
       )
@@ -302,10 +309,28 @@
 
 (defun mp-sync-enemies-update-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy)) (type? proc enemy))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy collectable)) (type? proc enemy) (not (type? proc civilian)))
       (let ((e-proc (the-as enemy proc))
             (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (!= enemy-aid 0)
+          ;; --- Culling Guard ---
+          ;; If enemies are culled locally (inactive/no-draw) or in an error state, release authority and skip.
+          (let ((cur-state (if (-> e-proc state) (-> e-proc state name) #f)))
+            (let ((is-culled (or (= cur-state 'inactive) 
+                                 (= cur-state 'process-drawable-art-error)
+                                 (logtest? (-> e-proc draw status) (draw-control-status no-draw)))))
+              (when is-culled
+                (let ((rec (mp-get-enemy-auth enemy-aid)))
+                  (when rec
+                    (format 0 "[MP-Sync] Cleaning up culled/errored enemy ~A (AID ~D) in state ~A.~%" e-proc enemy-aid cur-state)
+                    (set! (-> rec aid) (the-as uint32 0))
+                    )
+                  )
+                (return #t)
+                )
+              )
+            )
+
           ;; --- Authority Resolution ---
           (let ((rec (mp-get-enemy-auth enemy-aid))
                 (local-role (the-as uint8 (-> *local-info* role)))

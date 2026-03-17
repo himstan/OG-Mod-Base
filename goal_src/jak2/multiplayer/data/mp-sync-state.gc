@@ -95,11 +95,6 @@
 (defun mp-apply-remote-world-state ()
   "Continually apply remote world state (Money, Gems, Task Nodes)"
   (when (and (mp-is-daxter?) *multi-sync-enabled?*)
-    ;; 1. Global Stats
-    (set! (-> *game-info* money) (-> *local-info* sync-money))
-    (set! (-> *game-info* gem) (-> *local-info* sync-gems))
-    (set! (-> *game-info* skill) (-> *local-info* sync-skill))
-
     ;; 2. Task Nodes Sync
     (let ((mask (-> *remote-info* task-mask))
           (active-mask (-> *remote-info* active-task-mask)))

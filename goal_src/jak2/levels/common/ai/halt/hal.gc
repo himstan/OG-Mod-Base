@@ -343,30 +343,40 @@
   )
 
 (defmethod scene-play ((this hal) (arg0 string) (arg1 symbol))
-  "Spawn a [[scene-player]] process for the given scene."
-  (when (and (process-grab? this #t) (or arg1 (process-grab? *target* #t)))
-    (countdown (s3-0 3)
-      (let ((a0-4 (handle->process (-> this slave-handle s3-0))))
-        (if (and a0-4 (not (process-grab? a0-4 #t)))
-            (return #f)
-            )
-        )
-      )
-    (process-grab? this #f)
-    (if (not arg1)
-        (process-grab? *target* #f)
-        )
-    (countdown (s4-1 3)
-      (let ((a0-10 (handle->process (-> this slave-handle s4-1))))
-        (if a0-10
-            (process-grab? a0-10 #f)
-            )
-        )
-      )
-    (set! (-> this scene-player-handle)
-          (ppointer->handle (process-spawn scene-player :init scene-player-init arg0 #t #f))
-          )
-    #t
+  "Spawn a [[scene-player]] process for the given scene, or link to an existing one if already spawned remotely."
+  (cond
+    ((handle->process (-> this scene-player-handle))
+     #f
+     )
+    ((and *scene-player* (type? (ppointer->process *scene-player*) scene-player))
+     ;; Link to the existing global scene player if it's already running!
+     (set! (-> this scene-player-handle) (ppointer->handle *scene-player*))
+     #t
+     )
+    ((and (process-grab? this #t) (or arg1 (process-grab? *target* #t)))
+     (countdown (s3-0 3)
+       (let ((a0-4 (handle->process (-> this slave-handle s3-0))))
+         (if (and a0-4 (not (process-grab? a0-4 #t)))
+             (return #f)
+             )
+         )
+       )
+     (process-grab? this #f)
+     (if (not arg1)
+         (process-grab? *target* #f)
+         )
+     (countdown (s4-1 3)
+       (let ((a0-10 (handle->process (-> this slave-handle s4-1))))
+         (if a0-10
+             (process-grab? a0-10 #f)
+             )
+         )
+       )
+     (set! (-> this scene-player-handle)
+           (ppointer->handle (process-spawn scene-player :init scene-player-init arg0 #t #f))
+           )
+     #t
+     )
     )
   )
 
@@ -490,6 +500,9 @@
      (set! (-> this nav-mesh-index) -1)
      #t
      )
+    (else
+      ((method-of-type bot general-event-handler) this arg0 arg1 arg2 arg3)
+      )
     )
   )
 

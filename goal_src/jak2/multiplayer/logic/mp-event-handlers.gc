@@ -94,16 +94,52 @@
           (format 0 "[MP-WorldEvent] Local player hit ignored (Riding along).~%"))))
   (none))
 
-(defun mp-event-handler-scene-start ((evt mp-scene-event))
-  (when (not *scene-player*)
-    ;; *mp-scene-name-scratch* was already filled by mp-receive-scene-event
-    (let ((s (scene-lookup *mp-scene-name-scratch*)))
-      (if s
-          (begin
-            (format 0 "[MP-WorldEvent] Remote started scene: ~S. Starting locally.~%" (-> s name))
-            (process-spawn scene-player :init scene-player-init s #t #f))
-          (format 0 "[MP-WorldEvent] ERROR: Could not find scene locally: ~S~%" *mp-scene-name-scratch*)
-          )
+(defun mp-event-handler-scene-start ((ev mp-scene-event))
+  (let ((s* *mp-scene-name-scratch*))
+    (when (and s* (nonzero? (length s*)))
+      (format 0 "[MP-WorldEvent] Remote started scene: ~S. Starting locally via NPC-sync.~%" s*)
+      
+      ;; 1. Snap-Teleport to Host's area (Ensures level is loaded/NPCs birthed)
+      (when (and *target* (-> *target* control))
+        (format 0 "[MP-WorldEvent] Snapping to remote position for scene load.~%")
+        (set! (-> *target* control trans x) (-> *remote-info* x))
+        (set! (-> *target* control trans y) (-> *remote-info* y))
+        (set! (-> *target* control trans z) (-> *remote-info* z))
+        )
+      
+      ;; 2. Spawn Scene-Player MANUALLY first
+      ;; This ensures the scene is active globally even if the NPC logic fails or is delayed.
+      (when (not *scene-player*)
+        (format 0 "[MP-WorldEvent] Spawning authoritative scene-player for ~S~%" s*)
+        (process-spawn scene-player :init scene-player-init s* #t #f)
+        )
+      
+      ;; 3. Logic Delegation (Signal NPC to link up and advance its AI/Waypoints)
+      (let ((scene-obj (scene-lookup s*)))
+        (if scene-obj
+            (let ((entity-name (-> scene-obj entity)))
+              (if entity-name
+                  (let ((npc (process-by-ename entity-name)))
+                    (if npc
+                        (begin
+                          (format 0 "[MP-WorldEvent] Found NPC ~S. Snapping and signaling force-step.~%" entity-name)
+                          
+                          ;; Snap NPC to player's new position to prevent "too-far" mission fails!
+                          (let ((npc-proc (the-as process-drawable npc)))
+                            (set! (-> npc-proc root trans x) (-> *target* control trans x))
+                            (set! (-> npc-proc root trans y) (-> *target* control trans y))
+                            (set! (-> npc-proc root trans z) (-> *target* control trans z))
+                            )
+                          
+                          (send-event npc 'mp-force-scene-step s*)
+                          )
+                        (format 0 "[MP-WorldEvent] NPC ~S not birthed yet. It should link via its own logic when it does.~%" entity-name)
+                        )
+                    )
+                  )
+              )
+            )
+        )
       )
     )
   (none))

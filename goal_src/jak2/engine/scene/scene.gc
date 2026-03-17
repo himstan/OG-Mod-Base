@@ -1594,31 +1594,6 @@
     (format 0 "[MP-Scene] Force dismounting from target-ride-along...~%")
     (send-event *target* 'change-mode 'normal #f)
     )
-
-  ;; og:preserve-this check if we should cancel this scene early
-  (let ((first-scene-obj (cond
-                           ((type? scene-obj string)
-                            (scene-lookup (the-as string scene-obj))
-                            )
-                           ((type? scene-obj array)
-                            (-> (the-as (array scene) scene-obj) 0)
-                            )
-                           ((type? scene-obj pair)
-                            (the-as scene (car (the-as pair scene-obj)))
-                            )
-                           (else
-                             (the-as scene scene-obj)
-                             )
-                           )
-                         )
-        )
-    (when (and (type? first-scene-obj scene) (string= (-> first-scene-obj name) *mp-last-scene-name*))
-      (format 0 "[MP-Scene] Cancelling scene '~S' as it is the same as the last one.~%" (-> first-scene-obj name))
-      (deactivate self)
-      (return #f)
-      )
-    )
-
   (process-entity-set! self (the-as entity #f))
   ;; og:preserve-this changed from 512
   (stack-size-set! (-> self main-thread) 768)
