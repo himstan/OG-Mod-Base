@@ -107,10 +107,10 @@ struct LocalPlayerInfoGOAL {
 struct MPEnemySyncBufferGOAL {
   uint32_t local_count;
   uint8_t pad1[12];
-  MPEnemyState local_enemies[24];
+  MPEnemyState local_enemies[MAX_ENEMY_SYNC_COUNT];
   uint32_t remote_count;
   uint8_t pad2[12];
-  MPEnemyState remote_enemies[24];
+  MPEnemyState remote_enemies[MAX_ENEMY_SYNC_COUNT];
   uint64_t last_sync_time;
 };
 

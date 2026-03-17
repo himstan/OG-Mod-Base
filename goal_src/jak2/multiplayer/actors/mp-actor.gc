@@ -142,7 +142,11 @@
                                  ;; State Change Check (with sequencing)
                                  (if (!= (ja-group) target-anim)
                                      (begin
-                                       (ja-channel-push! 1 *mp-anim-blend-time*)
+                                       ;; Safety check: Don't push if we've somehow hit the engine limit already
+                                       (if (< (-> self skel active-channels) 24)
+                                           (ja-channel-push! 1 *mp-anim-blend-time*)
+                                           (set! (-> self skel active-channels) 1) ;; Hard reset if leaked
+                                           )
                                        (ja :group! target-anim :num! (set! anim-frame))
                                        ;; Reset delta-f tracking on state change
                                        (set! (-> parent-proc last-remote-frame) anim-frame)
@@ -150,7 +154,7 @@
                                        )
                                      (begin
                                        ;; Calculate client's actual playback speed (with EMA smoothing)
-                                       (let ((delta-f (- anim-frame (-> parent-proc last-remote-frame))) 
+                                       (let ((delta-f (- anim-frame (-> parent-proc last-remote-frame)))
                                              (delta-c (- (-> *remote-info* clock) (-> parent-proc last-remote-clock))))
                                          ;; Loop wrap for speed calc
                                          (if (< delta-f -10.0) (set! delta-f (+ delta-f (the float (ja-num-frames 0)))))
@@ -162,11 +166,10 @@
                                      )
 
                                  (set! (-> parent-proc last-remote-frame) anim-frame)
-                                 (set! (-> parent-proc last-remote-clock) (-> *remote-info* clock))      
+                                 (set! (-> parent-proc last-remote-clock) (-> *remote-info* clock))
                                  (set! (-> parent-proc last-anim-packet) packet-id)
                                  (set! (-> parent-proc last-arrival-time) (-> *display* game-clock frame-counter))
                                  ))
-
                            ;; B. Per-Frame Prediction & Smoothing (Always runs)
                            (if (ja-group)
                                (let* ((cur-frame (-> self skel root-channel 0 frame-num))

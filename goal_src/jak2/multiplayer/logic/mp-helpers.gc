@@ -128,6 +128,7 @@
   (when (and arg2
              (logtest? (the-as int arg1) (the-as int (logior (entity-perm-status dead) (entity-perm-status subtask-complete))))
              (not *mp-processing-remote-event*)
+             (mp-is-jak?) ;; CRITICAL: Only the Host (Jak) should broadcast world-status changes (BREAK events)
              (-> arg0 entity))
     (mp-send-world-event MP_EVENT_BREAK (-> arg0 entity aid)))
 

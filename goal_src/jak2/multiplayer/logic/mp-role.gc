@@ -52,7 +52,15 @@
     
     (when (not in-scene?)
       (set! *mp-remote-wants-skip* #f)
-      (set! *mp-local-wants-skip* #f))
+      (set! *mp-local-wants-skip* #f)
+      ;; SAFETY: Force blackout off if we are no longer in a scene and a blackout is active
+      (if (and *mp-last-scene-player* (>= (-> *game-info* blackout-time) (current-time)))
+          (begin
+            (format 0 "[MP] Forcing blackout off after scene end.~%")
+            (set-blackout-frames 0)
+            )
+          )
+      )
 
     (set! *mp-last-scene-player* in-scene?))
   (none))

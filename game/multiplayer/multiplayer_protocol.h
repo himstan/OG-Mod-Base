@@ -71,6 +71,9 @@ struct SceneEventData {
   uint32_t event_id;
 };
 
+#define MAX_ENEMY_SYNC_COUNT 128
+#define MAX_ENEMIES_PER_PACKET 30
+
 struct MPEnemyState {
   uint32_t actor_id;
   float x, y, z;
@@ -89,11 +92,24 @@ struct MPEnemyState {
   uint8_t pad_align[8];  // Pad to 80 bytes (16-byte alignment from GOAL)
 };
 
+// Packed structure for network transmission only
+struct MPEnemyStatePacked {
+  uint32_t actor_id;
+  float x, y, z;
+  int16_t quat[4];
+  int16_t anim_index;
+  int16_t anim_frame;
+  int16_t hp;
+  uint8_t state;
+  uint32_t focus_aid;
+  uint8_t flags; // Bitmask: [0: attack_flag, 1: owner, 2: is_aggro]
+};
+
 struct PacketEnemySync {
   PacketHeader header;
   uint32_t count;
   uint64_t timestamp;
-  MPEnemyState enemies[24];
+  MPEnemyStatePacked enemies[MAX_ENEMIES_PER_PACKET];
 };
 
 struct PacketFullSync {

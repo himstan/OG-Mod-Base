@@ -30,17 +30,31 @@
   (none))
 
 (defun mp-event-handler-break ((aid uint))
+  (format 0 "[MP-WorldEvent] Received MP_EVENT_BREAK for AID ~D.~%" aid)
   (let ((ent (entity-by-aid aid)))
     (when (and ent (nonzero? ent))
       (let ((perm (-> ent extra perm)))
         (when (not (logtest? (-> perm status) (entity-perm-status dead subtask-complete)))
-          (logior! (-> perm status) (entity-perm-status dead subtask-complete))
           (let ((proc (-> ent extra process)))
             (if (and proc (nonzero? proc))
-                ;; Send a super-attack that breaks almost anything (crates, trapdoors, etc.)
-                (send-event proc 'attack #f (static-attack-info ((id (new-attack-id))
-                                                                 (mode 'mp-break)
-                                                                 (penetrate-using (penetrate generic-attack lunge flop punch spin roll uppercut bonk explode)))))))))))
+                (begin
+                  ;; CRITICAL SAFETY: Never 'break' an NPC or anything that shouldn't just die from a crate-break
+                  ;; This prevents accidental mission failure if a client triggers an entity status change.
+                  (if (or (type? proc enemy) (type? proc bot) (type? proc process-focusable))
+                      (format 0 "[MP-WorldEvent] Ignoring BREAK for important process ~A (AID ~D)~%" proc aid)
+                      (begin
+                        (logior! (-> perm status) (entity-perm-status dead subtask-complete))
+                        (send-event proc 'attack #f (static-attack-info ((id (new-attack-id))
+                                                                         (mode 'mp-break)
+                                                                         (penetrate-using (penetrate generic-attack lunge flop punch spin roll uppercut bonk explode))))))
+                      )
+                  )
+                )
+            )
+          )
+        )
+      )
+    )
   (none))
 
 (defun mp-event-handler-attack-enemy ((aid uint))
@@ -152,7 +166,10 @@
 (defun mp-event-handler-scene-skipped ((aid uint))
   (when *scene-player*
     (format 0 "[MP-WorldEvent] All players skipped. Aborting locally.~%")
-    (send-event (ppointer->process *scene-player*) 'abort))
+    (send-event (ppointer->process *scene-player*) 'abort)
+    ;; Force blackout off immediately to prevent getting stuck
+    (set-blackout-frames 0)
+    )
   (none))
 
 (defun mp-event-handler-authority-request ((aid uint))

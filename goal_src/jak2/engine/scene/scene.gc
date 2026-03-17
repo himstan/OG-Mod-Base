@@ -1247,8 +1247,8 @@
                      (set! (-> self aborted?) #t)
                      (when *multi-sync-enabled?*
                        (mp-send-scene-event (mp-scene-state skipped) (-> self scene name))
-                       )
-                     )
+                       (set-blackout-frames 0)
+                       )                     )
                     (else
                       ;; Local player wants to skip, but remote hasn't yet
                       (set! *mp-local-wants-skip* #t)

@@ -14,6 +14,16 @@ namespace {
 MultiplayerData gMultiplayerData;
 bool g_multi_debug_stop_receive = false;
 
+inline int16_t pack_float_q(float v) {
+  if (v > 1.0f) v = 1.0f;
+  if (v < -1.0f) v = -1.0f;
+  return (int16_t)(v * 32767.0f);
+}
+
+inline float unpack_float_q(int16_t v) {
+  return (float)v / 32767.0f;
+}
+
 void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* remote) {
   ENetEvent event;
   uint32_t current_time = enet_time_get();
@@ -79,7 +89,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
             
             // Validate count against packet size to prevent buffer overflow
-            size_t expected_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyState) * enemy_sync->count);
+            size_t expected_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyStatePacked) * enemy_sync->count);
             if (event.packet->dataLength < expected_size) {
               lg::error("[Multiplayer] Malformed ENEMY_SYNC packet: size {} < expected {}", event.packet->dataLength, expected_size);
               enet_packet_destroy(event.packet);
@@ -91,15 +101,31 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             // Persistent Merge: Instead of overwriting the whole buffer, 
             // we update specific slots or find empty ones.
             for (uint32_t i = 0; i < enemy_sync->count; i++) {
-              MPEnemyState* incoming = &enemy_sync->enemies[i];
+              MPEnemyStatePacked* incoming = &enemy_sync->enemies[i];
               if (incoming->actor_id == 0) continue;
 
               bool found = false;
-              for (uint32_t j = 0; j < 24; j++) {
+              for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
                 if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == incoming->actor_id) {
                   // Update existing slot
-                  memcpy(&gMultiplayerData.remote_enemy_buffer.remote_enemies[j], incoming, sizeof(MPEnemyState));
-                  gMultiplayerData.remote_enemy_buffer.remote_enemies[j].last_updated = current_time;
+                  auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
+                  state.actor_id = incoming->actor_id;
+                  state.x = incoming->x;
+                  state.y = incoming->y;
+                  state.z = incoming->z;
+                  state.quat_x = unpack_float_q(incoming->quat[0]);
+                  state.quat_y = unpack_float_q(incoming->quat[1]);
+                  state.quat_z = unpack_float_q(incoming->quat[2]);
+                  state.quat_w = unpack_float_q(incoming->quat[3]);
+                  state.anim_index = incoming->anim_index;
+                  state.anim_frame = incoming->anim_frame;
+                  state.hp = incoming->hp;
+                  state.state = incoming->state;
+                  state.focus_aid = incoming->focus_aid;
+                  state.attack_flag = (incoming->flags & 1) ? 1 : 0;
+                  state.owner = (incoming->flags & 2) ? 1 : 0;
+                  state.is_aggro = (incoming->flags & 4) ? 1 : 0;
+                  state.last_updated = current_time;
                   found = true;
                   break;
                 }
@@ -107,10 +133,26 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
 
               if (!found) {
                 // Find empty slot
-                for (uint32_t j = 0; j < 24; j++) {
+                for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
                   if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == 0) {
-                    memcpy(&gMultiplayerData.remote_enemy_buffer.remote_enemies[j], incoming, sizeof(MPEnemyState));
-                    gMultiplayerData.remote_enemy_buffer.remote_enemies[j].last_updated = current_time;
+                    auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
+                    state.actor_id = incoming->actor_id;
+                    state.x = incoming->x;
+                    state.y = incoming->y;
+                    state.z = incoming->z;
+                    state.quat_x = unpack_float_q(incoming->quat[0]);
+                    state.quat_y = unpack_float_q(incoming->quat[1]);
+                    state.quat_z = unpack_float_q(incoming->quat[2]);
+                    state.quat_w = unpack_float_q(incoming->quat[3]);
+                    state.anim_index = incoming->anim_index;
+                    state.anim_frame = incoming->anim_frame;
+                    state.hp = incoming->hp;
+                    state.state = incoming->state;
+                    state.focus_aid = incoming->focus_aid;
+                    state.attack_flag = (incoming->flags & 1) ? 1 : 0;
+                    state.owner = (incoming->flags & 2) ? 1 : 0;
+                    state.is_aggro = (incoming->flags & 4) ? 1 : 0;
+                    state.last_updated = current_time;
                     found = true;
                     break;
                   }
@@ -119,7 +161,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             }
 
             // Tell GOAL to scan all slots (GOAL will check if actor_id != 0)
-            gMultiplayerData.remote_enemy_buffer.remote_count = 24;
+            gMultiplayerData.remote_enemy_buffer.remote_count = MAX_ENEMY_SYNC_COUNT;
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
@@ -300,7 +342,7 @@ void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
     current_time = enet_time_get();
 
     // Stale Enemy Cleanup: Clear slots if not updated in 2 seconds
-    for (uint32_t i = 0; i < 24; i++) {
+    for (uint32_t i = 0; i < MAX_ENEMY_SYNC_COUNT; i++) {
       if (gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id != 0 &&
           current_time - gMultiplayerData.remote_enemy_buffer.remote_enemies[i].last_updated > 2000) {
         gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id = 0;
@@ -411,22 +453,51 @@ void pc_multi_send_enemies(u32 buffer_ptr) {
     if (!buffer || buffer->local_count == 0) return;
 
     // Constrain count to buffer limits
-    uint32_t count = buffer->local_count;
-    if (count > 24) count = 24;
+    uint32_t total_count = buffer->local_count;
+    if (total_count > MAX_ENEMY_SYNC_COUNT) total_count = MAX_ENEMY_SYNC_COUNT;
 
-    PacketEnemySync enemy_packet;
-    enemy_packet.header.type = PacketType::ENEMY_SYNC;
-    enemy_packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
-    enemy_packet.count = count;
-    enemy_packet.timestamp = enet_time_get();
-    memcpy(enemy_packet.enemies, buffer->local_enemies, sizeof(MPEnemyState) * count);
-    
-    // Calculate actual size: Header + count + timestamp + (N * EnemyState)
-    size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyState) * count);
-
-    // Broadcast to all peers
     int exclude_peer = (int)gMultiplayerData.local_role;
-    MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &enemy_packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
+    uint32_t sent_count = 0;
+
+    while (sent_count < total_count) {
+      uint32_t chunk_size = total_count - sent_count;
+      if (chunk_size > MAX_ENEMIES_PER_PACKET) chunk_size = MAX_ENEMIES_PER_PACKET;
+
+      PacketEnemySync enemy_packet;
+      enemy_packet.header.type = PacketType::ENEMY_SYNC;
+      enemy_packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
+      enemy_packet.count = chunk_size;
+      enemy_packet.timestamp = enet_time_get();
+
+      for (uint32_t i = 0; i < chunk_size; i++) {
+        MPEnemyState* src = &buffer->local_enemies[sent_count + i];
+        MPEnemyStatePacked* dst = &enemy_packet.enemies[i];
+        
+        dst->actor_id = src->actor_id;
+        dst->x = src->x;
+        dst->y = src->y;
+        dst->z = src->z;
+        dst->quat[0] = pack_float_q(src->quat_x);
+        dst->quat[1] = pack_float_q(src->quat_y);
+        dst->quat[2] = pack_float_q(src->quat_z);
+        dst->quat[3] = pack_float_q(src->quat_w);
+        dst->anim_index = src->anim_index;
+        dst->anim_frame = src->anim_frame;
+        dst->hp = src->hp;
+        dst->state = src->state;
+        dst->focus_aid = src->focus_aid;
+        
+        dst->flags = 0;
+        if (src->attack_flag) dst->flags |= 1;
+        if (src->owner) dst->flags |= 2;
+        if (src->is_aggro) dst->flags |= 4;
+      }
+
+      size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyStatePacked) * chunk_size);
+      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &enemy_packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
+
+      sent_count += chunk_size;
+    }
   } catch (...) {
     lg::error("[Multiplayer] Exception in pc_multi_send_enemies");
   }
@@ -441,7 +512,7 @@ void pc_multi_receive_enemies(u32 buffer_ptr) {
 
     // Copy from the C++ buffer to GOAL
     buffer->remote_count = gMultiplayerData.remote_enemy_buffer.remote_count;
-    memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * 24);
+    memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * MAX_ENEMY_SYNC_COUNT);
     buffer->last_sync_time = gMultiplayerData.last_enemy_sync_time;
     // Note: We no longer clear remote_count here to prevent flickering. 
     // GOAL will check last-sync-time if it needs to know if data is stale.
