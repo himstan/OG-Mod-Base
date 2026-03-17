@@ -74,3 +74,31 @@
             (logclear! (-> *target* draw status) (draw-control-status no-draw)))
         ))
   (none))
+
+(defun mp-update-traffic-authority ()
+  "Determine who owns the open-world traffic and suppress local spawning if needed"
+  (when (and *target* *traffic-manager*)
+    (let ((dist (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*))
+          (close? #f))
+      (if (< dist (meters 300.0))
+          (set! close? #t))
+      
+      (if (and close? (mp-is-daxter?)) ;; Client is near Host
+          (begin
+            (when (not *mp-traffic-suppressed*)
+              (format 0 "[MP-Traffic] Entering Host Authority Bubble. Suppressing local traffic!~%")
+              (set! *mp-traffic-suppressed* #t)
+              ;; Nuke local autonomous traffic
+              (send-event *traffic-manager* 'deactivate-all)
+              )
+            )
+          (begin
+            (when *mp-traffic-suppressed*
+              (format 0 "[MP-Traffic] Leaving Authority Bubble. Restoring local traffic!~%")
+              (set! *mp-traffic-suppressed* #f)
+              )
+            )
+          )
+      )
+    )
+  (none))

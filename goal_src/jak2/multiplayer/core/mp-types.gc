@@ -7,6 +7,7 @@
 (define-perm *mp-last-scene-player* symbol #f)
 (define-perm *mp-last-scene-name* string (new 'global 'string 32 ""))
 (define-extern *has-ridden-before?* symbol)
+(define-perm *mp-traffic-suppressed* symbol #f)
 (define *multi-sync-tps* 20)
 
 ;; --- Animation Sync Tuning Globals ---

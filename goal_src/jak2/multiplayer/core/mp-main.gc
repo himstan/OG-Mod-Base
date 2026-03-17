@@ -170,6 +170,7 @@
     (mp-update-ai-targeting)
     (mp-update-player-visibility)
     (mp-update-camera-settings)
+    (mp-update-traffic-authority)
 
     (mp-draw-anim-debug)
     (mp-draw-task-debug)
