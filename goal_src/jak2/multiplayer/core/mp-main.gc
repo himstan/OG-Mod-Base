@@ -43,8 +43,12 @@
     ;; We always send the state packet because it contains our 'status' field
     (pc-multi-send-state (the-as uint *local-info*))
     (pc-multi-send-events (the-as uint *mp-event-buffer*))
-    (when (and *mp-enemy-buffer* (nonzero? (the-as uint *mp-enemy-buffer*)))
+    (when (and (mp-is-jak?) *mp-enemy-buffer* (nonzero? (the-as uint *mp-enemy-buffer*)))
       (pc-multi-send-enemies (the-as uint *mp-enemy-buffer*))
+      )
+    ;; 4. NETWORK SEND (Throttled)
+    (when (and (mp-is-jak?) *mp-traffic-buffer* (nonzero? (the-as uint *mp-traffic-buffer*)))
+      (pc-multi-send-traffic (the-as uint *mp-traffic-buffer*))
       )
     )
   (none))
@@ -60,6 +64,17 @@
 
     ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
     (let ((status (pc-multi-get-status)))
+      ;; LOUD DEBUG: Only every 5 seconds
+      (when (and (nonzero? status) (time-elapsed? (-> *local-info* clock) (seconds 5)))
+        ;; (format 0 "[MP-Tick] Status: ~D, Enabled? ~A, Role: ~D~%" status *multi-sync-enabled?* (-> *local-info* role))
+        )
+
+      ;; Host Auto-Enable Sync
+      (when (and (= status 6) (mp-is-jak?) (not *multi-sync-enabled?*))
+        (format 0 "[MP-Host] Auto-enabling sync as Host in game...~%")
+        (set! *multi-sync-enabled?* #t)
+        )
+
       (if (or (= status 3) (= status 4) (= status 5) (= status 6) (= status 7) (= status 8))
           (begin
             (when (not *mp-hijacks-applied?*)
@@ -171,6 +186,7 @@
     (mp-update-player-visibility)
     (mp-update-camera-settings)
     (mp-update-traffic-authority)
+    (mp-sync-traffic-update)
 
     (mp-draw-anim-debug)
     (mp-draw-task-debug)

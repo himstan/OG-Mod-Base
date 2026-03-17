@@ -114,6 +114,16 @@ struct MPEnemySyncBufferGOAL {
   uint64_t last_sync_time;
 };
 
+struct MPTrafficSyncBufferGOAL {
+  uint32_t ped_count;
+  uint8_t pad1[12];
+  MPPedestrianState pedestrians[MAX_PEDESTRIAN_SYNC_COUNT];
+  uint32_t veh_count;
+  uint8_t pad2[12];
+  MPVehicleState vehicles[MAX_VEHICLE_SYNC_COUNT];
+  uint64_t last_sync_time;
+};
+
 struct MultiplayerData {
   bool initialized = false;
   bool enet_initialized = false;
@@ -128,6 +138,11 @@ struct MultiplayerData {
   std::vector<PacketGameEvent> inbound_events;
   MPEnemySyncBufferGOAL remote_enemy_buffer;
   uint32_t last_enemy_sync_time = 0;
+
+  MPTrafficSyncBufferGOAL traffic_buffer;
+  uint32_t last_traffic_sync_time = 0;
+  uint64_t ped_last_updated[MAX_PEDESTRIAN_SYNC_COUNT] = {0};
+  uint64_t veh_last_updated[MAX_VEHICLE_SYNC_COUNT] = {0};
 
   // New fields for joining/searching
   std::atomic<int> join_status{0}; // 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed

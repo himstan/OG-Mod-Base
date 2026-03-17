@@ -40,7 +40,6 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
       case ENET_EVENT_TYPE_RECEIVE:
         gMultiplayerData.last_receive_time = current_time;
         
-        // If we were reconnecting, restore the pre-reconnect status
         if (gMultiplayerData.join_status == (int)MultiplayerStatus::RECONNECTING) {
           lg::info("[Multiplayer] Data packet received. Connection restored. Resuming status {}...", gMultiplayerData.pre_reconnect_status);
           gMultiplayerData.join_status = gMultiplayerData.pre_reconnect_status;
@@ -55,9 +54,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             auto& entity = gMultiplayerData.remote_entities[state->netId];
             if (state->header.sequenceNum > entity.last_sequence_num) {
               entity.status = state->status;
-              entity.x = state->x;
-              entity.y = state->y;
-              entity.z = state->z;
+              entity.x = state->x; entity.y = state->y; entity.z = state->z;
               entity.angle = state->angle;
               entity.anim = state->anim;
               entity.anim_frame = state->anim_frame;
@@ -87,32 +84,16 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
           } else if (header->type == PacketType::ENEMY_SYNC &&
                      event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
-            
-            // Validate count against packet size to prevent buffer overflow
-            size_t expected_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyStatePacked) * enemy_sync->count);
-            if (event.packet->dataLength < expected_size) {
-              lg::error("[Multiplayer] Malformed ENEMY_SYNC packet: size {} < expected {}", event.packet->dataLength, expected_size);
-              enet_packet_destroy(event.packet);
-              continue;
-            }
-
             gMultiplayerData.last_enemy_sync_time = current_time;
-
-            // Persistent Merge: Instead of overwriting the whole buffer, 
-            // we update specific slots or find empty ones.
             for (uint32_t i = 0; i < enemy_sync->count; i++) {
               MPEnemyStatePacked* incoming = &enemy_sync->enemies[i];
               if (incoming->actor_id == 0) continue;
-
               bool found = false;
               for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
                 if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == incoming->actor_id) {
-                  // Update existing slot
                   auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
                   state.actor_id = incoming->actor_id;
-                  state.x = incoming->x;
-                  state.y = incoming->y;
-                  state.z = incoming->z;
+                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
                   state.quat_x = unpack_float_q(incoming->quat[0]);
                   state.quat_y = unpack_float_q(incoming->quat[1]);
                   state.quat_z = unpack_float_q(incoming->quat[2]);
@@ -126,20 +107,15 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
                   state.owner = (incoming->flags & 2) ? 1 : 0;
                   state.is_aggro = (incoming->flags & 4) ? 1 : 0;
                   state.last_updated = current_time;
-                  found = true;
-                  break;
+                  found = true; break;
                 }
               }
-
               if (!found) {
-                // Find empty slot
                 for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
                   if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == 0) {
                     auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
                     state.actor_id = incoming->actor_id;
-                    state.x = incoming->x;
-                    state.y = incoming->y;
-                    state.z = incoming->z;
+                    state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
                     state.quat_x = unpack_float_q(incoming->quat[0]);
                     state.quat_y = unpack_float_q(incoming->quat[1]);
                     state.quat_z = unpack_float_q(incoming->quat[2]);
@@ -153,29 +129,128 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
                     state.owner = (incoming->flags & 2) ? 1 : 0;
                     state.is_aggro = (incoming->flags & 4) ? 1 : 0;
                     state.last_updated = current_time;
-                    found = true;
-                    break;
+                    found = true; break;
                   }
                 }
               }
             }
-
-            // Tell GOAL to scan all slots (GOAL will check if actor_id != 0)
             gMultiplayerData.remote_enemy_buffer.remote_count = MAX_ENEMY_SYNC_COUNT;
+          } else if (header->type == PacketType::PEDESTRIAN_SYNC &&
+                     event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
+            PacketPedestrianSync* sync = (PacketPedestrianSync*)event.packet->data;
+            gMultiplayerData.last_traffic_sync_time = current_time;
+            if (sync->count > 0) {
+              lg::info("[Multiplayer] Received {} pedestrians", sync->count);
+            }
+            for (uint32_t i = 0; i < sync->count; i++) {
+              auto* incoming = &sync->peds[i];
+              if (incoming->net_id == 0) continue;
+              bool found = false;
+              for (uint32_t j = 0; j < MAX_PEDESTRIAN_SYNC_COUNT; j++) {
+                if (gMultiplayerData.traffic_buffer.pedestrians[j].net_id == incoming->net_id) {
+                  auto& state = gMultiplayerData.traffic_buffer.pedestrians[j];
+                  state.net_id = incoming->net_id;
+                  state.object_type = incoming->object_type;
+                  state.object_variance = incoming->object_variance;
+                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
+                  state.quat_x = unpack_float_q(incoming->quat[0]);
+                  state.quat_y = unpack_float_q(incoming->quat[1]);
+                  state.quat_z = unpack_float_q(incoming->quat[2]);
+                  state.quat_w = unpack_float_q(incoming->quat[3]);
+                  state.anim_index = incoming->anim_index;
+                  state.anim_speed = (float)incoming->anim_speed; 
+                  gMultiplayerData.ped_last_updated[j] = current_time;
+                  found = true; break;
+                }
+              }
+              if (!found) {
+                for (uint32_t j = 0; j < MAX_PEDESTRIAN_SYNC_COUNT; j++) {
+                  if (gMultiplayerData.traffic_buffer.pedestrians[j].net_id == 0) {
+                    auto& state = gMultiplayerData.traffic_buffer.pedestrians[j];
+                    state.net_id = incoming->net_id;
+                    state.object_type = incoming->object_type;
+                    state.object_variance = incoming->object_variance;
+                    state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
+                    state.quat_x = unpack_float_q(incoming->quat[0]);
+                    state.quat_y = unpack_float_q(incoming->quat[1]);
+                    state.quat_z = unpack_float_q(incoming->quat[2]);
+                    state.quat_w = unpack_float_q(incoming->quat[3]);
+                    state.anim_index = incoming->anim_index;
+                    state.anim_speed = (float)incoming->anim_speed;
+                    gMultiplayerData.ped_last_updated[j] = current_time;
+                    found = true; break;
+                  }
+                }
+              }
+            }
+            gMultiplayerData.traffic_buffer.ped_count = MAX_PEDESTRIAN_SYNC_COUNT;
+          } else if (header->type == PacketType::VEHICLE_SYNC &&
+                     event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
+            PacketVehicleSync* sync = (PacketVehicleSync*)event.packet->data;
+            gMultiplayerData.last_traffic_sync_time = current_time;
+            if (sync->count > 0) {
+              lg::info("[Multiplayer] Received {} vehicles", sync->count);
+            }
+            for (uint32_t i = 0; i < sync->count; i++) {
+              auto* incoming = &sync->vehs[i];
+              if (incoming->net_id == 0) continue;
+              bool found = false;
+              for (uint32_t j = 0; j < MAX_VEHICLE_SYNC_COUNT; j++) {
+                if (gMultiplayerData.traffic_buffer.vehicles[j].net_id == incoming->net_id) {
+                  auto& state = gMultiplayerData.traffic_buffer.vehicles[j];
+                  state.net_id = incoming->net_id;
+                  state.vehicle_type = incoming->vehicle_type;
+                  state.color_index = incoming->color_index;
+                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
+                  state.quat_x = unpack_float_q(incoming->quat[0]);
+                  state.quat_y = unpack_float_q(incoming->quat[1]);
+                  state.quat_z = unpack_float_q(incoming->quat[2]);
+                  state.quat_w = unpack_float_q(incoming->quat[3]);
+                  state.lin_vel_x = (float)incoming->lin_vel[0] / 10.0f;
+                  state.lin_vel_y = (float)incoming->lin_vel[1] / 10.0f;
+                  state.lin_vel_z = (float)incoming->lin_vel[2] / 10.0f;
+                  state.ang_vel_x = unpack_float_q(incoming->ang_vel[0]) * 10.0f;
+                  state.ang_vel_y = unpack_float_q(incoming->ang_vel[1]) * 10.0f;
+                  state.ang_vel_z = unpack_float_q(incoming->ang_vel[2]) * 10.0f;
+                  state.state_flags = incoming->state_flags;
+                  memcpy(state.rider_aids, incoming->rider_aids, 16);
+                  gMultiplayerData.veh_last_updated[j] = current_time;
+                  found = true; break;
+                }
+              }
+              if (!found) {
+                for (uint32_t j = 0; j < MAX_VEHICLE_SYNC_COUNT; j++) {
+                  if (gMultiplayerData.traffic_buffer.vehicles[j].net_id == 0) {
+                    auto& state = gMultiplayerData.traffic_buffer.vehicles[j];
+                    state.net_id = incoming->net_id;
+                    state.vehicle_type = incoming->vehicle_type;
+                    state.color_index = incoming->color_index;
+                    state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
+                    state.quat_x = unpack_float_q(incoming->quat[0]);
+                    state.quat_y = unpack_float_q(incoming->quat[1]);
+                    state.quat_z = unpack_float_q(incoming->quat[2]);
+                    state.quat_w = unpack_float_q(incoming->quat[3]);
+                    state.lin_vel_x = (float)incoming->lin_vel[0] / 10.0f;
+                    state.lin_vel_y = (float)incoming->lin_vel[1] / 10.0f;
+                    state.lin_vel_z = (float)incoming->lin_vel[2] / 10.0f;
+                    state.ang_vel_x = unpack_float_q(incoming->ang_vel[0]) * 10.0f;
+                    state.ang_vel_y = unpack_float_q(incoming->ang_vel[1]) * 10.0f;
+                    state.ang_vel_z = unpack_float_q(incoming->ang_vel[2]) * 10.0f;
+                    state.state_flags = incoming->state_flags;
+                    memcpy(state.rider_aids, incoming->rider_aids, 16);
+                    gMultiplayerData.veh_last_updated[j] = current_time;
+                    found = true; break;
+                  }
+                }
+              }
+            }
+            gMultiplayerData.traffic_buffer.veh_count = MAX_VEHICLE_SYNC_COUNT;
           } else if (header->type == PacketType::FULL_SYNC &&
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
-            local->sync_money = full_sync->money;
-            local->sync_gems = full_sync->gems;
-            local->sync_skill = full_sync->skill;
-            
-            // For full sync we snap remote to host pos
-            remote->x = full_sync->x;
-            remote->y = full_sync->y;
-            remote->z = full_sync->z;
-
-            local->host_task = full_sync->host_task;
-            local->host_node = full_sync->host_node;
+            local->sync_money = full_sync->money; local->sync_gems = full_sync->gems; local->sync_skill = full_sync->skill;
+            remote->x = full_sync->x; remote->y = full_sync->y; remote->z = full_sync->z;
+            local->host_task = full_sync->host_task; local->host_node = full_sync->host_node;
             memcpy(local->host_continue, full_sync->host_continue, 32);
             memcpy(local->task_mask, full_sync->task_mask, 64);
             memcpy(local->active_task_mask, full_sync->active_task_mask, 64);
@@ -189,15 +264,12 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
         enet_packet_destroy(event.packet);
         break;
       case ENET_EVENT_TYPE_CONNECT:
-        gMultiplayerData.last_receive_time = current_time; // Start the clock on connect
+        gMultiplayerData.last_receive_time = current_time;
         if (gMultiplayerData.local_role == 1) {
-          // Client successfully connected via ENet
           lg::info("[Multiplayer] Successfully connected to host.");
           gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
         } else if (gMultiplayerData.local_role == 0) {
-          // Peer connected to host
-          char ip[64];
-          enet_address_get_host_ip(&event.peer->address, ip, 64);
+          char ip[64]; enet_address_get_host_ip(&event.peer->address, ip, 64);
           lg::info("[Multiplayer] Client connected from {}:{}", ip, event.peer->address.port);
           if (gMultiplayerData.join_status != (int)MultiplayerStatus::IN_GAME) {
             gMultiplayerData.join_status = (int)MultiplayerStatus::CONNECTED_LOBBY;
@@ -208,13 +280,9 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
         if (gMultiplayerData.local_role == 0) {
-          // Peer disconnected from host
-          uint32_t peer_net_id = 1; // For now we only have 1 client
-          lg::info("[Multiplayer] Client disconnected. Clearing remote entity.");
-          gMultiplayerData.remote_entities.erase(peer_net_id);
-          // Host stays in whatever status they were in (likely IN_GAME)
+          lg::info("[Multiplayer] Client disconnected.");
+          gMultiplayerData.remote_entities.erase(1);
         } else {
-          // Client lost connection to host
           lg::warn("[Multiplayer] Host has left the session.");
           gMultiplayerData.join_status = (int)MultiplayerStatus::HOST_LEFT;
         }
@@ -231,9 +299,7 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.header.sequenceNum = ++gMultiplayerData.sequence_num;
   local_state.netId = gMultiplayerData.local_net_id;
   local_state.status = (uint8_t)gMultiplayerData.join_status;
-  local_state.x = local->x;
-  local_state.y = local->y;
-  local_state.z = local->z;
+  local_state.x = local->x; local_state.y = local->y; local_state.z = local->z;
   local_state.angle = local->angle;
   local_state.anim = (uint16_t)local->anim;
   local_state.anim_frame = local->anim_frame;
@@ -244,28 +310,19 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.sidekick_frame = local->sidekick_frame;
   local_state.last_sidekick_frame = local->last_sidekick_frame;
   local_state.clock = local->clock;
-  local_state.money = local->money;
-  local_state.gems = local->gems;
-  local_state.skill = local->skill;
+  local_state.money = local->money; local_state.gems = local->gems; local_state.skill = local->skill;
   memcpy(local_state.task_mask, local->task_mask, 64);
   memcpy(local_state.active_task_mask, local->active_task_mask, 64);
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
 
   if (gMultiplayerData.local_role == 0 && gMultiplayerData.pending_full_sync) {
     gMultiplayerData.pending_full_sync = false;
-    lg::info("[Multiplayer] Sending FullSync broadcast...");
-    PacketFullSync sync;
-    memset(&sync, 0, sizeof(PacketFullSync));
+    PacketFullSync sync; memset(&sync, 0, sizeof(PacketFullSync));
     sync.header.type = PacketType::FULL_SYNC;
     sync.header.sequenceNum = ++gMultiplayerData.sequence_num;
-    sync.money = local->money;
-    sync.gems = local->gems;
-    sync.skill = local->skill;
-    sync.x = local->x;
-    sync.y = local->y;
-    sync.z = local->z;
-    sync.host_task = local->host_task;
-    sync.host_node = local->host_node;
+    sync.money = local->money; sync.gems = local->gems; sync.skill = local->skill;
+    sync.x = local->x; sync.y = local->y; sync.z = local->z;
+    sync.host_task = local->host_task; sync.host_node = local->host_node;
     memcpy(sync.host_continue, local->host_continue, 32);
     memcpy(sync.task_mask, local->task_mask, 64);
     memcpy(sync.active_task_mask, local->active_task_mask, 64);
@@ -281,11 +338,7 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
   uint32_t other_net_id = (gMultiplayerData.local_role == 0) ? 1 : 0;
   if (gMultiplayerData.remote_entities.count(other_net_id)) {
     auto& remote_state = gMultiplayerData.remote_entities[other_net_id];
-    
-    // Fill the Goal Remote struct
-    remote_goal->x = remote_state.x;
-    remote_goal->y = remote_state.y;
-    remote_goal->z = remote_state.z;
+    remote_goal->x = remote_state.x; remote_goal->y = remote_state.y; remote_goal->z = remote_state.z;
     remote_goal->angle = remote_state.angle;
     remote_goal->id = other_net_id;
     remote_goal->role = (int32_t)other_net_id;
@@ -293,8 +346,6 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->anim_frame = remote_state.anim_frame;
     remote_goal->last_anim_frame = remote_state.last_anim_frame;
     remote_goal->level = remote_state.level_hash;
-    // Map network status (3, 4) to GOAL status field.
-    // If it's connected (>=3), GOAL sees it as active (1) or the specific state.
     remote_goal->status = (remote_state.status > 0) ? (int32_t)remote_state.status : 1;
     remote_goal->packet_id = remote_state.last_sequence_num;
     remote_goal->riding = remote_state.riding;
@@ -302,69 +353,53 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->sidekick_frame = remote_state.sidekick_frame;
     remote_goal->last_sidekick_frame = remote_state.last_sidekick_frame;
     remote_goal->clock = remote_state.clock;
-
-  } else {
-    remote_goal->status = 0;
-  }
+  } else { remote_goal->status = 0; }
 }
 }  // namespace
 
-int pc_multi_get_role() {
-  return gMultiplayerData.local_role;
-}
+int pc_multi_get_role() { return gMultiplayerData.local_role; }
 
 void pc_multi_poll(u32 local_ptr, u32 remote_ptr) {
   using namespace jak2;
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
-
-    // Throttle polling if not in-game to reduce overhead
-    // We only throttle during initial connection/searching (IDLE, SEARCHING, CONNECTING, etc.)
     static uint32_t last_poll_tick = 0;
     uint32_t current_time = enet_time_get();
-    
     bool is_in_game = (gMultiplayerData.join_status == (int)MultiplayerStatus::IN_GAME);
     bool is_reconnecting = (gMultiplayerData.join_status == (int)MultiplayerStatus::RECONNECTING);
-
-    if (!is_in_game && !is_reconnecting) {
-      if (current_time - last_poll_tick < 100) {
-        return;
-      }
-    }
-    
+    if (!is_in_game && !is_reconnecting) { if (current_time - last_poll_tick < 100) return; }
     last_poll_tick = current_time;
-
     LocalPlayerInfoGOAL* local = (LocalPlayerInfoGOAL*)Ptr<u8>(local_ptr).c();
     RemotePlayerInfoGOAL* remote = (RemotePlayerInfoGOAL*)Ptr<u8>(remote_ptr).c();
     if (!local || !remote) return;
     handle_packet_receive(local, remote);
-
     current_time = enet_time_get();
-
-    // Stale Enemy Cleanup: Clear slots if not updated in 2 seconds
     for (uint32_t i = 0; i < MAX_ENEMY_SYNC_COUNT; i++) {
       if (gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id != 0 &&
           current_time - gMultiplayerData.remote_enemy_buffer.remote_enemies[i].last_updated > 2000) {
         gMultiplayerData.remote_enemy_buffer.remote_enemies[i].actor_id = 0;
       }
     }
-
-    // Timeout Check: If we are in-game but haven't received anything in 10s, trigger Reconnecting UI
-    // Host only checks if at least one peer is connected. Client always checks.
+    for (uint32_t i = 0; i < MAX_PEDESTRIAN_SYNC_COUNT; i++) {
+      if (gMultiplayerData.traffic_buffer.pedestrians[i].net_id != 0 &&
+          current_time - gMultiplayerData.ped_last_updated[i] > 2000) {
+        gMultiplayerData.traffic_buffer.pedestrians[i].net_id = 0;
+      }
+    }
+    for (uint32_t i = 0; i < MAX_VEHICLE_SYNC_COUNT; i++) {
+      if (gMultiplayerData.traffic_buffer.vehicles[i].net_id != 0 &&
+          current_time - gMultiplayerData.veh_last_updated[i] > 2000) {
+        gMultiplayerData.traffic_buffer.vehicles[i].net_id = 0;
+      }
+    }
     bool should_check_timeout = (gMultiplayerData.local_role == 1) || 
                                (gMultiplayerData.local_role == 0 && gMultiplayerData.host->connectedPeers > 0);
-
-    if (should_check_timeout &&
-        gMultiplayerData.join_status == (int)MultiplayerStatus::IN_GAME &&
-        gMultiplayerData.last_receive_time != 0 &&
-        current_time - gMultiplayerData.last_receive_time > 10000) {
-      lg::warn("[Multiplayer] Connection timed out (10s). Entering RECONNECTING state...");
+    if (should_check_timeout && gMultiplayerData.join_status == (int)MultiplayerStatus::IN_GAME &&
+        gMultiplayerData.last_receive_time != 0 && current_time - gMultiplayerData.last_receive_time > 10000) {
       gMultiplayerData.pre_reconnect_status = gMultiplayerData.join_status;
       gMultiplayerData.join_status = (int)MultiplayerStatus::RECONNECTING;
     }
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_poll");
-  }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_poll"); }
 }
 
 void pc_multi_send_state(u32 local_ptr) {
@@ -373,24 +408,17 @@ void pc_multi_send_state(u32 local_ptr) {
   try {
     if (!gMultiplayerData.initialized || !gMultiplayerData.host || local_ptr < 0x1000) return;
     LocalPlayerInfoGOAL* local = (LocalPlayerInfoGOAL*)Ptr<u8>(local_ptr).c();
-    if (!local) return;
-    handle_packet_send(local, nullptr);
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_send_state");
-  }
+    if (local) handle_packet_send(local, nullptr);
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_send_state"); }
 }
 
 void pc_multi_receive_state(u32 remote_ptr) {
   using namespace jak2;
   try {
-    if (!gMultiplayerData.initialized || !gMultiplayerData.host) return;
-    if (remote_ptr < 0x1000) return;
+    if (!gMultiplayerData.initialized || !gMultiplayerData.host || remote_ptr < 0x1000) return;
     RemotePlayerInfoGOAL* remote = (RemotePlayerInfoGOAL*)Ptr<u8>(remote_ptr).c();
-    if (!remote) return;
-    sync_to_goal(remote);
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_receive_state");
-  }
+    if (remote) sync_to_goal(remote);
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_receive_state"); }
 }
 
 void pc_multi_send_events(u32 event_ptr) {
@@ -399,208 +427,163 @@ void pc_multi_send_events(u32 event_ptr) {
   try {
     if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
     MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
-    if (!events) return;
-    
-    // Batched Outbound Events
-    if (events->out_count > 0) {
-      lg::info("[Multiplayer] Sending {} batched events", events->out_count);
+    if (events && events->out_count > 0) {
       for (uint32_t i = 0; i < events->out_count && i < 16; ++i) {
-        PacketGameEvent out_event;
-        out_event.header.type = PacketType::EVENT_GAME;
+        PacketGameEvent out_event; out_event.header.type = PacketType::EVENT_GAME;
         out_event.header.sequenceNum = ++gMultiplayerData.last_out_event_seq;
-        // Copy the entire 48-byte GOAL mp-event structure (etype + pad + data)
         memcpy(out_event.raw_data, &events->out_events[i], 48);
-        int exclude_peer = (int)gMultiplayerData.local_role;
-        MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, out_event, ENET_PACKET_FLAG_RELIABLE);
-        lg::info("  [Event] Type: {}", events->out_events[i].etype);
-        }
-        }
-        events->out_count = 0; // Clear after sending
-        } catch (...) {
-        lg::error("[Multiplayer] Exception in pc_multi_send_events");
-        }
-        }
-
-        void pc_multi_receive_events(u32 event_ptr) {
-        using namespace jak2;
-        try {
-        if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
-        MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
-        if (!events) return;
-
-        // Batched Inbound Events - APPEND only, do not clear (GOAL clears at end of frame)
-        if (!gMultiplayerData.inbound_events.empty()) {
-        lg::info("[Multiplayer] Pushing {} events to GOAL", gMultiplayerData.inbound_events.size());
-        }
-
-        while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
-      auto& event = gMultiplayerData.inbound_events.front();
-      // Copy the entire 48-byte structure back to GOAL
-      memcpy(&events->in_events[events->in_count], event.raw_data, 48);
-      events->in_count++;
-      gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
+        MultiplayerManager::broadcast(gMultiplayerData, gMultiplayerData.local_role, out_event, ENET_PACKET_FLAG_RELIABLE);
+      }
+      events->out_count = 0;
     }
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_receive_events");
-  }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_send_events"); }
+}
+
+void pc_multi_receive_events(u32 event_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
+    MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
+    if (events) {
+      while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
+        memcpy(&events->in_events[events->in_count++], gMultiplayerData.inbound_events.front().raw_data, 48);
+        gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
+      }
+    }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_receive_events"); }
 }
 
 void pc_multi_send_enemies(u32 buffer_ptr) {
   using namespace jak2;
   try {
-    if (!gMultiplayerData.initialized || !gMultiplayerData.host || buffer_ptr < 0x1000) return;
+    if (!gMultiplayerData.initialized || gMultiplayerData.local_role != 0 || buffer_ptr < 0x1000) return;
     MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
     if (!buffer || buffer->local_count == 0) return;
-
-    // Constrain count to buffer limits
-    uint32_t total_count = buffer->local_count;
-    if (total_count > MAX_ENEMY_SYNC_COUNT) total_count = MAX_ENEMY_SYNC_COUNT;
-
-    int exclude_peer = (int)gMultiplayerData.local_role;
+    uint32_t total_count = (buffer->local_count < MAX_ENEMY_SYNC_COUNT) ? buffer->local_count : MAX_ENEMY_SYNC_COUNT;
     uint32_t sent_count = 0;
-
     while (sent_count < total_count) {
-      uint32_t chunk_size = total_count - sent_count;
-      if (chunk_size > MAX_ENEMIES_PER_PACKET) chunk_size = MAX_ENEMIES_PER_PACKET;
-
-      PacketEnemySync enemy_packet;
-      enemy_packet.header.type = PacketType::ENEMY_SYNC;
+      uint32_t chunk_size = (total_count - sent_count < MAX_ENEMIES_PER_PACKET) ? (total_count - sent_count) : MAX_ENEMIES_PER_PACKET;
+      PacketEnemySync enemy_packet; enemy_packet.header.type = PacketType::ENEMY_SYNC;
       enemy_packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
-      enemy_packet.count = chunk_size;
-      enemy_packet.timestamp = enet_time_get();
-
+      enemy_packet.count = chunk_size; enemy_packet.timestamp = enet_time_get();
       for (uint32_t i = 0; i < chunk_size; i++) {
-        MPEnemyState* src = &buffer->local_enemies[sent_count + i];
-        MPEnemyStatePacked* dst = &enemy_packet.enemies[i];
-        
-        dst->actor_id = src->actor_id;
-        dst->x = src->x;
-        dst->y = src->y;
-        dst->z = src->z;
-        dst->quat[0] = pack_float_q(src->quat_x);
-        dst->quat[1] = pack_float_q(src->quat_y);
-        dst->quat[2] = pack_float_q(src->quat_z);
-        dst->quat[3] = pack_float_q(src->quat_w);
-        dst->anim_index = src->anim_index;
-        dst->anim_frame = src->anim_frame;
-        dst->hp = src->hp;
-        dst->state = src->state;
-        dst->focus_aid = src->focus_aid;
-        
-        dst->flags = 0;
-        if (src->attack_flag) dst->flags |= 1;
-        if (src->owner) dst->flags |= 2;
-        if (src->is_aggro) dst->flags |= 4;
+        auto* src = &buffer->local_enemies[sent_count + i]; auto* dst = &enemy_packet.enemies[i];
+        dst->actor_id = src->actor_id; dst->x = src->x; dst->y = src->y; dst->z = src->z;
+        dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
+        dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
+        dst->anim_index = src->anim_index; dst->anim_frame = src->anim_frame;
+        dst->hp = src->hp; dst->state = src->state; dst->focus_aid = src->focus_aid;
+        dst->flags = (src->attack_flag ? 1 : 0) | (src->owner ? 2 : 0) | (src->is_aggro ? 4 : 0);
       }
-
       size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPEnemyStatePacked) * chunk_size);
-      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &enemy_packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
-
+      MultiplayerManager::broadcast(gMultiplayerData, gMultiplayerData.local_role, &enemy_packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
       sent_count += chunk_size;
     }
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_send_enemies");
-  }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_send_enemies"); }
 }
 
 void pc_multi_receive_enemies(u32 buffer_ptr) {
   using namespace jak2;
   try {
-    if (!gMultiplayerData.initialized || !gMultiplayerData.host || buffer_ptr < 0x1000) return;
+    if (!gMultiplayerData.initialized || buffer_ptr < 0x1000) return;
     MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
-    if (!buffer) return;
-
-    // Copy from the C++ buffer to GOAL
-    buffer->remote_count = gMultiplayerData.remote_enemy_buffer.remote_count;
-    memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * MAX_ENEMY_SYNC_COUNT);
-    buffer->last_sync_time = gMultiplayerData.last_enemy_sync_time;
-    // Note: We no longer clear remote_count here to prevent flickering. 
-    // GOAL will check last-sync-time if it needs to know if data is stale.
-  } catch (...) {
-    lg::error("[Multiplayer] Exception in pc_multi_receive_enemies");
-  }
-}
-
-
-u64 pc_multi_get_enemy_sync_time() {
-  return gMultiplayerData.last_enemy_sync_time;
-}
-
-void pc_multi_disconnect() {
-  MultiplayerManager::disconnect(gMultiplayerData);
-}
-
-void pc_multi_setup_host() {
-  MultiplayerManager::setup_host(gMultiplayerData);
-}
-
-void pc_multi_setup_client(u32 ip_ptr) {
-  using namespace jak2;
-  const char* ip = Ptr<String>(ip_ptr).c()->data();
-  MultiplayerManager::setup_client(gMultiplayerData, ip);
-}
-
-int pc_multi_get_status() {
-  return MultiplayerScanner::get_status(gMultiplayerData);
-}
-
-void pc_multi_set_status(int status) {
-  int old_status = gMultiplayerData.join_status;
-  gMultiplayerData.join_status = status;
-  
-  if (old_status != status) {
-    lg::info("[Multiplayer] Status transition: {} -> {}", old_status, status);
-  }
-
-  // If Host is transitioning to IN_GAME, broadcast a FullSync to all connected clients
-  // This allows clients to start their loading process with the correct world state.
-  // We only do this on the transition from a non-game state to IN_GAME to avoid
-  // triggering hard-reloads on clients every time the host respawns.
-  if (gMultiplayerData.local_role == 0 && 
-      status == (int)MultiplayerStatus::IN_GAME && 
-      old_status != (int)MultiplayerStatus::IN_GAME) {
-    lg::info("[Multiplayer] Host entered game. Broadcasting FullSync to peers...");
-    gMultiplayerData.pending_full_sync = true;
-  }
-}
-
-void pc_multi_stop_search() {
-  MultiplayerScanner::stop_search(gMultiplayerData);
-}
-
-void pc_multi_start_search() {
-  MultiplayerScanner::start_search(gMultiplayerData);
-}
-
-u64 pc_multi_get_command_line_arg(u32 str_ptr) {
-  using namespace jak2;
-  const char* arg_name = Ptr<String>(str_ptr).c()->data();
-  for (int i = 1; i < g_argc; i++) {
-    if (strcmp(g_argv[i], arg_name) == 0) {
-      if (i + 1 < g_argc) {
-        return make_string_from_c(g_argv[i+1]);
-      }
-      return make_string_from_c(""); // Flag exists but no value
+    if (buffer) {
+      buffer->remote_count = gMultiplayerData.remote_enemy_buffer.remote_count;
+      memcpy(buffer->remote_enemies, gMultiplayerData.remote_enemy_buffer.remote_enemies, sizeof(MPEnemyState) * MAX_ENEMY_SYNC_COUNT);
+      buffer->last_sync_time = gMultiplayerData.last_enemy_sync_time;
     }
-  }
-  return s7.offset; // Not found
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_receive_enemies"); }
 }
 
-u64 pc_multi_get_found_ip() {
+void pc_multi_send_traffic(u32 buffer_ptr) {
   using namespace jak2;
-  return make_string_from_c(gMultiplayerData.found_ip.c_str());
+  try {
+    if (!gMultiplayerData.initialized || gMultiplayerData.local_role != 0 || buffer_ptr < 0x1000) return;
+    MPTrafficSyncBufferGOAL* buffer = (MPTrafficSyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
+    if (!buffer) return;
+    int exclude_peer = (int)gMultiplayerData.local_role;
+
+    // 1. Pedestrians
+    uint32_t total_peds = (buffer->ped_count < MAX_PEDESTRIAN_SYNC_COUNT) ? buffer->ped_count : MAX_PEDESTRIAN_SYNC_COUNT;
+    uint32_t sent_peds = 0;
+    while (sent_peds < total_peds) {
+      uint32_t chunk_size = (total_peds - sent_peds < MAX_PEDESTRIANS_PER_PACKET) ? (total_peds - sent_peds) : MAX_PEDESTRIANS_PER_PACKET;
+      PacketPedestrianSync packet; packet.header.type = PacketType::PEDESTRIAN_SYNC;
+      packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
+      packet.count = chunk_size; packet.timestamp = enet_time_get();
+      for (uint32_t i = 0; i < chunk_size; i++) {
+        auto* src = &buffer->pedestrians[sent_peds + i]; auto* dst = &packet.peds[i];
+        dst->net_id = src->net_id; dst->object_type = src->object_type; dst->object_variance = src->object_variance;
+        dst->x = src->x; dst->y = src->y; dst->z = src->z;
+        dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
+        dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
+        dst->anim_index = (int16_t)src->anim_index; dst->anim_speed = (int16_t)src->anim_speed;
+      }
+      size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPPedestrianStatePacked) * chunk_size);
+      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
+      sent_peds += chunk_size;
+    }
+
+    // 2. Vehicles
+    uint32_t total_vehs = (buffer->veh_count < MAX_VEHICLE_SYNC_COUNT) ? buffer->veh_count : MAX_VEHICLE_SYNC_COUNT;
+    uint32_t sent_vehs = 0;
+    while (sent_vehs < total_vehs) {
+      uint32_t chunk_size = (total_vehs - sent_vehs < MAX_VEHICLES_PER_PACKET) ? (total_vehs - sent_vehs) : MAX_VEHICLES_PER_PACKET;
+      PacketVehicleSync packet; packet.header.type = PacketType::VEHICLE_SYNC;
+      packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
+      packet.count = chunk_size; packet.timestamp = enet_time_get();
+      for (uint32_t i = 0; i < chunk_size; i++) {
+        auto* src = &buffer->vehicles[sent_vehs + i]; auto* dst = &packet.vehs[i];
+        dst->net_id = src->net_id; dst->vehicle_type = src->vehicle_type; dst->color_index = src->color_index;
+        dst->x = src->x; dst->y = src->y; dst->z = src->z;
+        dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
+        dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
+        dst->lin_vel[0] = (int16_t)(src->lin_vel_x * 10.0f); dst->lin_vel[1] = (int16_t)(src->lin_vel_y * 10.0f); dst->lin_vel[2] = (int16_t)(src->lin_vel_z * 10.0f);
+        dst->ang_vel[0] = pack_float_q(src->ang_vel_x / 10.0f); dst->ang_vel[1] = pack_float_q(src->ang_vel_y / 10.0f); dst->ang_vel[2] = pack_float_q(src->ang_vel_z / 10.0f);
+        dst->state_flags = src->state_flags; memcpy(dst->rider_aids, src->rider_aids, 16);
+      }
+      size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPVehicleStatePacked) * chunk_size);
+      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
+      sent_vehs += chunk_size;
+    }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_send_traffic"); }
 }
 
-void pc_multi_debug_stop_receive(u32 val) {
-  bool new_val = (val != 0);
-  if (g_multi_debug_stop_receive != new_val) {
-    g_multi_debug_stop_receive = new_val;
-  }
+void pc_multi_receive_traffic(u32 buffer_ptr) {
+  using namespace jak2;
+  try {
+    if (!gMultiplayerData.initialized || buffer_ptr < 0x1000) return;
+    MPTrafficSyncBufferGOAL* buffer = (MPTrafficSyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
+    if (buffer) {
+      buffer->ped_count = gMultiplayerData.traffic_buffer.ped_count;
+      memcpy(buffer->pedestrians, gMultiplayerData.traffic_buffer.pedestrians, sizeof(MPPedestrianState) * MAX_PEDESTRIAN_SYNC_COUNT);
+      buffer->veh_count = gMultiplayerData.traffic_buffer.veh_count;
+      memcpy(buffer->vehicles, gMultiplayerData.traffic_buffer.vehicles, sizeof(MPVehicleState) * MAX_VEHICLE_SYNC_COUNT);
+      buffer->last_sync_time = gMultiplayerData.last_traffic_sync_time;
+    }
+  } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_receive_traffic"); }
 }
 
-u64 pc_multi_get_ticks() {
-  return enet_time_get();
+u64 pc_multi_get_enemy_sync_time() { return gMultiplayerData.last_enemy_sync_time; }
+void pc_multi_disconnect() { MultiplayerManager::disconnect(gMultiplayerData); }
+void pc_multi_setup_host() { MultiplayerManager::setup_host(gMultiplayerData); }
+void pc_multi_setup_client(u32 ip_ptr) { using namespace jak2; MultiplayerManager::setup_client(gMultiplayerData, Ptr<String>(ip_ptr).c()->data()); }
+int pc_multi_get_status() { return MultiplayerScanner::get_status(gMultiplayerData); }
+void pc_multi_set_status(int status) {
+  int old_status = gMultiplayerData.join_status; gMultiplayerData.join_status = status;
+  if (old_status != status) lg::info("[Multiplayer] Status transition: {} -> {}", old_status, status);
+  if (gMultiplayerData.local_role == 0 && status == 6 && old_status != 6) gMultiplayerData.pending_full_sync = true;
 }
+void pc_multi_stop_search() { MultiplayerScanner::stop_search(gMultiplayerData); }
+void pc_multi_start_search() { MultiplayerScanner::start_search(gMultiplayerData); }
+u64 pc_multi_get_command_line_arg(u32 str_ptr) {
+  using namespace jak2; const char* arg_name = Ptr<String>(str_ptr).c()->data();
+  for (int i = 1; i < g_argc; i++) { if (strcmp(g_argv[i], arg_name) == 0) return make_string_from_c(i + 1 < g_argc ? g_argv[i+1] : ""); }
+  return s7.offset;
+}
+u64 pc_multi_get_found_ip() { using namespace jak2; return make_string_from_c(gMultiplayerData.found_ip.c_str()); }
+void pc_multi_debug_stop_receive(u32 val) { g_multi_debug_stop_receive = (val != 0); }
+u64 pc_multi_get_ticks() { return enet_time_get(); }
 
 void init_multiplayer_pc_port() {
   using namespace jak2;
@@ -618,6 +601,8 @@ void init_multiplayer_pc_port() {
   make_function_symbol_from_c("pc-multi-receive-events", (void*)pc_multi_receive_events);
   make_function_symbol_from_c("pc-multi-send-enemies", (void*)pc_multi_send_enemies);
   make_function_symbol_from_c("pc-multi-receive-enemies", (void*)pc_multi_receive_enemies);
+  make_function_symbol_from_c("pc-multi-send-traffic", (void*)pc_multi_send_traffic);
+  make_function_symbol_from_c("pc-multi-receive-traffic", (void*)pc_multi_receive_traffic);
   make_function_symbol_from_c("pc-multi-get-enemy-sync-time", (void*)pc_multi_get_enemy_sync_time);
   make_function_symbol_from_c("pc-multi-get-role", (void*)pc_multi_get_role);
   make_function_symbol_from_c("pc-multi-disconnect", (void*)pc_multi_disconnect);

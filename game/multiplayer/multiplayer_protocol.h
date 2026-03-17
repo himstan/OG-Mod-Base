@@ -26,7 +26,9 @@ enum class PacketType : uint8_t {
   EVENT_LEAVE = 2,
   EVENT_GAME = 3,
   FULL_SYNC = 4,
-  ENEMY_SYNC = 5
+  ENEMY_SYNC = 5,
+  PEDESTRIAN_SYNC = 6,
+  VEHICLE_SYNC = 7
 };
 
 struct PacketHeader {
@@ -110,6 +112,75 @@ struct PacketEnemySync {
   uint32_t count;
   uint64_t timestamp;
   MPEnemyStatePacked enemies[MAX_ENEMIES_PER_PACKET];
+};
+
+#define MAX_PEDESTRIAN_SYNC_COUNT 128
+#define MAX_PEDESTRIANS_PER_PACKET 35
+
+#define MAX_VEHICLE_SYNC_COUNT 64
+#define MAX_VEHICLES_PER_PACKET 20
+
+struct MPPedestrianState {
+  uint32_t net_id;
+  uint8_t object_type;
+  uint8_t object_variance;
+  uint8_t pad_align[2];
+  float x, y, z;
+  float quat_x, quat_y, quat_z, quat_w;
+  int32_t anim_index;
+  float anim_speed;
+  uint8_t flags;
+  uint8_t pad[19]; // Align to 64 bytes
+};
+
+struct MPPedestrianStatePacked {
+  uint32_t net_id;
+  uint8_t object_type;
+  uint8_t object_variance;
+  float x, y, z;
+  int16_t quat[4];
+  int16_t anim_index;
+  int16_t anim_speed;
+};
+
+struct PacketPedestrianSync {
+  PacketHeader header;
+  uint32_t count;
+  uint64_t timestamp;
+  MPPedestrianStatePacked peds[MAX_PEDESTRIANS_PER_PACKET];
+};
+
+struct MPVehicleState {
+  uint32_t net_id;
+  uint8_t vehicle_type;
+  uint8_t color_index;
+  uint8_t pad_align[2];
+  float x, y, z;
+  float quat_x, quat_y, quat_z, quat_w;
+  float lin_vel_x, lin_vel_y, lin_vel_z;
+  float ang_vel_x, ang_vel_y, ang_vel_z;
+  uint8_t state_flags;
+  uint8_t pad[3];
+  uint32_t rider_aids[4];
+};
+
+struct MPVehicleStatePacked {
+  uint32_t net_id;
+  uint8_t vehicle_type;
+  uint8_t color_index;
+  float x, y, z;
+  int16_t quat[4];
+  int16_t lin_vel[3]; // Downcast
+  int16_t ang_vel[3]; // Downcast
+  uint8_t state_flags;
+  uint32_t rider_aids[4];
+};
+
+struct PacketVehicleSync {
+  PacketHeader header;
+  uint32_t count;
+  uint64_t timestamp;
+  MPVehicleStatePacked vehs[MAX_VEHICLES_PER_PACKET];
 };
 
 struct PacketFullSync {

@@ -122,6 +122,132 @@
           (the-as process-focusable #f)))))
 
 (define *old-process-entity-status* (the-as (function process entity-perm-status symbol entity-perm-status) #f))
+(define *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) #f))
+
+(defbehavior mp-general-event-handler-hijack enemy ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  "Intercept attacks and sync them across the network."
+  (case arg2
+    (('go-mp-puppet)
+     (go mp-puppet)
+     (return #t)
+     )
+    (('go-mp-sync)
+     (go-process self mp-enemy-sync-idle)
+     (return #t)
+     )
+    (('attack)
+     (let ((aid (mp-get-enemy-aid self)))
+       (when (and (nonzero? aid) (not *mp-processing-remote-event*))
+         (mp-enemy-broadcast-attack self arg0 arg3)
+         )
+       )
+     )
+    (('victory 'death-start 'death-end)
+     (let ((aid (mp-get-enemy-aid self)))
+       (when (and (nonzero? aid) (not *mp-processing-remote-event*))
+         (mp-enemy-broadcast-death self)
+         )
+       )
+     )
+    )
+
+  ;; Call original handler if we aren't overriding it
+  (if *old-general-event-handler*
+      (*old-general-event-handler* self arg0 arg1 arg2 arg3)
+      #f
+      )
+)
+
+(defbehavior mp-vehicle-event-handler-hijack vehicle ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  (case arg2
+    (('go-mp-puppet)
+     (go mp-vehicle-puppet)
+     (return #t)
+     )
+    )
+  (if *old-vehicle-event-handler*
+      (*old-vehicle-event-handler* self arg0 arg1 arg2 arg3)
+      #f
+      )
+)
+
+;; --- Generic Puppet States ---
+
+(defstate mp-puppet (process-drawable)
+  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+    (case message
+      (('go-mp-puppet) #t)
+      (('traffic-off 'traffic-off-force)
+       (set! (-> (the-as citizen self) net-id) (the uint 0))
+       (deactivate self)
+       )
+      (else
+        (if (type? self enemy)
+            (mp-general-event-handler-hijack proc argc message block)
+            )
+        )
+      )
+    )
+  :enter (behavior ()
+    (set-time! (-> self state-time))
+    (if (type? self citizen)
+        (logior! (-> (the-as citizen self) flags) (citizen-flag persistent))
+        )
+    )
+  :trans (behavior ()
+    ;; TODO: Handle authority hand-back (go-virtual idle)
+    )
+  :code (behavior ()
+    (until #f
+      (suspend)
+      )
+    )
+  :post (behavior ()
+    (ja-post)
+    )
+)
+
+(defstate mp-vehicle-puppet (process-drawable)
+  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+    (case message
+      (('go-mp-puppet) #t)
+      (('traffic-off 'traffic-off-force)
+       (set! (-> (the-as vehicle self) net-id) (the uint 0))
+       (deactivate self)
+       )
+      (else
+        (if (type? self vehicle)
+            (mp-vehicle-event-handler-hijack proc argc message block)
+            )
+        )
+      )
+    )
+  :enter (behavior ()
+    (set-time! (-> self state-time))
+    (if (type? self vehicle)
+        (begin
+          (logclear! (-> (the-as vehicle self) rbody state flags) (rigid-body-flag active))
+          ;; CRITICAL: Remove from global rigid-body-queue to prevent physics engine crash
+          ((method-of-type vehicle rigid-body-object-method-30) (the-as vehicle self))
+          )
+        )
+    )
+  :trans (behavior ()
+    ;; TODO: Handle authority hand-back (go-virtual idle)
+    )
+  :code (behavior ()
+    (until #f
+      (suspend)
+      )
+    )
+  :post (behavior ()
+    ;; For vehicles, we use the custom renderer prep
+    (if (type? self rigid-body-object)
+        (rigid-body-object-method-37 (the-as rigid-body-object self))
+        (ja-post)
+        )
+    )
+)
 
 (defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
   ;; Detect when an entity is being marked as dead or task-complete locally
@@ -147,6 +273,12 @@
   (when (not *old-process-entity-status*)
     (set! *old-process-entity-status* process-entity-status!)
     (set! process-entity-status! mp-process-entity-status-hijack))
+
+  ;; 3. Vehicle Hijacks
+  (when (not *old-vehicle-event-handler*)
+    (set! *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) (method-of-type vehicle rigid-body-object-method-46)))
+    (method-set! vehicle 46 (lambda ((this vehicle) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+                              (mp-vehicle-event-handler-hijack arg0 arg1 arg2 arg3))))
 
   (none))
 

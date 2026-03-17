@@ -628,8 +628,26 @@
             (the-as vector (-> s4-0 vector))
             (new 'static 'vector :y 1.0 :w 1.0)
             )
-          (set! (-> this rand) (rand-vu))
-          (activate-from-params this (-> s4-0 params))
+
+          ;; MULTIPLAYER: Assign unique NetID if we are the Host
+          (when (and (nonzero? (pc-multi-get-status)) (mp-is-jak?))
+            (if (= (-> arg1 tracker-id) 1) ;; Vehicle
+                (begin
+                  (set! (-> s4-0 params net-id) *mp-vehicle-net-id-counter*)
+                  ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Vehicle type ~D~%" *mp-vehicle-net-id-counter* (-> s4-0 params object-type))
+                  (+! *mp-vehicle-net-id-counter* 1)
+                  (if (>= *mp-vehicle-net-id-counter* (the uint16 65535)) (set! *mp-vehicle-net-id-counter* (the uint16 1)))
+                  )
+                (begin ;; Pedestrian
+                  (set! (-> s4-0 params net-id) *mp-pedestrian-net-id-counter*)
+                  ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Pedestrian type ~D~%" *mp-pedestrian-net-id-counter* (-> s4-0 params object-type))
+                  (+! *mp-pedestrian-net-id-counter* 1)
+                  (if (>= *mp-pedestrian-net-id-counter* (the uint16 65535)) (set! *mp-pedestrian-net-id-counter* (the uint16 1)))
+                  )
+                )
+            )
+
+          (set! (-> this rand) (rand-vu))          (activate-from-params this (-> s4-0 params))
           )
         )
       )

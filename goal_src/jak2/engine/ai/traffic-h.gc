@@ -130,6 +130,7 @@
   ((object-type  traffic-type)
    (behavior     uint64)
    (id           uint32)
+   (net-id       uint32)
    (nav-mesh     nav-mesh)
    (nav-branch   nav-branch)
    (position     vector      :inline)

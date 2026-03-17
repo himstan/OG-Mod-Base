@@ -81,62 +81,6 @@
       (*old-enemy-method-97* this)
       (the-as process #f)))
 
-(defun mp-general-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-  "Intercept attacks and sync them across the network."
-  (case arg2
-    (('go-mp-sync)
-     (go-process this mp-enemy-sync-idle)
-     (return #t)
-     )
-    (('attack)
-     ;; PUPPET PROTECTION: If we are already reacting, don't react again to local hits.
-     ;; This prevents the "thousand hits" visual jitter and sound spam.
-     (let ((cur-state (if (-> this state) (-> this state name) #f)))
-       (when (and (not (mp-enemy-authoritative? this))
-                  (or (= cur-state 'hit) (= cur-state 'knocked) (= cur-state 'knocked-vicinity)))
-         (let ((is-local? (mp-is-local-attacker? arg0)))
-           (when is-local?
-             ;; Still broadcast if it's a new ID (maybe we hit it again?)
-             (mp-enemy-broadcast-attack this arg0 arg3)
-             ;; BLOCK the engine from restarting the 'hit' state
-             (return #t)
-             )
-           )
-         )
-       )
-
-     (let ((info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
-       (cond
-         ((and info (= (-> info mode) 'mp-death))
-          (format 0 "[MP-Proxy] Authoritative death for ~A (AID ~D).~%" this (mp-get-enemy-aid this))
-          (set! (-> this hit-points) 0)
-          (kill-prefer-falling this)
-          (return #t)
-          )
-         ((and info (= (-> info mode) 'mp-hp-sync))
-          ;; This is an internal HP sync event. Just apply health change, don't trigger engine flinch.
-          (set! (-> this hit-points) (the int (- (the float (-> this hit-points)) (-> info damage))))
-          (return #t)
-          )
-         )
-       )
-
-     ;; (format 0 "[MP-Hit-Debug] Hijack caught 'attack event for ~A from ~A~%" this arg0)
-     (if (mp-enemy-broadcast-attack this arg0 arg3)
-         (return #t) ;; Block throttled local attack from the engine
-         )
-     
-     ;; Allow the engine handler to run. 
-     ;; Non-owners will return 0 from take-damage-from-attack, meaning they won't die,
-     ;; but they WILL play their flinch/knockback state locally.
-     (if *old-general-event-handler* (return (*old-general-event-handler* this arg0 arg1 arg2 arg3)))
-     )
-    )
-  
-  ;; For all other events (notice, touch, etc.)
-  (if *old-general-event-handler* (*old-general-event-handler* this arg0 arg1 arg2 arg3) #f)
-  )
-
 (defun mp-enemy-take-damage-hijack ((this enemy) (arg0 process) (arg1 event-message-block))
   "Authority check for enemy damage."
   (let ((info (if (and arg1 (nonzero? arg1) (nonzero? (-> arg1 param 1))) (the-as attack-info (-> arg1 param 1)) (the-as attack-info #f))))
@@ -193,6 +137,7 @@
   (defmethod take-damage-from-attack ((this nav-enemy) (arg0 process) (arg1 event-message-block)) (mp-enemy-take-damage-hijack (the-as enemy this) arg0 arg1))
 
   (when (not *old-general-event-handler*)
-    (set! *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) (method-of-type enemy general-event-handler))))
-  (defmethod general-event-handler ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block)) (mp-general-event-handler-hijack this arg0 arg1 arg2 arg3))
+    (set! *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) (method-of-type enemy general-event-handler)))
+    (method-set! enemy 10 (lambda ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+                           (run-now-in-process this mp-general-event-handler-hijack arg0 arg1 arg2 arg3))))
   (none))
