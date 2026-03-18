@@ -3,6 +3,8 @@
 #include "multiplayer_scanner.h"
 #include "multiplayer_types.h"
 #include "multiplayer_protocol.h"
+#include "game/multiplayer/pedestrian/multiplayer_pedestrian.h"
+#include "game/multiplayer/vehicle/multiplayer_vehicle.h"
 
 #include "common/log/log.h"
 #include "game/kernel/common/kmachine.h"
@@ -137,115 +139,12 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             gMultiplayerData.remote_enemy_buffer.remote_count = MAX_ENEMY_SYNC_COUNT;
           } else if (header->type == PacketType::PEDESTRIAN_SYNC &&
                      event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
-            PacketPedestrianSync* sync = (PacketPedestrianSync*)event.packet->data;
-            gMultiplayerData.last_traffic_sync_time = current_time;
-            if (sync->count > 0) {
-              lg::info("[Multiplayer] Received {} pedestrians", sync->count);
-            }
-            for (uint32_t i = 0; i < sync->count; i++) {
-              auto* incoming = &sync->peds[i];
-              if (incoming->net_id == 0) continue;
-              bool found = false;
-              for (uint32_t j = 0; j < MAX_PEDESTRIAN_SYNC_COUNT; j++) {
-                if (gMultiplayerData.traffic_buffer.pedestrians[j].net_id == incoming->net_id) {
-                  auto& state = gMultiplayerData.traffic_buffer.pedestrians[j];
-                  state.net_id = incoming->net_id;
-                  state.object_type = incoming->object_type;
-                  state.object_variance = incoming->object_variance;
-                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
-                  state.quat_x = unpack_float_q(incoming->quat[0]);
-                  state.quat_y = unpack_float_q(incoming->quat[1]);
-                  state.quat_z = unpack_float_q(incoming->quat[2]);
-                  state.quat_w = unpack_float_q(incoming->quat[3]);
-                  state.anim_index = incoming->anim_index;
-                  state.anim_speed = (float)incoming->anim_speed; 
-                  gMultiplayerData.ped_last_updated[j] = current_time;
-                  found = true; break;
-                }
-              }
-              if (!found) {
-                for (uint32_t j = 0; j < MAX_PEDESTRIAN_SYNC_COUNT; j++) {
-                  if (gMultiplayerData.traffic_buffer.pedestrians[j].net_id == 0) {
-                    auto& state = gMultiplayerData.traffic_buffer.pedestrians[j];
-                    state.net_id = incoming->net_id;
-                    state.object_type = incoming->object_type;
-                    state.object_variance = incoming->object_variance;
-                    state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
-                    state.quat_x = unpack_float_q(incoming->quat[0]);
-                    state.quat_y = unpack_float_q(incoming->quat[1]);
-                    state.quat_z = unpack_float_q(incoming->quat[2]);
-                    state.quat_w = unpack_float_q(incoming->quat[3]);
-                    state.anim_index = incoming->anim_index;
-                    state.anim_speed = (float)incoming->anim_speed;
-                    gMultiplayerData.ped_last_updated[j] = current_time;
-                    found = true; break;
-                  }
-                }
-              }
-            }
-            gMultiplayerData.traffic_buffer.ped_count = MAX_PEDESTRIAN_SYNC_COUNT;
+            handle_pedestrian_sync_packet(event, gMultiplayerData);
           } else if (header->type == PacketType::VEHICLE_SYNC &&
                      event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
-            PacketVehicleSync* sync = (PacketVehicleSync*)event.packet->data;
-            gMultiplayerData.last_traffic_sync_time = current_time;
-            if (sync->count > 0) {
-              lg::info("[Multiplayer] Received {} vehicles", sync->count);
-            }
-            for (uint32_t i = 0; i < sync->count; i++) {
-              auto* incoming = &sync->vehs[i];
-              if (incoming->net_id == 0) continue;
-              bool found = false;
-              for (uint32_t j = 0; j < MAX_VEHICLE_SYNC_COUNT; j++) {
-                if (gMultiplayerData.traffic_buffer.vehicles[j].net_id == incoming->net_id) {
-                  auto& state = gMultiplayerData.traffic_buffer.vehicles[j];
-                  state.net_id = incoming->net_id;
-                  state.vehicle_type = incoming->vehicle_type;
-                  state.color_index = incoming->color_index;
-                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
-                  state.quat_x = unpack_float_q(incoming->quat[0]);
-                  state.quat_y = unpack_float_q(incoming->quat[1]);
-                  state.quat_z = unpack_float_q(incoming->quat[2]);
-                  state.quat_w = unpack_float_q(incoming->quat[3]);
-                  state.lin_vel_x = (float)incoming->lin_vel[0] / 10.0f;
-                  state.lin_vel_y = (float)incoming->lin_vel[1] / 10.0f;
-                  state.lin_vel_z = (float)incoming->lin_vel[2] / 10.0f;
-                  state.ang_vel_x = unpack_float_q(incoming->ang_vel[0]) * 10.0f;
-                  state.ang_vel_y = unpack_float_q(incoming->ang_vel[1]) * 10.0f;
-                  state.ang_vel_z = unpack_float_q(incoming->ang_vel[2]) * 10.0f;
-                  state.state_flags = incoming->state_flags;
-                  memcpy(state.rider_aids, incoming->rider_aids, 16);
-                  gMultiplayerData.veh_last_updated[j] = current_time;
-                  found = true; break;
-                }
-              }
-              if (!found) {
-                for (uint32_t j = 0; j < MAX_VEHICLE_SYNC_COUNT; j++) {
-                  if (gMultiplayerData.traffic_buffer.vehicles[j].net_id == 0) {
-                    auto& state = gMultiplayerData.traffic_buffer.vehicles[j];
-                    state.net_id = incoming->net_id;
-                    state.vehicle_type = incoming->vehicle_type;
-                    state.color_index = incoming->color_index;
-                    state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
-                    state.quat_x = unpack_float_q(incoming->quat[0]);
-                    state.quat_y = unpack_float_q(incoming->quat[1]);
-                    state.quat_z = unpack_float_q(incoming->quat[2]);
-                    state.quat_w = unpack_float_q(incoming->quat[3]);
-                    state.lin_vel_x = (float)incoming->lin_vel[0] / 10.0f;
-                    state.lin_vel_y = (float)incoming->lin_vel[1] / 10.0f;
-                    state.lin_vel_z = (float)incoming->lin_vel[2] / 10.0f;
-                    state.ang_vel_x = unpack_float_q(incoming->ang_vel[0]) * 10.0f;
-                    state.ang_vel_y = unpack_float_q(incoming->ang_vel[1]) * 10.0f;
-                    state.ang_vel_z = unpack_float_q(incoming->ang_vel[2]) * 10.0f;
-                    state.state_flags = incoming->state_flags;
-                    memcpy(state.rider_aids, incoming->rider_aids, 16);
-                    gMultiplayerData.veh_last_updated[j] = current_time;
-                    found = true; break;
-                  }
-                }
-              }
-            }
-            gMultiplayerData.traffic_buffer.veh_count = MAX_VEHICLE_SYNC_COUNT;
+            handle_vehicle_sync_packet(event, gMultiplayerData);
           } else if (header->type == PacketType::FULL_SYNC &&
+
                      event.packet->dataLength == sizeof(PacketFullSync)) {
             PacketFullSync* full_sync = (PacketFullSync*)event.packet->data;
             local->sync_money = full_sync->money; local->sync_gems = full_sync->gems; local->sync_skill = full_sync->skill;
@@ -503,49 +402,9 @@ void pc_multi_send_traffic(u32 buffer_ptr) {
     if (!buffer) return;
     int exclude_peer = (int)gMultiplayerData.local_role;
 
-    // 1. Pedestrians
-    uint32_t total_peds = (buffer->ped_count < MAX_PEDESTRIAN_SYNC_COUNT) ? buffer->ped_count : MAX_PEDESTRIAN_SYNC_COUNT;
-    uint32_t sent_peds = 0;
-    while (sent_peds < total_peds) {
-      uint32_t chunk_size = (total_peds - sent_peds < MAX_PEDESTRIANS_PER_PACKET) ? (total_peds - sent_peds) : MAX_PEDESTRIANS_PER_PACKET;
-      PacketPedestrianSync packet; packet.header.type = PacketType::PEDESTRIAN_SYNC;
-      packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
-      packet.count = chunk_size; packet.timestamp = enet_time_get();
-      for (uint32_t i = 0; i < chunk_size; i++) {
-        auto* src = &buffer->pedestrians[sent_peds + i]; auto* dst = &packet.peds[i];
-        dst->net_id = src->net_id; dst->object_type = src->object_type; dst->object_variance = src->object_variance;
-        dst->x = src->x; dst->y = src->y; dst->z = src->z;
-        dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
-        dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
-        dst->anim_index = (int16_t)src->anim_index; dst->anim_speed = (int16_t)src->anim_speed;
-      }
-      size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPPedestrianStatePacked) * chunk_size);
-      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
-      sent_peds += chunk_size;
-    }
+    send_pedestrian_sync_packets(gMultiplayerData, buffer, exclude_peer);
+    send_vehicle_sync_packets(gMultiplayerData, buffer, exclude_peer);
 
-    // 2. Vehicles
-    uint32_t total_vehs = (buffer->veh_count < MAX_VEHICLE_SYNC_COUNT) ? buffer->veh_count : MAX_VEHICLE_SYNC_COUNT;
-    uint32_t sent_vehs = 0;
-    while (sent_vehs < total_vehs) {
-      uint32_t chunk_size = (total_vehs - sent_vehs < MAX_VEHICLES_PER_PACKET) ? (total_vehs - sent_vehs) : MAX_VEHICLES_PER_PACKET;
-      PacketVehicleSync packet; packet.header.type = PacketType::VEHICLE_SYNC;
-      packet.header.sequenceNum = ++gMultiplayerData.sequence_num;
-      packet.count = chunk_size; packet.timestamp = enet_time_get();
-      for (uint32_t i = 0; i < chunk_size; i++) {
-        auto* src = &buffer->vehicles[sent_vehs + i]; auto* dst = &packet.vehs[i];
-        dst->net_id = src->net_id; dst->vehicle_type = src->vehicle_type; dst->color_index = src->color_index;
-        dst->x = src->x; dst->y = src->y; dst->z = src->z;
-        dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
-        dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
-        dst->lin_vel[0] = (int16_t)(src->lin_vel_x * 10.0f); dst->lin_vel[1] = (int16_t)(src->lin_vel_y * 10.0f); dst->lin_vel[2] = (int16_t)(src->lin_vel_z * 10.0f);
-        dst->ang_vel[0] = pack_float_q(src->ang_vel_x / 10.0f); dst->ang_vel[1] = pack_float_q(src->ang_vel_y / 10.0f); dst->ang_vel[2] = pack_float_q(src->ang_vel_z / 10.0f);
-        dst->state_flags = src->state_flags; memcpy(dst->rider_aids, src->rider_aids, 16);
-      }
-      size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPVehicleStatePacked) * chunk_size);
-      MultiplayerManager::broadcast(gMultiplayerData, exclude_peer, &packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);
-      sent_vehs += chunk_size;
-    }
   } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_send_traffic"); }
 }
 
@@ -555,11 +414,8 @@ void pc_multi_receive_traffic(u32 buffer_ptr) {
     if (!gMultiplayerData.initialized || buffer_ptr < 0x1000) return;
     MPTrafficSyncBufferGOAL* buffer = (MPTrafficSyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
     if (buffer) {
-      buffer->ped_count = gMultiplayerData.traffic_buffer.ped_count;
-      memcpy(buffer->pedestrians, gMultiplayerData.traffic_buffer.pedestrians, sizeof(MPPedestrianState) * MAX_PEDESTRIAN_SYNC_COUNT);
-      buffer->veh_count = gMultiplayerData.traffic_buffer.veh_count;
-      memcpy(buffer->vehicles, gMultiplayerData.traffic_buffer.vehicles, sizeof(MPVehicleState) * MAX_VEHICLE_SYNC_COUNT);
-      buffer->last_sync_time = gMultiplayerData.last_traffic_sync_time;
+      receive_pedestrian_sync_data(gMultiplayerData, buffer);
+      receive_vehicle_sync_data(gMultiplayerData, buffer);
     }
   } catch (...) { lg::error("[Multiplayer] Exception in pc_multi_receive_traffic"); }
 }

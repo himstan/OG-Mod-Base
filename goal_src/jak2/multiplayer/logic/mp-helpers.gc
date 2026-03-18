@@ -100,6 +100,36 @@
     (set! (-> out-frame 0) res-frame))
     (none))
 
+(defun mp-traffic-type-loaded? ((t-type traffic-type))
+  "Check if the art group for a given traffic type is already loaded in memory. (Client Side)"
+  (let ((skel-name (the-as string #f)))
+    (case t-type
+      (((traffic-type bikea)) (set! skel-name "skel-bikea"))
+      (((traffic-type bikeb)) (set! skel-name "skel-bikeb"))
+      (((traffic-type bikec)) (set! skel-name "skel-bikec"))
+      (((traffic-type cara)) (set! skel-name "skel-cara"))
+      (((traffic-type carb)) (set! skel-name "skel-carb"))
+      (((traffic-type carc)) (set! skel-name "skel-carc"))
+      (((traffic-type guard-bike)) (set! skel-name "skel-guard-bike"))
+      (((traffic-type hellcat)) (set! skel-name "skel-hellcat"))
+      (((traffic-type citizen-norm-1) (traffic-type citizen-norm-2)) (set! skel-name "skel-citizen-norm"))
+      (((traffic-type citizen-chick)) (set! skel-name "skel-citizen-chick"))
+      (((traffic-type citizen-fat)) (set! skel-name "skel-citizen-fat"))
+      (((traffic-type metalhead-predator)) (set! skel-name "skel-metalhead-predator"))
+      (((traffic-type metalhead-grunt)) (set! skel-name "skel-metalhead-grunt"))
+      (((traffic-type metalhead-flitter)) (set! skel-name "skel-metalhead-flitter"))
+      (((traffic-type crimson-guard-1) (traffic-type crimson-guard-0)) (set! skel-name "skel-crimson-guard"))
+      )
+    (if skel-name
+        (if (art-group-get-by-name *level* skel-name (the-as (pointer uint32) #f))
+            #t
+            #f
+            )
+        #f
+        )
+    )
+)
+
 (defun mp-is-local-attacker? ((proc process))
   "Is the process either the local target or in its parentage (e.g., projectile)?"
   (if (or (not proc) (zero? proc)) (return #f))
@@ -122,7 +152,6 @@
           (the-as process-focusable #f)))))
 
 (define *old-process-entity-status* (the-as (function process entity-perm-status symbol entity-perm-status) #f))
-(define *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) #f))
 
 (defbehavior mp-general-event-handler-hijack enemy ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   "Intercept attacks and sync them across the network."
@@ -154,19 +183,6 @@
   ;; Call original handler if we aren't overriding it
   (if *old-general-event-handler*
       (*old-general-event-handler* self arg0 arg1 arg2 arg3)
-      #f
-      )
-)
-
-(defbehavior mp-vehicle-event-handler-hijack vehicle ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-  (case arg2
-    (('go-mp-puppet)
-     (go mp-vehicle-puppet)
-     (return #t)
-     )
-    )
-  (if *old-vehicle-event-handler*
-      (*old-vehicle-event-handler* self arg0 arg1 arg2 arg3)
       #f
       )
 )
@@ -207,48 +223,6 @@
     )
 )
 
-(defstate mp-vehicle-puppet (process-drawable)
-  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
-    (case message
-      (('go-mp-puppet) #t)
-      (('traffic-off 'traffic-off-force)
-       (set! (-> (the-as vehicle self) net-id) (the uint 0))
-       (deactivate self)
-       )
-      (else
-        (if (type? self vehicle)
-            (mp-vehicle-event-handler-hijack proc argc message block)
-            )
-        )
-      )
-    )
-  :enter (behavior ()
-    (set-time! (-> self state-time))
-    (if (type? self vehicle)
-        (begin
-          (logclear! (-> (the-as vehicle self) rbody state flags) (rigid-body-flag active))
-          ;; CRITICAL: Remove from global rigid-body-queue to prevent physics engine crash
-          ((method-of-type vehicle rigid-body-object-method-30) (the-as vehicle self))
-          )
-        )
-    )
-  :trans (behavior ()
-    ;; TODO: Handle authority hand-back (go-virtual idle)
-    )
-  :code (behavior ()
-    (until #f
-      (suspend)
-      )
-    )
-  :post (behavior ()
-    ;; For vehicles, we use the custom renderer prep
-    (if (type? self rigid-body-object)
-        (rigid-body-object-method-37 (the-as rigid-body-object self))
-        (ja-post)
-        )
-    )
-)
-
 (defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
   ;; Detect when an entity is being marked as dead or task-complete locally
   (when (and arg2
@@ -275,10 +249,7 @@
     (set! process-entity-status! mp-process-entity-status-hijack))
 
   ;; 3. Vehicle Hijacks
-  (when (not *old-vehicle-event-handler*)
-    (set! *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) (method-of-type vehicle rigid-body-object-method-46)))
-    (method-set! vehicle 46 (lambda ((this vehicle) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-                              (mp-vehicle-event-handler-hijack arg0 arg1 arg2 arg3))))
+  (mp-vehicle-apply-hijacks)
 
   (none))
 

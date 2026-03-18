@@ -414,6 +414,7 @@
 (define-extern mp-enemy-apply-state (function enemy mp-enemy-state none))
 (define-extern iterate-process-tree (function process-tree (function object object) kernel-context object))
 (define-extern mp-apply-enemy-hijacks (function none))
+(define-extern mp-vehicle-apply-hijacks (function none))
 (define-extern mp-enemy-sync-idle (state enemy))
 (define-extern mp-puppet (state process))
 (define-extern mp-vehicle-puppet (state process))

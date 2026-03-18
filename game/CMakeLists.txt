@@ -306,6 +306,8 @@ set(RUNTIME_SOURCE
         multiplayer/multiplayer.cpp
         multiplayer/multiplayer_manager.cpp
         multiplayer/multiplayer_scanner.cpp
+        multiplayer/pedestrian/multiplayer_pedestrian.cpp
+        multiplayer/vehicle/multiplayer_vehicle.cpp
         system/SystemThread.cpp
         tools/filter_menu/filter_menu.cpp
         tools/subtitle_editor/subtitle_editor_db.cpp

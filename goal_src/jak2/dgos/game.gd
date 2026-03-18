@@ -483,6 +483,8 @@
   "mp-helpers.o" ;; added
   "mp-enemy-h.o" ;; added
   "mp-enemy-sync.o" ;; added
+  "mp-pedestrian-sync.o" ;; added
+  "mp-vehicle-sync.o" ;; added
   "mp-traffic-sync.o" ;; added
   "mp-enemy-debug.o" ;; added  
   "mp-enemy-hijacks.o" ;; added
