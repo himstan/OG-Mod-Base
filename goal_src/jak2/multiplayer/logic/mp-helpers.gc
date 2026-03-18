@@ -220,6 +220,9 @@
     )
   :post (behavior ()
     (ja-post)
+    (if (and (-> self root) (type? (-> self root) collide-shape))
+        (update-transforms (the-as collide-shape (-> self root)))
+        )
     )
 )
 

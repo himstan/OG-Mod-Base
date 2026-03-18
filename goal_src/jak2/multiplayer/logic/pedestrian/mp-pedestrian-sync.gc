@@ -73,6 +73,18 @@
         
         (let ((proc (traffic-object-spawn (the-as process *traffic-manager*) params)))
           (when (and proc (nonzero? proc))
+            ;; Fix invisible pedestrians: clear the flags set by the default 'inactive' state.
+            (let ((c-proc (the-as citizen proc)))
+              (logclear! (-> c-proc draw status) (draw-control-status no-draw))
+              (logclear! (-> c-proc focus-status) (focus-status disable inactive))
+              
+              ;; Restore collision flags that 'inactive' cleared
+              (let ((root-prim (-> c-proc root root-prim)))
+                (set! (-> root-prim prim-core collide-as) (-> c-proc root backup-collide-as))
+                (set! (-> root-prim prim-core collide-with) (-> c-proc root backup-collide-with))
+                )
+              (logior! (-> c-proc root nav-flags) (nav-flags has-root-sphere has-extra-sphere))
+              )
             ;; Force into puppet state immediately
             (go-process proc mp-puppet)
             )
@@ -101,8 +113,20 @@
         (when (< anim-idx (-> proc draw art-group length))
           (let ((fgroup (-> proc draw art-group data anim-idx)))
             (when (and fgroup (nonzero? fgroup) (type? fgroup art-joint-anim))
-              (set! (-> proc skel channel 0 frame-group) (the-as art-joint-anim fgroup))
-              (set! (-> proc skel channel 0 frame-num) (-> slot anim-speed))
+              (when (= (-> proc skel active-channels) 0)
+                (set! (-> proc skel active-channels) 1)
+                (set! (-> proc skel root-channel 0 command) (joint-control-command push))
+                (set! (-> proc skel root-channel 0 frame-interp 0) 0.0)
+                (set! (-> proc skel root-channel 0 frame-interp 1) 0.0)
+                )
+
+              (let ((chan (-> proc skel root-channel 0)))
+                (set! (-> chan frame-group) (the-as art-joint-anim fgroup))
+                (set! (-> chan param 0) (-> slot anim-speed))
+                (set! (-> chan num-func) num-func-identity)
+                (set! (-> chan frame-num) (-> slot anim-speed))
+                (joint-control-channel-group! chan (the-as art-joint-anim fgroup) num-func-identity)
+                )
               )
             )
           )
