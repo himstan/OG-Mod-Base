@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
+(declare-type vehicle-rider process-focusable)
+
 (define *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) #f))
 
 ;; --- Vehicle Packing (Host Side) ---
@@ -31,7 +33,12 @@
     )
   
   (dotimes (i 4)
-    (set! (-> slot rider-aids i) (the uint 0))
+    (let ((rider-proc (handle->process (-> v-proc rider-array i))))
+      (if (and rider-proc (type? rider-proc vehicle-rider))
+          (set! (-> slot rider-aids i) (the uint 1))
+          (set! (-> slot rider-aids i) (the uint 0))
+          )
+      )
     )
   (none)
   )
@@ -68,7 +75,10 @@
         (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
         (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
         (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
-        (set! (-> params flags) (traffic-spawn-flags trsflags-00))
+        (if (nonzero? (-> slot rider-aids 0))
+            (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
+            (set! (-> params flags) (traffic-spawn-flags trsflags-00))
+            )
         
         (let ((proc (traffic-object-spawn (the-as process *traffic-manager*) params)))
           (when (and proc (nonzero? proc))
@@ -97,6 +107,42 @@
     (if (not (and (-> proc next-state) (= (-> proc next-state name) 'mp-vehicle-puppet)))
         (send-event proc 'go-mp-puppet)
         )
+    
+    ;; Sync riders dynamically
+    (dotimes (i 4)
+      (let ((client-rider-proc (handle->process (-> proc rider-array i)))
+            (host-has-rider (nonzero? (-> slot rider-aids i))))
+        (cond
+          ((and host-has-rider (not client-rider-proc))
+           ;; Host has a rider, but client doesn't.
+           (when (= i 0)
+             (let ((params (new 'stack-no-clear 'traffic-object-spawn-params)))
+               (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
+               (set! (-> params behavior) (the uint64 0))
+               (set! (-> params id) (the uint32 0))
+               (set! (-> params nav-mesh) #f)
+               (set! (-> params nav-branch) #f)
+               (set! (-> params proc) #f)
+               (set! (-> params handle) (the-as handle #f))
+               (set! (-> params user-data) (the uint 0))
+               (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
+               (set! (-> params guard-type) (the uint8 0))
+               (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
+               (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
+               (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
+               (vehicle-method-137 proc params)
+               )
+             )
+           )
+          ((and (not host-has-rider) client-rider-proc)
+           ;; Host has no rider, client has a rider.
+           (send-event client-rider-proc 'rider-off)
+           (deactivate client-rider-proc)
+           (set! (-> proc rider-array i) (the-as handle #f))
+           )
+          )
+        )
+      )
     )
   (none)
 )
@@ -195,7 +241,10 @@
   :post (behavior ()
     ;; For vehicles, we use the custom renderer prep
     (if (type? self rigid-body-object)
-        (rigid-body-object-method-37 (the-as rigid-body-object self))
+        (begin
+          (rigid-body-object-method-37 (the-as rigid-body-object self))
+          (vehicle-method-119 (the-as vehicle self))
+          )
         (ja-post)
         )
     )
