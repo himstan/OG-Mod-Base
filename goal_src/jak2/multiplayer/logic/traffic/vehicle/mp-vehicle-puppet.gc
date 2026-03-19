@@ -24,7 +24,7 @@
 )
 
 (defun mp-vehicle-spawn-puppet ((slot mp-vehicle-state))
-  (when (and *traffic-manager* (nonzero? (the-as uint *traffic-manager*)))
+  (when (mp-is-traffic-ready?)
     ;; BUDGET/SAFETY: Only spawn if art is loaded to avoid linking crash
     (when (mp-traffic-type-loaded? (the-as traffic-type (-> slot vehicle-type)))
       (let ((params (new 'stack-no-clear 'traffic-object-spawn-params)))
@@ -75,7 +75,8 @@
         (cond
           ((and host-has-rider (not client-rider-proc))
            ;; Host has a rider, but client doesn't.
-           (when (= i 0)
+           ;; SAFETY: Only spawn rider if art is loaded and traffic is ready
+           (when (and (= i 0) (mp-traffic-type-loaded? (the-as traffic-type (-> slot vehicle-type))))
              (let ((params (new 'stack-no-clear 'traffic-object-spawn-params)))
                (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
                (set! (-> params behavior) (the uint64 0))

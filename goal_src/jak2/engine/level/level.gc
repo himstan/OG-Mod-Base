@@ -1946,7 +1946,7 @@ into 7 sections, which might explain the weird sizes in the center.
   "Search all levels for an art-group. Return the art group, or #f. Optionally return the level index."
   (countdown (s4-0 LEVEL_TOTAL)
     (let ((s3-0 (-> *level* level s4-0)))
-      (when (or (= (-> s3-0 status) 'active) (= (-> s3-0 status) 'reserved))
+      (when (or (= (-> s3-0 status) 'active) (= (-> s3-0 status) 'reserved) (= (-> s3-0 status) 'display))
         (countdown (s2-0 (-> s3-0 art-group art-group-array length))
           (when (name= (-> s3-0 art-group art-group-array s2-0 name) arg0)
             (if arg1

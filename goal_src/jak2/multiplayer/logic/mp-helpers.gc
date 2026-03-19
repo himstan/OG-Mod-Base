@@ -100,36 +100,47 @@
     (set! (-> out-frame 0) res-frame))
     (none))
 
+(defun mp-is-traffic-ready? ()
+  "Is the traffic system fully initialized and ready for sync? (Client Side)"
+  (and *traffic-manager*
+       *lwide-entity*
+       (nonzero? (the-as uint *lwide-entity*))
+       )
+  )
+
 (defun mp-traffic-type-loaded? ((t-type traffic-type))
   "Check if the art group for a given traffic type is already loaded in memory. (Client Side)"
-  (let ((skel-name (the-as string #f)))
+  ;; GLOBAL SAFETY: Traffic requires lwide-entity and traffic-manager to be stable.
+  (if (not (mp-is-traffic-ready?))
+      (return #f))
+
+  (let ((ag-name (the-as string #f)))
     (case t-type
-      (((traffic-type bikea)) (set! skel-name "skel-bikea"))
-      (((traffic-type bikeb)) (set! skel-name "skel-bikeb"))
-      (((traffic-type bikec)) (set! skel-name "skel-bikec"))
-      (((traffic-type cara)) (set! skel-name "skel-cara"))
-      (((traffic-type carb)) (set! skel-name "skel-carb"))
-      (((traffic-type carc)) (set! skel-name "skel-carc"))
-      (((traffic-type guard-bike)) (set! skel-name "skel-guard-bike"))
-      (((traffic-type hellcat)) (set! skel-name "skel-hellcat"))
-      (((traffic-type citizen-norm-1) (traffic-type citizen-norm-2)) (set! skel-name "skel-citizen-norm"))
-      (((traffic-type citizen-chick)) (set! skel-name "skel-citizen-chick"))
-      (((traffic-type citizen-fat)) (set! skel-name "skel-citizen-fat"))
-      (((traffic-type metalhead-predator)) (set! skel-name "skel-metalhead-predator"))
-      (((traffic-type metalhead-grunt)) (set! skel-name "skel-metalhead-grunt"))
-      (((traffic-type metalhead-flitter)) (set! skel-name "skel-metalhead-flitter"))
-      (((traffic-type crimson-guard-1) (traffic-type crimson-guard-0)) (set! skel-name "skel-crimson-guard"))
+      (((traffic-type bikea)) (set! ag-name "skel-bikea"))
+      (((traffic-type bikeb)) (set! ag-name "skel-bikeb"))
+      (((traffic-type bikec)) (set! ag-name "skel-bikec"))
+      (((traffic-type cara)) (set! ag-name "skel-cara"))
+      (((traffic-type carb)) (set! ag-name "skel-carb"))
+      (((traffic-type carc)) (set! ag-name "skel-carc"))
+      (((traffic-type guard-bike)) (set! ag-name "skel-guard-bike"))
+      (((traffic-type hellcat)) (set! ag-name "skel-hellcat"))
+      (((traffic-type citizen-norm-1) (traffic-type citizen-norm-2)) (set! ag-name "skel-citizen-norm"))
+      (((traffic-type citizen-chick)) (set! ag-name "skel-citizen-chick"))
+      (((traffic-type citizen-fat)) (set! ag-name "skel-citizen-fat"))
+      (((traffic-type metalhead-predator)) (set! ag-name "skel-metalhead-predator"))
+      (((traffic-type metalhead-grunt)) (set! ag-name "skel-grunt"))
+      (((traffic-type metalhead-flitter)) (set! ag-name "skel-flitter"))
+      (((traffic-type crimson-guard-1) (traffic-type crimson-guard-0)) (set! ag-name "skel-crimson-guard"))
       )
-    (if skel-name
-        (if (art-group-get-by-name *level* skel-name (the-as (pointer uint32) #f))
+    (if ag-name
+        (if (art-group-get-by-name *level* ag-name (the-as (pointer uint32) #f))
             #t
             #f
             )
         #f
         )
     )
-)
-
+  )
 (defun mp-is-local-attacker? ((proc process))
   "Is the process either the local target or in its parentage (e.g., projectile)?"
   (if (or (not proc) (zero? proc)) (return #f))

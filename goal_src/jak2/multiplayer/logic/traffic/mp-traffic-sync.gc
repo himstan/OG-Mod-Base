@@ -46,10 +46,10 @@
 (defun mp-sync-traffic-update ()
   (let ((status (pc-multi-get-status)))
     (when (nonzero? status)
-      (if (not *traffic-manager*)
+      (if (not (mp-is-traffic-ready?))
           (begin
             (when (time-elapsed? (-> *mp-traffic-buffer* last-sync-time) (seconds 5))
-               (format 0 "[MP-Traffic] Waiting for Traffic Manager...~%")
+               (format 0 "[MP-Traffic] Waiting for Traffic Manager & Levels...~%")
                (set! (-> *mp-traffic-buffer* last-sync-time) (the-as uint (current-time)))
                )
             )

@@ -12,6 +12,8 @@
   `(mp-is-jak?)
   )
 
+(define-extern mp-is-traffic-ready? (function symbol))
+
 ;; --- Externs ---
 
 ;; Pedestrian

@@ -22,7 +22,7 @@
 )
 
 (defun mp-pedestrian-spawn-puppet ((slot mp-pedestrian-state))
-  (when (and *traffic-manager* (nonzero? (the-as uint *traffic-manager*)))
+  (when (mp-is-traffic-ready?)
     ;; BUDGET/SAFETY: Only spawn if art is loaded to avoid linking crash
     (when (mp-traffic-type-loaded? (the-as traffic-type (-> slot object-type)))
       (let ((params (new 'stack-no-clear 'traffic-object-spawn-params)))
