@@ -344,6 +344,8 @@
 
 (define-extern *kernel-boot-message* symbol)
 (define-extern *kernel-boot-continue* object)
+(define-extern *kernel-boot-snapshot* object)
+(define-extern get-snapshot-continue-name (function string string symbol))
 (define-extern *user* symbol)
 
 (define-extern new-dynamic-structure (function symbol type int structure))

@@ -1097,6 +1097,10 @@
     (set! *teleport* #t)
     (update *setting-control*)
     (init-time-of-day-context *time-of-day-context*)
+    (when *kernel-boot-snapshot*
+      (load-snapshot (the-as string *kernel-boot-snapshot*))
+      (set! *kernel-boot-snapshot* #f)
+      )
     (display-sync gp-1)
     (swap-display gp-1)
     (install-handler 3 vblank-handler)

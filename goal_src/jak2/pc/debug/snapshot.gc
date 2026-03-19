@@ -1,0 +1,223 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: snapshot.gc
+;; name in dgo: snapshot
+;; dgos: GAME
+
+(define-extern task-node-closed? (function game-task-node symbol))
+(define-extern task-node-close! (function game-task-node int))
+(define-extern file-stream-seek-past-whitespace (function file-stream int))
+(define-extern file-stream-read-word (function file-stream string))
+(define-extern file-stream-read-int (function file-stream int))
+(define-extern file-stream-read-float (function file-stream float))
+(define-extern file-stream-read-symbol (function file-stream symbol))
+
+;; Dedicated buffer for reading command words to avoid corruption of *pc-temp-string*
+(define *snapshot-cmd-buffer* (new 'global 'string 64 (the-as string #f)))
+
+(defun get-snapshot-continue-name ((name string) (out-name string))
+  "Read the continue point name from a snapshot file."
+  (let ((fs (new 'stack 'file-stream (the-as string (format #f "snapshots/~S.txt" name)) 'read)))
+    (if (not (file-stream-valid? fs))
+        (begin
+          (format 0 "Snapshot file not found: snapshots/~S.txt~%" name)
+          (return #f)
+          )
+        )
+    
+    (let ((done? #f))
+      (while (not done?)
+        (file-stream-seek-past-whitespace fs)
+        (let ((word (file-stream-read-word fs)))
+          (if (or (zero? (length word)) (zero? (-> word data 0)))
+              (set! done? #t)
+              (begin
+                (copy-string<-string *snapshot-cmd-buffer* word)
+                (case-str *snapshot-cmd-buffer*
+                  (("continue")
+                   (let ((cont-name (file-stream-read-symbol fs)))
+                     (copy-string<-string out-name (symbol->string cont-name))
+                     (file-stream-close fs)
+                     (return #t)
+                     )
+                   )
+                  )
+                )
+              )
+          )
+        )
+      )
+    (file-stream-close fs)
+    )
+  #f
+  )
+
+(defun save-snapshot ((name string))
+  "Save the current game state to a snapshot file."
+  (pc-mkdir-file-path "snapshots/")
+  (let ((fs (new 'stack 'file-stream (the-as string (format #f "snapshots/~S.txt" name)) 'write)))
+    (if (not (file-stream-valid? fs))
+        (begin
+          (format 0 "Failed to open snapshot file for writing: ~S~%" name)
+          (return #f)
+          )
+        )
+    
+    ;; Save continue point
+    (format fs "continue ~S~%" (-> *game-info* current-continue name))
+    
+    ;; Save closed tasks
+    ;; Iterate through all possible game-task-nodes
+    (dotimes (i (-> *game-info* sub-task-list length))
+      (when (nonzero? i)
+        (if (task-node-closed? (the-as game-task-node i))
+            (format fs "task-close ~D~%" i)
+            )
+        )
+      )
+    
+    ;; Save target position and orientation
+    (when *target*
+      (let ((pos (-> *target* root trans))
+            (quat (-> *target* root quat)))
+        (format fs "pos ~f ~f ~f~%" (-> pos x) (-> pos y) (-> pos z))
+        (format fs "quat ~f ~f ~f ~f~%" (-> quat x) (-> quat y) (-> quat z) (-> quat w))
+        )
+      )
+    
+    (file-stream-close fs)
+    (format 0 "Snapshot saved: ~S~%" name)
+    )
+  #t
+  )
+
+(deftype pending-snapshot (process)
+  ((snapshot-name  string)
+   (target-pos     vector  :inline)
+   (target-quat    quaternion :inline)
+   (has-pos?       symbol)
+   (task-count     int32)
+   (tasks-to-close uint32 512)
+   )
+  (:states
+    pending-snapshot-apply
+    )
+  )
+
+(defstate pending-snapshot-apply (pending-snapshot)
+  :code (behavior ()
+    (format 0 "Pending snapshot process started, waiting for *target*...~%")
+    (while (not *target*)
+      (suspend)
+      )
+    
+    (format 0 "  *target* found, waiting 30 frames for engine to settle...~%")
+    (dotimes (i 30)
+      (suspend)
+      )
+    
+    (format 0 "  applying snapshot tasks...~%")
+    (dotimes (i (-> self task-count))
+      (let ((node-id (-> self tasks-to-close i)))
+        (format 0 "    task-close: ~D~%" node-id)
+        (task-node-close! (the-as game-task-node node-id))
+        )
+      )
+    
+    (format 0 "  applying snapshot position...~%")
+    (when (-> self has-pos?)
+      (set! (-> *target* root trans quad) (-> self target-pos quad))
+      (set! (-> *target* root quat quad) (-> self target-quat quad))
+      (send-event *target* 'reset-velocity)
+      (format 0 "  teleported target to ~m ~m ~m~%" (-> self target-pos x) (-> self target-pos y) (-> self target-pos z))
+      )
+    
+    (format 0 "Snapshot ~S fully applied!~%" (-> self snapshot-name))
+    (process-entity-status! self (entity-perm-status dead) #t)
+    (deactivate self)
+    )
+  )
+
+(defun pending-snapshot-init-by-other ((this pending-snapshot) (name string))
+  (set! (-> this snapshot-name) name)
+  (set! (-> this has-pos?) #f)
+  (set! (-> this task-count) 0)
+  (none)
+  )
+
+(defun load-snapshot ((name string))
+  "Load a game state from a snapshot file."
+  (let ((fs (new 'stack 'file-stream (the-as string (format #f "snapshots/~S.txt" name)) 'read)))
+    (if (not (file-stream-valid? fs))
+        (begin
+          (format 0 "Failed to open snapshot file for reading: ~S~%" name)
+          (return #f)
+          )
+        )
+    
+    (format 0 "Loading snapshot: ~S~%" name)
+    (let ((pending (ppointer->process (process-spawn-function pending-snapshot pending-snapshot-init-by-other name))))
+      (when pending
+        (let ((p (the pending-snapshot pending)))
+          (let ((done? #f))
+            (while (not done?)
+              (file-stream-seek-past-whitespace fs)
+              (let ((word (file-stream-read-word fs)))
+                (if (or (zero? (length word)) (zero? (-> word data 0)))
+                    (set! done? #t)
+                    (begin
+                      (copy-string<-string *snapshot-cmd-buffer* word)
+                      (case-str *snapshot-cmd-buffer*
+                        (("continue")
+                         (let ((cont-name (file-stream-read-symbol fs)))
+                           (format 0 "  continue (immediate): ~S~%" cont-name)
+                           (set-continue! *game-info* (symbol->string cont-name) #f)
+                           )
+                         )
+                        (("task-close")
+                         (let ((node-id (file-stream-read-int fs)))
+                           (when (< (-> p task-count) 512)
+                             (set! (-> p tasks-to-close (-> p task-count)) (the-as uint node-id))
+                             (set! (-> p task-count) (+ (-> p task-count) 1))
+                             )
+                           )
+                         )
+                        (("pos")
+                         (let ((x (file-stream-read-float fs))
+                               (y (file-stream-read-float fs))
+                               (z (file-stream-read-float fs)))
+                           (set! (-> p target-pos x) x)
+                           (set! (-> p target-pos y) y)
+                           (set! (-> p target-pos z) z)
+                           (set! (-> p target-pos w) 1.0)
+                           (set! (-> p has-pos?) #t)
+                           )
+                         )
+                        (("quat")
+                         (let ((x (file-stream-read-float fs))
+                               (y (file-stream-read-float fs))
+                               (z (file-stream-read-float fs))
+                               (w (file-stream-read-float fs)))
+                         (set! (-> p target-quat x) x)
+                         (set! (-> p target-quat y) y)
+                         (set! (-> p target-quat z) z)
+                         (set! (-> p target-quat w) w)
+                         )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      (file-stream-close fs)
+      (when pending
+        (go-process (the pending-snapshot pending) pending-snapshot-apply)
+        )
+      )
+    )
+  #t
+  )

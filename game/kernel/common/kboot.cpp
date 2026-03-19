@@ -25,6 +25,9 @@ char DebugBootMessage[64];
 // Continue point to load on boot
 char DebugBootContinue[64];
 
+// Snapshot to load on boot
+char DebugBootSnapshot[64];
+
 // game configuration
 MasterConfig masterConfig;
 
@@ -37,5 +40,6 @@ void kboot_init_globals_common() {
   strcpy(DebugBootLevel, "#f");         // no specified level
   strcpy(DebugBootMessage, "play");     // play mode, the default retail mode
   strcpy(DebugBootContinue, "#f");      // no specified continue point
+  strcpy(DebugBootSnapshot, "#f");      // no specified snapshot
   memset(&masterConfig, 0, sizeof(MasterConfig));
 }

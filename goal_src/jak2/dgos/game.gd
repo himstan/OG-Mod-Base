@@ -254,6 +254,7 @@
   "sky-tng.o"
   "load-state.o"
   "pc-debug-methods.o" ;; added
+  "snapshot.o"
   "level-info.o"
   "level.o"
   "text.o"

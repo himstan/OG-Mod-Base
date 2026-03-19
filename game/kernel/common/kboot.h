@@ -41,6 +41,9 @@ extern char DebugBootMessage[64];
 // Continue point to load on boot
 extern char DebugBootContinue[64];
 
+// Snapshot to load on boot
+extern char DebugBootSnapshot[64];
+
 // Added in PC port, option to run listener functions without the kernel for debugging
 extern u32 MasterUseKernel;
 

@@ -2171,6 +2171,27 @@ into 7 sections, which might explain the weird sizes in the center.
                  ((or (= v1-3 'demo) (= v1-3 'demo-shared))
                   'demo
                   )
+                 (*kernel-boot-snapshot*
+                   (let ((cont-name *pc-temp-string*))
+                     (if (get-snapshot-continue-name (the-as string *kernel-boot-snapshot*) cont-name)
+                         (let ((cont (get-continue-by-name *game-info* cont-name)))
+                           (if cont
+                               (-> cont level)
+                               'prison
+                               )
+                           )
+                         'prison
+                         )
+                     )
+                   )
+                 (*kernel-boot-continue*
+                   (let ((cont (get-continue-by-name *game-info* (the-as string *kernel-boot-continue*))))
+                     (if cont
+                         (-> cont level)
+                         'prison
+                         )
+                     )
+                   )
                  (*debug-segment*
                    'prison
                    )
@@ -2180,7 +2201,7 @@ into 7 sections, which might explain the weird sizes in the center.
                  )
                )
          )
-    (start-debug "PLAY: kernel-boot-message is: ~A, startup level is ~A~%" v1-3 s5-0)
+    (format 0 "PLAY: kernel-boot-message is: ~A, startup level is ~A~%" v1-3 s5-0)
     (stop 'play)
     (set! (-> *level* vis?) arg0)
     (set! (-> *level* want-level) #f)
@@ -2243,7 +2264,16 @@ into 7 sections, which might explain the weird sizes in the center.
   (start-debug "PLAY: starting dproc~%")
   (on #t)
   (if arg1
-      (initialize! *game-info* 'game (the-as game-save #f) (the-as string *kernel-boot-continue*))
+      (let ((boot-cont (the-as string *kernel-boot-continue*)))
+        (if *kernel-boot-snapshot*
+            (let ((cont-name *pc-temp-string*))
+              (if (get-snapshot-continue-name (the-as string *kernel-boot-snapshot*) cont-name)
+                  (set! boot-cont cont-name)
+                  )
+              )
+            )
+        (initialize! *game-info* 'game (the-as game-save #f) boot-cont)
+        )
       )
   (kmemclose)
   (kmemclose)

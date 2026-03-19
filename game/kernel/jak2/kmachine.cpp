@@ -166,6 +166,15 @@ void InitParms(int argc, const char* const* argv) {
       kstrcpy(DebugBootContinue, continuePoint.c_str());
     }
 
+    // the "-snapshot [snapshot-name]" mode is used to inform the game to load a snapshot
+    // the default snapshot is "#f".
+    if (arg == "-snapshot") {
+      i++;
+      std::string snapshotName = argv[i];
+      Msg(6, "dkernel: snapshot %s\n", snapshotName.c_str());
+      kstrcpy(DebugBootSnapshot, snapshotName.c_str());
+    }
+
     // new for jak 2
     if (arg == "-user") {
       i++;
@@ -704,6 +713,11 @@ void InitMachineScheme() {
     intern_from_c("*kernel-boot-continue*")->value() = offset_of_s7() + jak2_symbols::FIX_SYM_FALSE;
   } else {
     intern_from_c("*kernel-boot-continue*")->value() = make_string_from_c(DebugBootContinue);
+  }
+  if (!strcmp(DebugBootSnapshot, "#f")) {
+    intern_from_c("*kernel-boot-snapshot*")->value() = offset_of_s7() + jak2_symbols::FIX_SYM_FALSE;
+  } else {
+    intern_from_c("*kernel-boot-snapshot*")->value() = make_string_from_c(DebugBootSnapshot);
   }
   intern_from_c("*kernel-boot-art-group*")->value() = make_string_from_c(DebugBootArtGroup);
   if (DiskBoot) {
