@@ -60,9 +60,18 @@
     (quaternion-set! target-quat (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
     (set-vector! target-vel (-> slot lin-vel-x) (-> slot lin-vel-y) (-> slot lin-vel-z) 1.0)
     
-    (vector-lerp! (-> proc root trans) (-> proc root trans) target-pos 0.5)
-    (quaternion-slerp! (-> proc root quat) (-> proc root quat) target-quat 0.5)
-    (vector-lerp! (-> proc root transv) (-> proc root transv) target-vel 0.5)
+    ;; Smoothly chase the target (scaled by time for consistent smoothing)
+    (let ((lerp-factor (fmin 1.0 (* 10.0 (seconds-per-frame)))))
+      (vector-lerp! (-> proc root trans) (-> proc root trans) target-pos lerp-factor)
+      (quaternion-slerp! (-> proc root quat) (-> proc root quat) target-quat lerp-factor)
+      (vector-lerp! (-> proc root transv) (-> proc root transv) target-vel lerp-factor)
+      )
+    
+    ;; Dead Reckoning: Extrapolate the target ghost's position forward
+    (vector+float*! target-pos target-pos target-vel (seconds-per-frame))
+    (set! (-> slot x) (-> target-pos x))
+    (set! (-> slot y) (-> target-pos y))
+    (set! (-> slot z) (-> target-pos z))
     
     (if (not (and (-> proc next-state) (= (-> proc next-state name) 'mp-vehicle-puppet)))
         (send-event proc 'go-mp-puppet)
