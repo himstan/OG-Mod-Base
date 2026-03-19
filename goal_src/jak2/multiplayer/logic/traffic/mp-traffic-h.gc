@@ -1,0 +1,31 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Types ---
+
+(declare-type vehicle-rider process-focusable)
+
+;; --- Authority Macros ---
+
+(defmacro mp-is-traffic-authoritative? ()
+  "Is the local player authoritative over traffic? (Current: Host-only)"
+  `(mp-is-jak?)
+  )
+
+;; --- Externs ---
+
+;; Pedestrian
+(define-extern mp-pedestrian-pack (function citizen mp-pedestrian-state none))
+(define-extern mp-pedestrian-apply-remote (function none))
+
+;; Vehicle
+(define-extern mp-vehicle-pack (function vehicle mp-vehicle-state none))
+(define-extern mp-vehicle-apply-remote (function none))
+(define-extern mp-vehicle-apply-hijacks (function none))
+
+;; Common Traffic
+(define-extern mp-sync-traffic-update (function none))
+(define-extern pc-multi-send-traffic (function uint none))
+(define-extern pc-multi-receive-traffic (function uint none))
+
+(none)

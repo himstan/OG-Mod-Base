@@ -1,43 +1,7 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-;; --- Pedestrian Packing (Host Side) ---
-
-(defun mp-pedestrian-pack ((e-proc citizen) (slot mp-pedestrian-state))
-  (set! (-> slot net-id) (-> e-proc net-id))
-  (set! (-> slot object-type) (the uint8 (-> e-proc traffic-type)))
-  (set! (-> slot object-variance) (the uint8 0))
-  (set! (-> slot x) (-> e-proc root trans x))
-  (set! (-> slot y) (-> e-proc root trans y))
-  (set! (-> slot z) (-> e-proc root trans z))
-  (set! (-> slot quat-x) (-> e-proc root quat x))
-  (set! (-> slot quat-y) (-> e-proc root quat y))
-  (set! (-> slot quat-z) (-> e-proc root quat z))
-  (set! (-> slot quat-w) (-> e-proc root quat w))
-  
-  ;; Animation State
-  (let ((anim-idx -1)
-        (anim-frame 0.0))
-    (when (and (-> e-proc skel) (nonzero? (-> e-proc skel)))
-      (let ((fgroup (-> e-proc skel channel 0 frame-group)))
-        (when (and fgroup (nonzero? fgroup))
-          (set! anim-idx (-> fgroup master-art-group-index))
-          (set! anim-frame (-> e-proc skel channel 0 frame-num))
-          )
-        )
-      )
-    (set! (-> slot anim-index) anim-idx)
-    (set! (-> slot anim-speed) anim-frame)
-    )
-
-  (let ((flags (the uint 0)))
-    (if (logtest? (-> e-proc focus-status) (focus-status dead)) (set! flags (logior flags (the uint 1))))
-    (set! (-> slot flags) (the uint8 flags))
-    )
-  (none)
-  )
-
-;; --- Puppet Logic (Client Side) ---
+;; --- Pedestrian Puppet Logic (Non-Authoritative Side) ---
 
 (defun mp-pedestrian-find-by-net-id ((net-id uint))
   (let ((found-proc (the-as citizen #f)))
