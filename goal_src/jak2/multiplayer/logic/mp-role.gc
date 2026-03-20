@@ -79,24 +79,28 @@
   "Determine who owns the open-world traffic and suppress local spawning if needed"
   (when (and *target* *traffic-manager*)
     (let ((dist (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*))
-          (close? #f))
-      (if (< dist (meters 300.0))
-          (set! close? #t))
+          (is-active? (nonzero? (pc-multi-get-status))))
       
-      (if (and close? (mp-is-daxter?)) ;; Client is near Host
+      (if (and is-active? (mp-is-daxter?)) ;; Client Side
           (begin
-            (when (not *mp-traffic-suppressed*)
-              (format 0 "[MP-Traffic] Entering Host Authority Bubble. Suppressing local traffic!~%")
-              (set! *mp-traffic-suppressed* #t)
-              ;; Nuke local autonomous traffic
+            (set! *mp-traffic-suppressed* (< dist (meters 200.0)))
+            (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
+            (when (and *mp-traffic-suppressed* (nonzero? (-> *traffic-manager* child)))
               (send-event *traffic-manager* 'deactivate-all)
               )
             )
           (begin
-            (when *mp-traffic-suppressed*
-              (format 0 "[MP-Traffic] Leaving Authority Bubble. Restoring local traffic!~%")
-              (set! *mp-traffic-suppressed* #f)
-              )
+            (if (and is-active? (mp-is-jak?)) ;; Host Side
+                (begin
+                  (set! *mp-traffic-host-spawning-active* (< dist (meters 200.0)))
+                  (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
+                  )
+                (begin ;; Offline or fallback
+                  (set! *mp-traffic-suppressed* #f)
+                  (set! *mp-traffic-sync-active* #f)
+                  (set! *mp-traffic-host-spawning-active* #f)
+                  )
+                )
             )
           )
       )

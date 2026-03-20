@@ -47,7 +47,7 @@
 
 (defun mp-sync-traffic-update ()
   (let ((status (pc-multi-get-status)))
-    (when (nonzero? status)
+    (when (and (nonzero? status) *mp-traffic-sync-active*)
       (if (not (mp-is-traffic-ready?))
           (begin
             (when (time-elapsed? (-> *mp-traffic-buffer* last-sync-time) (seconds 5))
