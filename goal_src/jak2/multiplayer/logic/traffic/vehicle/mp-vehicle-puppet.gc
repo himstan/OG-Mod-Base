@@ -117,11 +117,30 @@
   (none)
 )
 
+(defun mp-vehicle-apply-piggyback ()
+  (let ((driven-net-id (-> *remote-info* veh-state net-id)))
+    ;; 1. Handle Piggy-backed Driven Vehicle (High Priority)
+    (when (nonzero? driven-net-id)
+      (let ((proc (mp-vehicle-find-by-net-id driven-net-id)))
+        (if proc
+            (mp-vehicle-update-puppet proc (-> *remote-info* veh-state))
+            ;; If it doesn't exist, we might need to wait for ambient spawn or force it
+            )
+        )
+      )
+    )
+  (none)
+)
+
 (defun mp-vehicle-apply-remote ()
-  (let ((spawn-budget 2))
+  (let ((spawn-budget 2)
+        (driven-net-id (-> *remote-info* veh-state net-id))
+        (local-driven-net-id (-> *local-info* veh-state net-id)))
+
+    ;; 2. Handle Ambient Traffic
     (dotimes (i (the int MP_MAX_SYNC_VEHICLES))
       (let ((slot (-> *mp-traffic-buffer* veh-enemies i)))
-        (when (nonzero? (-> slot net-id))
+        (when (and (nonzero? (-> slot net-id)) (!= (-> slot net-id) driven-net-id) (!= (-> slot net-id) local-driven-net-id))
           (let ((proc (mp-vehicle-find-by-net-id (-> slot net-id))))
             (if proc
                 (mp-vehicle-update-puppet proc slot)
@@ -134,7 +153,6 @@
           )
         )
       )
-    )
   
   (when *traffic-manager*
     (let ((curr (-> *traffic-manager* child)))
@@ -142,12 +160,16 @@
         (let ((proc (ppointer->process curr)))
           (let ((next-ptr (-> curr 0 brother)))
             (when (and (type? proc vehicle) (nonzero? (-> (the-as vehicle proc) net-id)))
-              (let ((found-in-buffer? #f))
-                (dotimes (i (the int MP_MAX_SYNC_VEHICLES))
-                  (if (= (-> *mp-traffic-buffer* veh-enemies i net-id) (-> (the-as vehicle proc) net-id))
-                      (set! found-in-buffer? #t)
+              (let ((found-in-buffer? #f)
+                    (v-net-id (-> (the-as vehicle proc) net-id)))
+                (if (or (= v-net-id driven-net-id) (= v-net-id local-driven-net-id))
+                    (set! found-in-buffer? #t)
+                    (dotimes (i (the int MP_MAX_SYNC_VEHICLES))
+                      (if (= (-> *mp-traffic-buffer* veh-enemies i net-id) v-net-id)
+                          (set! found-in-buffer? #t)
+                          )
                       )
-                  )
+                    )
                 (when (not found-in-buffer?)
                   (send-event proc 'traffic-off-force)
                   )
@@ -159,6 +181,7 @@
         )
       )
     )
+  )
   (none)
 )
 
@@ -166,6 +189,9 @@
   (case arg2
     (('go-mp-puppet)
      (go mp-vehicle-puppet)
+     (return #t)
+     )
+    (('enable-physics)
      (return #t)
      )
     )
@@ -180,8 +206,16 @@
     (case message
       (('go-mp-puppet) #t)
       (('traffic-off 'traffic-off-force)
-       (set! (-> (the-as vehicle self) net-id) (the uint 0))
-       (deactivate self)
+       (let ((v-net-id (-> (the-as vehicle self) net-id)))
+         (if (or (= v-net-id (-> *remote-info* veh-state net-id))
+                 (= v-net-id (-> *local-info* veh-state net-id)))
+             (return #t) ;; Protect driven vehicles from being culled
+             (begin
+               (set! (-> (the-as vehicle self) net-id) (the uint 0))
+               (deactivate self)
+               )
+             )
+         )
        )
       (else
         (if (type? self vehicle)
@@ -194,14 +228,19 @@
     (set-time! (-> self state-time))
     (if (type? self vehicle)
         (begin
-          (logclear! (-> (the-as vehicle self) rbody state flags) (rigid-body-flag active))
-          ;; CRITICAL: Remove from global rigid-body-queue to prevent physics engine crash
-          ((method-of-type vehicle rigid-body-object-method-30) (the-as vehicle self))
+          (rigid-body-object-method-39 (the-as vehicle self))
+          ;; Enable ignition so thrusters and smoke logic runs
+          (logior! (-> (the-as vehicle self) flags) (rigid-body-object-flag ignition))
           )
         )
     )
   :trans (behavior ()
-    ;; TODO: Handle authority hand-back (go-virtual idle)
+    (if (and (nonzero? self) (type? self vehicle))
+        (begin
+          ;; Allow local player to enter the puppet
+          (check-player-get-on (the-as vehicle self))
+          )
+        )
     )
   :code (behavior ()
     (until #f
@@ -211,9 +250,25 @@
   :post (behavior ()
     ;; For vehicles, we use the custom renderer prep
     (if (type? self rigid-body-object)
-        (begin
-          (rigid-body-object-method-37 (the-as rigid-body-object self))
-          (vehicle-method-119 (the-as vehicle self))
+        (let ((v-self (the-as vehicle self)))
+          ;; Manual rbody sync (instead of method-37) to keep collision but skip physics fight
+          (rigid-body-method-26 (-> v-self rbody state) (-> self root trans) (-> self root quat))
+          (set! (-> v-self rbody state lin-velocity quad) (-> self root transv quad))
+          (vector-float*! (-> v-self rbody state lin-momentum) (-> self root transv) (-> v-self info info mass))
+          
+          ;; --- Polish: Visuals & Audio ---
+          (set! (-> v-self engine-thrust) 1.0)
+          (set! (-> v-self force-scale) 1.0)
+          ;; Map velocity to engine RPM and throttle
+          (let ((speed (vector-length (-> self root transv))))
+            (set! (-> v-self power-level) (fmin 1.0 (/ speed 204800.0)))
+            (set! (-> v-self engine-sound-factor) (-> v-self power-level))
+            (set! (-> v-self controls throttle) (if (> speed 409.6) 1.0 0.0))
+            )
+          
+          (vehicle-method-120 v-self) ;; Shadow and Bounds
+          (vehicle-method-122 v-self) ;; Sounds & Particles (exhaust, etc)
+          (vehicle-method-119 v-self) ;; Riders
           )
         (ja-post)
         )

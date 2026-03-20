@@ -68,6 +68,7 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
               entity.last_sidekick_frame = state->last_sidekick_frame;
               entity.clock = state->clock;
               entity.last_sequence_num = state->header.sequenceNum;
+              memcpy(&entity.veh_state, &state->veh_state, sizeof(MPVehicleState));
 
               if (state->netId == 0) { // If this is the Host
                 remote->money = state->money;
@@ -212,6 +213,7 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.money = local->money; local_state.gems = local->gems; local_state.skill = local->skill;
   memcpy(local_state.task_mask, local->task_mask, 64);
   memcpy(local_state.active_task_mask, local->active_task_mask, 64);
+  memcpy(&local_state.veh_state, &local->veh_state, sizeof(MPVehicleState));
   MultiplayerManager::broadcast(gMultiplayerData, 0, local_state, ENET_PACKET_FLAG_UNSEQUENCED);
 
   if (gMultiplayerData.local_role == 0 && gMultiplayerData.pending_full_sync) {
@@ -252,6 +254,7 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->sidekick_frame = remote_state.sidekick_frame;
     remote_goal->last_sidekick_frame = remote_state.last_sidekick_frame;
     remote_goal->clock = remote_state.clock;
+    memcpy(&remote_goal->veh_state, &remote_state.veh_state, sizeof(MPVehicleState));
   } else { remote_goal->status = 0; }
 }
 }  // namespace

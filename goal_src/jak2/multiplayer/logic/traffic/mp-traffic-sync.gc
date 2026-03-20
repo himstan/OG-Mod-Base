@@ -24,7 +24,9 @@
       ((type? proc vehicle)
        (let ((v-proc (the-as vehicle proc)))
          ;; Only sync if it has a NetID, is NOT inactive, NOT dead, and IS managed by traffic
+         ;; BUDGET: If a remote player is driving this vehicle, SKIP it here (it's synced via piggy-back)
          (when (and (nonzero? (-> v-proc net-id)) 
+                    (!= (-> v-proc net-id) (-> *remote-info* veh-state net-id))
                     (not (focus-test? v-proc inactive))
                     (not (logtest? (-> v-proc focus-status) (focus-status dead)))
                     (logtest? (-> v-proc flags) (rigid-body-object-flag traffic-managed))
@@ -54,6 +56,9 @@
                )
             )
           (begin
+            ;; ALWAYS apply piggybacked vehicle data from remote players
+            (mp-vehicle-apply-piggyback)
+            
             (if (not (mp-is-traffic-authoritative?))
                 ;; Puppet Logic: Receive and Apply
                 (begin

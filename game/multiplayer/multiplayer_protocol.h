@@ -36,6 +36,20 @@ struct PacketHeader {
   uint32_t sequenceNum;
 };
 
+struct MPVehicleState {
+  uint32_t net_id;
+  uint8_t vehicle_type;
+  uint8_t color_index;
+  uint8_t pad_align[2];
+  float x, y, z;
+  float quat_x, quat_y, quat_z, quat_w;
+  float lin_vel_x, lin_vel_y, lin_vel_z;
+  float ang_vel_x, ang_vel_y, ang_vel_z;
+  uint8_t state_flags;
+  uint8_t pad[3];
+  uint32_t rider_aids[4];
+};
+
 struct PacketPlayerState {
   PacketHeader header;
   uint32_t netId;
@@ -56,6 +70,7 @@ struct PacketPlayerState {
   float skill;
   uint8_t task_mask[64];
   uint8_t active_task_mask[64];
+  MPVehicleState veh_state;
 };
 
 struct PacketGameEvent {
@@ -148,20 +163,6 @@ struct PacketPedestrianSync {
   uint32_t count;
   uint64_t timestamp;
   MPPedestrianStatePacked peds[MAX_PEDESTRIANS_PER_PACKET];
-};
-
-struct MPVehicleState {
-  uint32_t net_id;
-  uint8_t vehicle_type;
-  uint8_t color_index;
-  uint8_t pad_align[2];
-  float x, y, z;
-  float quat_x, quat_y, quat_z, quat_w;
-  float lin_vel_x, lin_vel_y, lin_vel_z;
-  float ang_vel_x, ang_vel_y, ang_vel_z;
-  uint8_t state_flags;
-  uint8_t pad[3];
-  uint32_t rider_aids[4];
 };
 
 struct MPVehicleStatePacked {

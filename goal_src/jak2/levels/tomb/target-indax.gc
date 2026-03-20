@@ -543,6 +543,7 @@
 
     (update-rates! (-> self clock) f30-0))
 
+  (logior! (-> self draw status) (draw-control-status no-draw-bounds2))
   (logclear! (-> self draw status) (draw-control-status no-draw-temp uninited))
   (evaluate-joint-control self)
   (joint-points)

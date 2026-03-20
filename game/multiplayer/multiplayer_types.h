@@ -22,6 +22,7 @@ struct RemoteEntityState {
   float last_sidekick_frame;
   uint64_t clock;
   uint32_t last_sequence_num = 0;
+  MPVehicleState veh_state;
 };
 
 struct MPEvent {
@@ -69,6 +70,8 @@ struct RemotePlayerInfoGOAL {
   uint8_t active_task_mask[64];
   uint32_t sync_aids_count;
   uint32_t sync_aids[128];
+  uint8_t pad_align[12];
+  MPVehicleState veh_state;
 };
 
 struct LocalPlayerInfoGOAL {
@@ -102,6 +105,7 @@ struct LocalPlayerInfoGOAL {
   uint32_t sync_aids_count;
   uint32_t sync_aids[128];
   uint64_t player_procs[2];
+  MPVehicleState veh_state;
 };
 
 struct MPEnemySyncBufferGOAL {
