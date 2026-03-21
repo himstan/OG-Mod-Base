@@ -251,6 +251,13 @@
   (mp-is-jak?) ;; fallback to host if unknown
   )
 
+(defun mp-enemy-focused-on-local? ((e-proc enemy))
+  "Check if the enemy is currently focused on the local player."
+  (let ((focus-proc (handle->process (-> e-proc focus handle))))
+    (and focus-proc (= focus-proc *target*))
+    )
+  )
+
 (defun mp-sync-enemies-update-callback ((p process-tree))
   (let ((proc (the-as process p)))
     (when (and proc (logtest? (-> proc mask) (process-mask enemy collectable)) (type? proc enemy) (not (type? proc civilian)))
@@ -383,7 +390,8 @@
                 ;; 3. Local Aggro Detection
                 (when (and (not (-> rec is-aggro)) 
                            (or (>= (the-as int (-> e-proc focus aware)) (the-as int (enemy-aware enemy-aware-3)))
-                               (nonzero? (-> e-proc incoming attack-id))))
+                               (nonzero? (-> e-proc incoming attack-id)))
+                           (mp-enemy-focused-on-local? e-proc))
                   (if (!= (-> rec owner) local-role)
                       (begin
                         (when (>= (- (current-time) (-> rec last-transfer-time)) (seconds 2))

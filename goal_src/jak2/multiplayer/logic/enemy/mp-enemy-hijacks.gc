@@ -231,6 +231,34 @@
      (return #t)
      )
     (('attack)
+     ;; --- TOP LEVEL THROTTLING ---
+     (let ((aid (mp-get-enemy-aid this)))
+       (when (nonzero? aid)
+         (let ((rec (mp-get-enemy-auth aid))
+               (info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+           (when rec
+             ;; 1. DUPLICATE CHECK (Global & Local)
+             (when (and info (nonzero? (-> info id)))
+               (if (or (= (-> info id) (-> rec last-attack-id))
+                       (= (-> info id) (-> rec last-local-attack-id)))
+                   ;; Return #f to Jak so he stops triggering 'hit' effects/sounds locally
+                   (return #f) 
+                   )
+               )
+             
+             ;; 2. COOLDOWN CHECK (Non-authoritative machines only)
+             (let ((is-local? (mp-is-local-attacker? arg0)))
+               (when (and (not (mp-enemy-authoritative? this))
+                          is-local?
+                          (not (time-elapsed? (-> rec last-local-attack-time) (seconds 0.2))))
+                 (return #t) ;; Handled
+                 )
+               )
+             )
+           )
+         )
+       )
+
      ;; PUPPET PROTECTION: If we are already reacting, don't react again to local hits.
      ;; This prevents the "thousand hits" visual jitter and sound spam.
      (let ((cur-state (if (-> this state) (-> this state name) #f)))
