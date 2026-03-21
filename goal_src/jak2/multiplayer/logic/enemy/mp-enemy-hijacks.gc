@@ -19,12 +19,17 @@
       (when rec
         (let ((info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
           
-          ;; 1. Attack ID Throttle (Block repeated frames of the same local hitbox)
+          ;; 1. Global Hit Throttling (Block repeated frames of the same attack ID)
+          (when (and info (nonzero? (-> info id)) (= (-> info id) (-> rec last-attack-id)))
+            (return #t) ;; Block the engine handler
+            )
+          
+          ;; 2. Local Hit Throttling (Block repeated frames of the same local hitbox)
           (when (and info (nonzero? (-> info id)) (= (-> info id) (-> rec last-local-attack-id)))
             (return #t) ;; Block the engine handler
             )
           
-          ;; 2. Time-based Cooldown (Safety for non-owners to prevent "thousand hits" jitter)
+          ;; 3. Time-based Cooldown (Safety for non-owners to prevent "thousand hits" jitter)
           (when (and is-local-attacker? (not (mp-enemy-authoritative? e-proc)) (not (time-elapsed? (-> rec last-local-attack-time) (seconds 0.2))))
             ;; (format 0 "[MP-Hit-Debug]   >> Cooldown active for proxy AID ~D~%" aid)
             (return #t)
@@ -32,15 +37,17 @@
 
           (if (mp-enemy-authoritative? e-proc)
               (begin
-                ;; OWNER: If we hit it locally, broadcast the authoritative hit
-                (when (and is-local-attacker? (not *mp-processing-remote-event*))
+                ;; OWNER: Broadcast EVERY authoritative hit to all clients
+                ;; We broadcast even if *mp-processing-remote-event* is true (hit from client)
+                ;; so that OTHER clients see the hit. The sender will throttle it via attack-id.
+                (when (or is-local-attacker? *mp-processing-remote-event*)
                   ;; Only broadcast if it's a NEW attack ID or enough time has passed
                   (when (or (not info) (zero? (-> info id)) (!= (-> info id) (-> rec last-attack-id)))
-                    ;; (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ATTACK_ENEMY for AID ~D~%" aid)
+                    ;; (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ATTACK_ENEMY for AID ~D (ID ~D)~%" aid (if info (-> info id) 0))
                     (if info (set! (-> rec last-attack-id) (-> info id)))
-                    (if info (set! (-> rec last-local-attack-id) (-> info id)))
+                    (if (and is-local-attacker? info) (set! (-> rec last-local-attack-id) (-> info id)))
                     (set! (-> rec last-local-attack-time) (current-time))
-                    (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
+                    (mp-send-enemy-attack-event aid (if info (-> info id) (the uint 0)))
                     )
                   )
                 )
@@ -53,7 +60,7 @@
                     (if info (set! (-> rec last-attack-id) (-> info id)))
                     (if info (set! (-> rec last-local-attack-id) (-> info id)))
                     (set! (-> rec last-local-attack-time) (current-time))
-                    (mp-send-world-event MP_EVENT_ATTACK_ENEMY aid)
+                    (mp-send-enemy-attack-event aid (if info (-> info id) (the uint 0)))
                     )
                   )
                 )
@@ -102,8 +109,8 @@
   )
 
 (defun mp-enemy-kill-prefer-falling-hijack ((this enemy))
-  "Ensure authoritative death but allow local triggering if owner."
-  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event*)
+  "Ensure authoritative death but allow local triggering if owner or if HP is depleted."
+  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event* (<= (-> this hit-points) 0))
       (if *old-enemy-kill-prefer-falling* (*old-enemy-kill-prefer-falling* this))
       )
   )
@@ -213,6 +220,8 @@
                      ;; Bypass the 'go' macro's compile-time typechecker for dynamic state lookups
                      (set! (-> self next-state) (the-as state st))
                      (enter-state (the-as object st) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f))
+                     ;; Ensure we throw to the new state if we are in the right thread context
+                     (with-pp (if (and (= (-> pp main-thread) (-> pp top-thread)) (= (-> pp state) (-> pp next-state))) (throw 'go #t)))
                      )
                  )
                )
@@ -242,6 +251,11 @@
        (cond
          ((and info (= (-> info mode) 'mp-death))
           (format 0 "[MP-Proxy] Authoritative death for ~A (AID ~D).~%" this (mp-get-enemy-aid this))
+          ;; 1. Lock out further state syncs
+          (logior! (-> this enemy-flags) (enemy-flag death-start))
+          ;; 2. Signal engine to spawn pickups/trigger children
+          (send-event this 'death-start)
+          ;; 3. Final HP zeroing and state transition
           (set! (-> this hit-points) 0)
           (kill-prefer-falling this)
           (return #t)
@@ -292,14 +306,14 @@
 (defun mp-enemy-dying-hijack ((this enemy))
   "Sync death start."
   (mp-enemy-broadcast-death this)
-  (if (mp-enemy-should-process-damage? this)
+  (if (or (mp-enemy-should-process-damage? this) (<= (-> this hit-points) 0))
       (if *old-enemy-dying* (*old-enemy-dying* this)))
   (none))
 
 (defun mp-enemy-dying-nav-hijack ((this nav-enemy))
   "Sync death start for nav-enemies."
   (mp-enemy-broadcast-death (the-as enemy this))
-  (if (mp-enemy-should-process-damage? (the-as enemy this))
+  (if (or (mp-enemy-should-process-damage? (the-as enemy this)) (<= (-> this hit-points) 0))
       (if *old-enemy-dying* (*old-enemy-dying* (the-as enemy this))))
   (none))
 

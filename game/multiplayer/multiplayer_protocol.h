@@ -80,6 +80,7 @@ struct PacketGameEvent {
 
 struct WorldEventData {
   uint32_t actor_id;
+  uint32_t attack_id;
 };
 
 struct SceneEventData {

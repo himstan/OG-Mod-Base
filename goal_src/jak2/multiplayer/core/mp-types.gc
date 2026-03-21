@@ -106,6 +106,12 @@
    )
   )
 
+(deftype mp-enemy-attack-event (mp-event)
+  ((aid       uint32 :overlay-at (-> data 0))
+   (attack-id uint32 :overlay-at (-> data 4))
+   )
+  )
+
 (deftype mp-scene-event (mp-event)
   ((state      mp-scene-state :overlay-at (-> data 0))
    (scene-name uint8 32      :overlay-at (-> data 4))
@@ -473,6 +479,7 @@
 (define-extern mp-sidekick-anim (function int))
 (define-extern mp-sidekick-frame (function float))
 (define-extern mp-send-world-event (function uint uint none))
+(define-extern mp-send-enemy-attack-event (function uint uint none))
 (define-extern mp-receive-world-event (function uint uint none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
 (define-extern mp-event-handler-authority-request (function uint none))

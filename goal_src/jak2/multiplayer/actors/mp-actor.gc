@@ -79,9 +79,23 @@
       (('attack)
        (if (or (nonzero? (-> *remote-info* riding?)) (!= (-> *level* loading-level) (-> *level* default-level)))
            (return #f))
-       
+
+       ;; BLOCK attacks from non-authoritative enemies
+       (let ((attacker proc)
+             (is-non-auth-enemy #f))
+         (while (and attacker (nonzero? attacker))
+           (if (and (type? attacker enemy) (not (mp-enemy-authoritative? (the-as enemy attacker))))
+               (set! is-non-auth-enemy #t)
+               )
+           (set! attacker (if (and (-> attacker parent) (nonzero? (-> attacker parent))) (the-as process (ppointer->process (-> attacker parent))) (the-as process #f)))
+           )
+         (when is-non-auth-enemy
+           (return #f)
+           )
+         )
+
        ;; Throttling logic: check time and attack ID
-       (let ((info (if (and block (nonzero? block)) (the-as attack-info (-> block param 1)) (the-as attack-info #f))))
+       (let ((info (if (and block (nonzero? block) (nonzero? (-> block param 1))) (the-as attack-info (-> block param 1)) (the-as attack-info #f))))
          (when (and (time-elapsed? (-> self last-hit-time) (seconds 0.2))
                     (or (not info) (!= (-> info id) (-> self last-attack-id))))
            

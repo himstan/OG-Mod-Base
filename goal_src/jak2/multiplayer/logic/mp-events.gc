@@ -11,7 +11,7 @@
       ((MP_EVENT_ORB)         (mp-event-handler-orb aid))
       ((MP_EVENT_GEM)         (mp-event-handler-gem aid))
       ((MP_EVENT_BREAK)       (mp-event-handler-break aid))
-      ((MP_EVENT_ATTACK_ENEMY) (mp-event-handler-attack-enemy aid))
+      ((MP_EVENT_ATTACK_ENEMY) (mp-event-handler-attack-enemy evt))
       ((MP_EVENT_ENEMY_DEATH)  (mp-event-handler-enemy-death aid))
       ((MP_EVENT_PLAYER_HIT)   (mp-event-handler-player-hit aid))
       ((MP_EVENT_DEBUG)        (format 0 "[MP-DEBUG-REMOTE] Received debug event AID: ~D~%" aid))
