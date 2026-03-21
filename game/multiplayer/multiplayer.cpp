@@ -101,8 +101,6 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
                   state.quat_y = unpack_float_q(incoming->quat[1]);
                   state.quat_z = unpack_float_q(incoming->quat[2]);
                   state.quat_w = unpack_float_q(incoming->quat[3]);
-                  state.anim_index = incoming->anim_index;
-                  state.anim_frame = incoming->anim_frame;
                   state.hp = incoming->hp;
                   state.state = incoming->state;
                   state.focus_aid = incoming->focus_aid;
@@ -123,8 +121,6 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
                     state.quat_y = unpack_float_q(incoming->quat[1]);
                     state.quat_z = unpack_float_q(incoming->quat[2]);
                     state.quat_w = unpack_float_q(incoming->quat[3]);
-                    state.anim_index = incoming->anim_index;
-                    state.anim_frame = incoming->anim_frame;
                     state.hp = incoming->hp;
                     state.state = incoming->state;
                     state.focus_aid = incoming->focus_aid;
@@ -373,7 +369,6 @@ void pc_multi_send_enemies(u32 buffer_ptr) {
         dst->actor_id = src->actor_id; dst->x = src->x; dst->y = src->y; dst->z = src->z;
         dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
         dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
-        dst->anim_index = src->anim_index; dst->anim_frame = src->anim_frame;
         dst->hp = src->hp; dst->state = src->state; dst->focus_aid = src->focus_aid;
         dst->flags = (src->attack_flag ? 1 : 0) | (src->owner ? 2 : 0) | (src->is_aggro ? 4 : 0);
       }

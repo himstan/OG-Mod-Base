@@ -95,9 +95,7 @@ struct MPEnemyState {
   uint32_t actor_id;
   float x, y, z;
   float quat_x, quat_y, quat_z, quat_w;
-  int32_t anim_index;
-  float anim_frame;
-  float last_anim_frame;
+  float pad1[3]; // Removed anim_index, anim_frame, last_anim_frame
   int32_t hp;
   uint32_t state;
   uint32_t focus_aid;
@@ -114,12 +112,11 @@ struct MPEnemyStatePacked {
   uint32_t actor_id;
   float x, y, z;
   int16_t quat[4];
-  int16_t anim_index;
-  int16_t anim_frame;
-  int16_t hp;
+  int32_t hp;
   uint8_t state;
   uint32_t focus_aid;
   uint8_t flags; // Bitmask: [0: attack_flag, 1: owner, 2: is_aggro]
+  uint8_t pad[1]; // Total size: 32 bytes (4-byte aligned)
 };
 
 struct PacketEnemySync {

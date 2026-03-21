@@ -183,7 +183,7 @@
     (mp-update-traffic-authority)
     (mp-sync-traffic-update)
 
-    (mp-draw-anim-debug)
+    (mp-draw-enemy-debug)
     (mp-draw-task-debug)
 
     (none)))

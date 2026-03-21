@@ -6,8 +6,6 @@
 (define-extern num-func-seek! (function joint-control-channel float float float float :behavior process))
 (define-extern num-func-none (function joint-control-channel float float float float :behavior process))
 
-(define-extern mp-calc-anim-speed (function float time-frame float float))
-(define-extern mp-calc-corrected-speed (function float float float float symbol float))
 (define-extern mp-anim-loops? (function art-joint-anim symbol))
 
 (defun mp-anim-loops? ((anim art-joint-anim))
@@ -164,38 +162,23 @@
 
 (define *old-process-entity-status* (the-as (function process entity-perm-status symbol entity-perm-status) #f))
 
-(defbehavior mp-general-event-handler-hijack enemy ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
-  "Intercept attacks and sync them across the network."
+(defbehavior mp-traffic-event-handler-hijack citizen ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  "Specialized event handler for traffic puppets (Citizens/Vehicles)."
   (case arg2
     (('go-mp-puppet)
      (go mp-puppet)
      (return #t)
      )
-    (('go-mp-sync)
-     (go-process self mp-enemy-sync-idle)
+    (('traffic-off 'traffic-off-force)
+     (set! (-> self net-id) (the uint 0))
+     (deactivate self)
      (return #t)
-     )
-    (('attack)
-     (let ((aid (mp-get-enemy-aid self)))
-       (when (and (nonzero? aid) (not *mp-processing-remote-event*))
-         (mp-enemy-broadcast-attack self arg0 arg3)
-         )
-       )
-     )
-    (('victory 'death-start 'death-end)
-     (let ((aid (mp-get-enemy-aid self)))
-       (when (and (nonzero? aid) (not *mp-processing-remote-event*))
-         (mp-enemy-broadcast-death self)
-         )
-       )
      )
     )
 
-  ;; Call original handler if we aren't overriding it
-  (if *old-general-event-handler*
-      (*old-general-event-handler* self arg0 arg1 arg2 arg3)
-      #f
-      )
+  ;; For now, traffic doesn't have a global 'old' handler like enemies do in mp-helpers.
+  ;; It relies on the specific citizen type's logic.
+  #f
 )
 
 ;; --- Generic Puppet States ---
@@ -204,13 +187,9 @@
   :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
     (case message
       (('go-mp-puppet) #t)
-      (('traffic-off 'traffic-off-force)
-       (set! (-> (the-as citizen self) net-id) (the uint 0))
-       (deactivate self)
-       )
       (else
-        (if (type? self enemy)
-            (mp-general-event-handler-hijack proc argc message block)
+        (if (type? self citizen)
+            (mp-traffic-event-handler-hijack proc argc message block)
             )
         )
       )

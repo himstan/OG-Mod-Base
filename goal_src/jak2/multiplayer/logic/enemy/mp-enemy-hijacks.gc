@@ -75,6 +75,122 @@
 
 ;; --- Method Hijack Implementations ---
 
+(define *old-enemy-go-stare* (the-as (function enemy object) #f))
+(define *old-enemy-go-hostile* (the-as (function enemy object) #f))
+(define *old-enemy-react-to-focus* (the-as (function enemy object) #f))
+(define *old-enemy-kill-prefer-falling* (the-as (function enemy object) #f))
+
+(defun mp-enemy-go-stare-hijack ((this enemy))
+  "Suppress local stare transitions for non-owners."
+  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event*)
+      (if *old-enemy-go-stare* (*old-enemy-go-stare* this))
+      )
+  )
+
+(defun mp-enemy-go-hostile-hijack ((this enemy))
+  "Suppress local hostile transitions for non-owners."
+  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event*)
+      (if *old-enemy-go-hostile* (*old-enemy-go-hostile* this))
+      )
+  )
+
+(defun mp-enemy-react-to-focus-hijack ((this enemy))
+  "Suppress local focus reactions/state changes for non-owners."
+  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event*)
+      (if *old-enemy-react-to-focus* (*old-enemy-react-to-focus* this))
+      )
+  )
+
+(defun mp-enemy-kill-prefer-falling-hijack ((this enemy))
+  "Ensure authoritative death but allow local triggering if owner."
+  (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event*)
+      (if *old-enemy-kill-prefer-falling* (*old-enemy-kill-prefer-falling* this))
+      )
+  )
+
+(defun mp-enemy-predictive-move ((this enemy))
+  "Smoothly move the local puppet towards its authoritative ghost position."
+  (let ((aid (mp-get-enemy-aid this)))
+    (when (nonzero? aid)
+      (let ((rec (mp-get-enemy-auth aid)))
+        (when rec
+          ;; 1. Position Nudge (Predictive Catch-up)
+          (let ((ghost-pos (-> rec ghost-trans))
+                (curr-pos (-> this root trans)))
+            (let ((dist (vector-vector-distance curr-pos ghost-pos)))
+              (cond
+                ((> dist (meters 10))
+                 ;; Too far, hard snap to prevent getting stuck in walls forever
+                 (vector-copy! curr-pos ghost-pos)
+                 (if (nonzero? (-> this root)) (vector-reset! (-> this root transv)))
+                 )
+                ((> dist (meters 0.01))
+                 ;; Apply nudge to transv (P-controller for smooth sliding)
+                 (let ((nudge (new 'stack-no-clear 'vector)))
+                   (vector-! nudge ghost-pos curr-pos)
+                   
+                   ;; Dampen local velocity significantly to let the ghost win
+                   (set! (-> this root transv x) (* (-> this root transv x) 0.5))
+                   (set! (-> this root transv z) (* (-> this root transv z) 0.5))
+
+                   ;; Drive towards ghost. Gain of 10.0 for tighter tethering
+                   (vector-float*! nudge nudge 10.0)
+                   (vector+! (-> this root transv) (-> this root transv) nudge)
+                   )
+                 )
+                )
+              )
+            )
+          
+          ;; 2. Rotation Smoothing
+          (quaternion-slerp! (-> this root quat) (-> this root quat) (-> rec ghost-quat) 0.2)
+          
+          ;; 3. Focus Sync (Look at what the Host is looking at)
+          (when (nonzero? (-> rec ghost-focus-aid))
+             (let ((target-role (the-as uint8 (+ -1 (-> rec ghost-focus-aid)))))
+               (let ((focus-proc (if (= target-role (-> *local-info* role)) 
+                                     (the-as process-focusable *target*)
+                                     (the-as process-focusable (mp-get-remote-target-process)))))
+                 (if (and focus-proc (nonzero? focus-proc))
+                     (set! (-> this focus handle) (process->handle focus-proc))
+                     )
+                 )
+               )
+             )
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+(define *old-enemy-common-post* (the-as (function enemy none) #f))
+(define *old-nav-enemy-common-post* (the-as (function nav-enemy none) #f))
+
+(defun mp-enemy-common-post-hijack ((this enemy))
+  "Inject predictive movement before calling the original enemy common-post."
+  (if (and (not (mp-enemy-authoritative? this)) 
+           (not (logtest? (-> this enemy-flags) (enemy-flag death-start))))
+      (mp-enemy-predictive-move this)
+      )
+  (if *old-enemy-common-post*
+      (*old-enemy-common-post* this)
+      )
+  (none)
+  )
+
+(defun mp-nav-enemy-common-post-hijack ((this nav-enemy))
+  "Inject predictive movement before calling the original nav-enemy common-post."
+  (if (and (not (mp-enemy-authoritative? (the-as enemy this))) 
+           (not (logtest? (-> this enemy-flags) (enemy-flag death-start))))
+      (mp-enemy-predictive-move (the-as enemy this))
+      )
+  (if *old-nav-enemy-common-post*
+      (*old-nav-enemy-common-post* this)
+      )
+  (none)
+  )
+
 (defun mp-enemy-method-97-hijack ((this enemy))
   "Ensure enemies can target the local player even if they are hijacked."
   (if *old-enemy-method-97*
@@ -84,8 +200,25 @@
 (defun mp-general-enemy-event-handler-hijack ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   "Intercept attacks and sync them across the network."
   (case arg2
-    (('go-mp-sync)
-     (go-process this mp-enemy-sync-idle)
+    (('go-state)
+     ;; NEW: Handle authoritative state forcing from the Host using dynamic 1:1 reflection
+     (let ((target-state (the-as symbol (-> arg3 param 0))))
+       (let ((cur-state (if (-> this state) (-> this state name) #f)))
+         (if (and target-state 
+                  (!= cur-state target-state)
+                  (not (logtest? (-> this enemy-flags) (enemy-flag death-start))))
+             (let ((self this))
+               (let ((st (method-state (-> self type) (the-as basic target-state))))
+                 (when st
+                     ;; Bypass the 'go' macro's compile-time typechecker for dynamic state lookups
+                     (set! (-> self next-state) (the-as state st))
+                     (enter-state (the-as object st) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f))
+                     )
+                 )
+               )
+             )
+         )
+       )
      (return #t)
      )
     (('attack)
@@ -195,4 +328,29 @@
   (when (not *old-general-event-handler*)
     (set! *old-general-event-handler* (the-as (function enemy process int symbol event-message-block object) (method-of-type enemy general-event-handler))))
   (defmethod general-event-handler ((this enemy) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block)) (mp-general-enemy-event-handler-hijack this arg0 arg1 arg2 arg3))
+
+  (when (not *old-enemy-go-stare*)
+    (set! *old-enemy-go-stare* (the-as (function enemy object) (method-of-type enemy go-stare))))
+  (defmethod go-stare ((this enemy)) (mp-enemy-go-stare-hijack this))
+
+  (when (not *old-enemy-go-hostile*)
+    (set! *old-enemy-go-hostile* (the-as (function enemy object) (method-of-type enemy go-hostile))))
+  (defmethod go-hostile ((this enemy)) (mp-enemy-go-hostile-hijack this))
+
+  (when (not *old-enemy-react-to-focus*)
+    (set! *old-enemy-react-to-focus* (the-as (function enemy object) (method-of-type enemy react-to-focus))))
+  (defmethod react-to-focus ((this enemy)) (mp-enemy-react-to-focus-hijack this))
+
+  (when (not *old-enemy-kill-prefer-falling*)
+    (set! *old-enemy-kill-prefer-falling* (the-as (function enemy object) (method-of-type enemy kill-prefer-falling))))
+  (defmethod kill-prefer-falling ((this enemy)) (mp-enemy-kill-prefer-falling-hijack this))
+
+  (when (not *old-enemy-common-post*)
+    (set! *old-enemy-common-post* (the-as (function enemy none) (method-of-type enemy common-post))))
+  (defmethod common-post ((this enemy)) (mp-enemy-common-post-hijack this))
+
+  (when (not *old-nav-enemy-common-post*)
+    (set! *old-nav-enemy-common-post* (the-as (function nav-enemy none) (method-of-type nav-enemy common-post))))
+  (defmethod common-post ((this nav-enemy)) (mp-nav-enemy-common-post-hijack this))
+
   (none))
