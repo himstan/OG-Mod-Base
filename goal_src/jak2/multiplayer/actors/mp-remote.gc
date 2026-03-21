@@ -7,11 +7,21 @@
     (set-vector! remote-pos (-> *remote-info* x) (-> *remote-info* y) (-> *remote-info* z) 1.0)
 
     ;; 1. Smooth Interpolation
-    (if *multi-remote-first-seen?*
+    (if (or *multi-remote-first-seen?* 
+            (> (vector-vector-distance *multi-remote-interp-pos* remote-pos) (meters 20.0)))
         (begin
           (vector-copy! *multi-remote-interp-pos* remote-pos)
           (set! *multi-remote-interp-angle* (-> *remote-info* angle))
-          (set! *multi-remote-first-seen?* #f)))
+          (set! *multi-remote-first-seen?* #f)
+          ;; If we are riding this remote puppet, snap the camera too!
+          (if (and (mp-is-daxter?) (= (-> *remote-info* riding?) (the-as uint 1)))
+              (begin
+                (set! (-> *target* control camera-pos quad) (-> *target* control trans quad))
+                (send-event *camera* 'teleport)
+                )
+              )
+          )
+        )
 
     (let ((interp-factor (* 15.0 (seconds-per-frame))))
       (vector-lerp! *multi-remote-interp-pos* *multi-remote-interp-pos* remote-pos interp-factor))

@@ -129,7 +129,9 @@
     (when (-> self has-pos?)
       (set! (-> *target* root trans quad) (-> self target-pos quad))
       (set! (-> *target* root quat quad) (-> self target-quat quad))
+      (set! (-> *target* control camera-pos quad) (-> self target-pos quad))
       (send-event *target* 'reset-velocity)
+      (send-event *camera* 'teleport)
       (format 0 "  teleported target to ~m ~m ~m~%" (-> self target-pos x) (-> self target-pos y) (-> self target-pos z))
       )
     

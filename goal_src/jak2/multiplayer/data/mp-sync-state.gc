@@ -81,6 +81,8 @@
          (set! (-> *target* control trans x) (-> *remote-info* x))
          (set! (-> *target* control trans y) (-> *remote-info* y))
          (set! (-> *target* control trans z) (-> *remote-info* z))
+         (set! (-> *target* control camera-pos quad) (-> *target* control trans quad))
+         (send-event *camera* 'teleport)
          (set-setting! 'allow-recharge #f 0.0 0)
 
          (set! (-> *local-info* sync-flag) (the-as uint 0))
