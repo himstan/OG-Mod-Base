@@ -332,9 +332,6 @@
                       )
                     )
                   )
-                
-                (format 0 "[MP] Initial authority for ~A (AID ~D) assigned to Role ~D. Pos: ~M ~M ~M~%" 
-                        e-proc enemy-aid (-> rec owner) (-> e-proc root trans x) (-> e-proc root trans y) (-> e-proc root trans z))
                 )
               )
 
@@ -358,7 +355,6 @@
                             (< (- (current-time) (-> rec last-transfer-time)) (seconds 2))) ;; Grace period for transition
                         (none)
                         (begin
-                          (format 0 "[MP] Dual authority detected for ~A (AID ~D). Client yielding to Host.~%" e-proc enemy-aid)
                           (set! (-> rec owner) 0)
                           (set! (-> rec is-aggro) (= (-> remote-slot is-aggro) 1))
                           )

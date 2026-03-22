@@ -424,6 +424,7 @@
   "jakb-ag.go"
   "daxter-ag.go"
   "target-indax.o"
+  "target-indax-extended.o"
   "jak-indax+0-ag.go"
   "board-ag.go"
   "gun-ag.go"

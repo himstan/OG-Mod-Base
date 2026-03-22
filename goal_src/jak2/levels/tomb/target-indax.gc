@@ -32,6 +32,8 @@
 (define-extern target-indax-hit-setup-anim (function attack-info none :behavior target))
 (define-extern target-indax-hit (state symbol attack-info target))
 (define-extern target-indax-death (state symbol target))
+(define-extern target-indax-roll (state target))
+(define-extern target-indax-roll-flip (state float float target))
 (define-extern target-ride-along (state target))
 (define-extern target-indax-jump-on (state target))
 (define-extern target-no-move-post (function none :behavior target))
@@ -408,7 +410,9 @@
                                              (= v1-3 'target-tube-jump)
                                              (= v1-3 'target-tube-hit)
                                              (= v1-3 'target-tube-death)
-                                             (= v1-3 'target-indax-long-jump)))))
+                                             (= v1-3 'target-indax-long-jump)
+                                             (= v1-3 'target-indax-roll)
+                                             (= v1-3 'target-indax-roll-flip)))))
 
 
 
@@ -614,30 +618,11 @@
             (remove-exit)
             (go target-indax-walk))
 
-          (if (and (cpad-hold? (-> self control cpad number) l1 r1)
-                   (can-duck?))
-
-              (begin
-                ;; 1. Speed Adjustment: Match Jak's native crouch-walk speed
-                (set! (-> self control mod-surface target-speed) 12288.0)
-                (set! (-> self control mod-surface transv-max) 12288.0)
-
-                ;; 2. High Jump Trigger
-                (if (and (cpad-pressed? (-> self control cpad number) x)
-                         (can-jump? #f))
-
-                    (go
-                      target-indax-jump
-                      (meters 10.0)
-                      (meters 10.0)
-                      (the-as surface #f))))
+          (if (and (recently-pressed? l1 r1)
+                   (and (!= (-> *cpad-list* cpads (-> self control cpad number) stick0-speed) 0.0) (can-roll?)))
+              (go target-indax-roll))
 
 
-
-              (begin
-                ;; Restore standard Indax speeds
-                (set! (-> self control mod-surface target-speed) 32768.0)
-                (set! (-> self control mod-surface transv-max) 32768.0)))
 
 
     ;; og:preserve-this - High FPS Fix
@@ -704,20 +689,12 @@
 
 
 
+         (ja-channel-push! 1 (seconds 0.05))
          (until #f
-           (if (and (cpad-hold? (-> self control cpad number) l1 r1) (can-duck?))
-               (if (move-legs?)
-                   ;; Crouch-Walk: Scurry animation scaled by speed
-                   (let* ((f0-27 (* (current-cycle-distance (-> self skel)) (-> self control scale x)))
-                          (f0-29 (/ (* 60.0 (-> self control ctrl-xz-vel)) (* 60.0 f0-27))))
-                     (ja :group! daxter-indax-run-squash-ja :num! (loop! f0-29)))
-
-                   ;; Static Crouch: Fixed pose
-                   (ja :group! daxter-indax-run-squash-ja :num! (identity (ja-aframe 10.0 0))))
-
-               (ja :group! daxter-indax-stance-ja :num! (seek! max 1.5)))
-
-           (suspend)))
+           (ja-no-eval :group! daxter-indax-stance-ja :num! (seek! max 1.5) :frame-num 0.0)
+           (until (ja-done? 0)
+             (suspend)
+             (ja :num! (seek! max 1.5)))))
 
 
   :post target-indax-post)
@@ -741,17 +718,11 @@
             (remove-exit)
             (go target-indax-stance))
 
-          (if (and (cpad-hold? (-> self control cpad number) l1 r1)
-                   (can-duck?))
+          (if (and (recently-pressed? l1 r1)
+                   (and (!= (-> *cpad-list* cpads (-> self control cpad number) stick0-speed) 0.0) (can-roll?)))
+              (go target-indax-roll))
 
-              (if (and (cpad-pressed? (-> self control cpad number) x)
-                       (can-jump? #f))
 
-                  (go
-                    target-indax-jump
-                    (meters 3.5)
-                    (meters 3.5)
-                    *indax-long-jump-mods*)))
 
 
 
