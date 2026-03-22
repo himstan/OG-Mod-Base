@@ -152,8 +152,8 @@
           ;; 2. Rotation Smoothing
           (quaternion-slerp! (-> this root quat) (-> this root quat) (-> rec ghost-quat) 0.2)
           
-          ;; 3. Focus Sync (Look at what the Host is looking at)
-          (when (nonzero? (-> rec ghost-focus-aid))
+          ;; 3. Focus Sync (Look at what the Owner is looking at)
+          (when (and (not (mp-enemy-authoritative? this)) (nonzero? (-> rec ghost-focus-aid)))
              (let ((target-role (the-as uint8 (+ -1 (-> rec ghost-focus-aid)))))
                (let ((focus-proc (if (= target-role (-> *local-info* role)) 
                                      (the-as process-focusable *target*)

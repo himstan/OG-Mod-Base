@@ -543,11 +543,12 @@
 
     (update-rates! (-> self clock) f30-0))
 
-  (logior! (-> self draw status) (draw-control-status no-draw-bounds2))
-  (logclear! (-> self draw status) (draw-control-status no-draw-temp uninited))
   (evaluate-joint-control self)
   (joint-points)
+  (do-joint-math (-> self draw) (-> self node-list) (-> self skel))
   (do-target-gspot)
+  (logior! (-> self draw status) (draw-control-status no-draw-bounds2))
+  (logclear! (-> self draw status) (draw-control-status no-draw-temp uninited))
   (target-powerup-process)
   (when (not *has-ridden-before?*)
             (begin
@@ -1633,7 +1634,7 @@
                  (= (-> self next-state name) 'target-indax-death))
         (set! *has-ridden-before?* #f))
       (set! *local-riding?* #f)
-      (set! (-> self control root-prim prim-core action) (collide-action solid stuck-wall-escape))
+      (set! (-> self control root-prim prim-core action) (collide-action solid can-ride stuck-wall-escape))
       (target-indax-exit)
     )
 
@@ -1663,6 +1664,9 @@
 
   :post (behavior ()
     (target-no-stick-post)
+    ;; Manual updates since we have no-draw set
+    (set! (-> self control gspot-pos quad) (-> self control trans quad))
+    (do-joint-math (-> self draw) (-> self node-list) (-> self skel))
     (if (= (-> *local-info* role) 1)
         (let ((mgr-ptr *mp-remote-manager*))
           (if (and mgr-ptr (nonzero? mgr-ptr) (-> mgr-ptr 0 manipy-proc))

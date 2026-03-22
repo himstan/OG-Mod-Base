@@ -68,6 +68,11 @@
             (format 0 "[MP-WorldEvent] Applying Authoritative hit to ~A from remote attacker ~A (AID ~D).~%" proc attacker aid)
             (set! *mp-processing-remote-event* #t)
             (send-event proc 'attack attacker (static-attack-info ((id att-id) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5)))))
+            
+            ;; Explicitly set focus to the remote attacker
+            (if (and attacker (nonzero? attacker))
+                (set! (-> (the-as enemy proc) focus handle) (process->handle attacker))
+                )
             (set! *mp-processing-remote-event* #f)
             )
           (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for AID ~D!~%" aid))
@@ -198,6 +203,7 @@
           (format 0 "[MP-WorldEvent] Yielding authority of AID ~D to remote.~%" aid)
           (set! (-> rec owner) remote-role)
           (set! (-> rec last-transfer-time) (current-time)) ;; Prevent re-acquisition during handover
+          (set! (-> rec last-remote-seen) (current-time))
           (mp-send-world-event MP_EVENT_ENEMY_AUTHORITY_ACK aid)
           )
         )

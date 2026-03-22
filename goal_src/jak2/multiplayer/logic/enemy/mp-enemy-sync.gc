@@ -448,9 +448,10 @@
                       )
                     (begin
                       ;; APPLY REMOTE STATE
-                      (if (and remote-slot (< (- (current-time) (-> rec last-remote-seen)) (seconds 1)))
+                      (if (or (and remote-slot (< (- (current-time) (-> rec last-remote-seen)) (seconds 2)))
+                              (< (- (current-time) (-> rec last-transfer-time)) (seconds 2)))
                           (begin
-                            (when (nonzero? (-> e-proc root))
+                            (when (and remote-slot (nonzero? (-> e-proc root)))
                               ;; Apply the remote state data (Updates ghost position/rotation/state)
                               (mp-enemy-apply-state e-proc remote-slot)
                               )

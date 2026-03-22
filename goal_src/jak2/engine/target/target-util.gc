@@ -789,6 +789,8 @@
       ((= arg0 'indax)
        (let ((f30-2 0.2))
          (set! (-> gp-0 draw-offset y) 0.0)
+         (logior! (-> gp-0 root-prim prim-core collide-as) (collide-spec jak))
+         (set! (-> gp-0 collision-spheres 4 prim-core collide-as) (collide-spec jak))
          (sphere<-vector+r!
            (the-as sphere (-> gp-0 root-prim local-sphere))
            (-> *TARGET-bank* root-offset)
@@ -816,8 +818,6 @@
            (-> *TARGET-bank* body-radius)
            )
          )
-       (set! (-> gp-0 collision-spheres 4 prim-core collide-as) (collide-spec))
-       (set! (-> gp-0 collision-spheres 4 prim-core collide-with) (collide-spec))
        0
        )
       ((= arg0 'tube)

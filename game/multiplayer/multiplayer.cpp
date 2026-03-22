@@ -354,7 +354,7 @@ void pc_multi_receive_events(u32 event_ptr) {
 void pc_multi_send_enemies(u32 buffer_ptr) {
   using namespace jak2;
   try {
-    if (!gMultiplayerData.initialized || gMultiplayerData.local_role != 0 || buffer_ptr < 0x1000) return;
+    if (!gMultiplayerData.initialized || buffer_ptr < 0x1000) return;
     MPEnemySyncBufferGOAL* buffer = (MPEnemySyncBufferGOAL*)Ptr<u8>(buffer_ptr).c();
     if (!buffer || buffer->local_count == 0) return;
     uint32_t total_count = (buffer->local_count < MAX_ENEMY_SYNC_COUNT) ? buffer->local_count : MAX_ENEMY_SYNC_COUNT;
