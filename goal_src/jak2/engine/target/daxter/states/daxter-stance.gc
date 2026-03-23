@@ -1,0 +1,80 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defstate target-indax-start (target)
+  :event target-standard-event-handler
+  :code (behavior ((arg0 handle))
+         (target-indax-init #f))
+
+  :post target-indax-post)
+
+(defstate target-indax-stance (target)
+  :event target-indax-handler
+  :enter (behavior ()
+          ((-> target-stance enter))
+          (set! (-> self control mod-surface) *indax-walk-mods*))
+  :exit (behavior ()
+         ((-> target-stance exit))
+         (target-indax-exit))
+  :trans (behavior ()
+          ((-> self state-hook))
+          (when (move-legs?)
+            (set! (-> self control bend-target) 0.0)
+            (logclear! (-> self state-flags) (state-flags lleg-still rleg-still))
+            (remove-exit)
+            (go target-indax-walk))
+
+          (if (and (recently-pressed? l1 r1)
+                   (and (!= (-> *cpad-list* cpads (-> self control cpad number) stick0-speed) 0.0) (can-roll?)))
+              (go target-indax-roll))
+    ;; og:preserve-this - High FPS Fix
+          (if (and (recently-pressed? x)
+                   (can-jump? #f))
+              (go
+                target-indax-jump
+                (-> *TARGET-bank* indax-jump-height-min)
+                (-> *TARGET-bank* indax-jump-height-max)
+                (the-as surface #f)))
+    ;; og:preserve-this - High FPS Fix
+          (if (and (recently-pressed? square)
+                   (can-hands? #t))
+              (go target-indax-running-attack))
+          (target-indax-ride-along-check)
+    ;; og:preserve-this - High FPS Fix
+          (if (and (recently-pressed? circle)
+                   (can-feet? #t))
+              (go target-indax-attack))
+          (fall-test target-indax-falling -4096000.0))
+  :code (behavior ()
+         (let ((v1-2 (ja-group)))
+           (cond
+             ((and v1-2 (= v1-2 daxter-indax-attack-spin-ja))
+              (ja-no-eval :group! daxter-indax-attack-spin-end-ja :num! (seek!) :frame-num 0.0)
+              (until (ja-done? 0)
+                (suspend)
+                (ja :num! (seek!)))
+              (ja-channel-push! 1 (seconds 0.05)))
+             ((let ((v1-32 (ja-group)))
+                (and v1-32 (= v1-32 daxter-indax-running-attack-ja)))
+              (ja-no-eval :group! daxter-indax-running-attack-end-ja :num! (seek!) :frame-num 0.0)
+              (until (ja-done? 0)
+                (suspend)
+                (ja :num! (seek!)))
+              (ja-channel-push! 1 (seconds 0.05)))
+             ((let ((v1-62 (ja-group)))
+                (and (and v1-62 (= v1-62 daxter-indax-run-ja))
+                     (< (-> self skel root-channel 2 frame-interp (-> self skel active-frame-interp)) 0.5)))
+              (ja-channel-push! 1 (seconds 0.1))
+              (ja-no-eval :group! daxter-indax-run-to-stance-ja :num! (seek!) :frame-num 0.0)
+              (until (ja-done? 0)
+                (suspend)
+                (ja :num! (seek!))))
+             (else
+               (ja-channel-push! 1 (seconds 0.05)))))
+         (ja-channel-push! 1 (seconds 0.05))
+         (until #f
+           (ja-no-eval :group! daxter-indax-stance-ja :num! (seek! max 1.5) :frame-num 0.0)
+           (until (ja-done? 0)
+             (suspend)
+             (ja :num! (seek! max 1.5)))))
+  :post target-indax-post)

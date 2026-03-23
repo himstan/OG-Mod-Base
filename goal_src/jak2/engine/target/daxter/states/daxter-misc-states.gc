@@ -1,0 +1,35 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+(defstate target-indax-trip (target)
+  :event target-indax-jump-event-handler
+  :enter (behavior ()
+          (set-time! (-> self state-time))
+          (sound-play "jump" :vol 70)
+          (logclear! (-> self control status) (collide-status on-surface on-ground touch-surface)))
+
+  :exit (behavior ()
+         (target-exit)
+         (target-indax-exit))
+
+  :code (behavior ()
+         (set! (-> self control mod-surface) *indax-bounce-mods*)
+         (ja-channel-push! 1 (seconds 0.02))
+         (ja-no-eval :group! daxter-indax-trip-ja :num! (seek!) :frame-num 0.0)
+         (until (ja-done? 0)
+           (compute-alignment! (-> self align))
+           (align! (-> self align) (align-opts adjust-y-vel adjust-xz-vel) 1.0 1.0 2.0)
+           (suspend)
+           (ja :num! (seek!)))
+
+         (while (not (logtest? (-> self control status) (collide-status on-surface)))
+           (suspend))
+
+         (ja-no-eval :group! daxter-indax-trip-land-ja :num! (seek!) :frame-num 0.0)
+         (until (ja-done? 0)
+           (suspend)
+           (ja :num! (seek!)))
+
+         (sleep-code))
+
+  :post target-no-stick-post)

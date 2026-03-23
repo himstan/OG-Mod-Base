@@ -1,3 +1,4 @@
+;;-*-Lisp-*-
 (in-package goal)
 
 (defstate target-indax-roll (target)
