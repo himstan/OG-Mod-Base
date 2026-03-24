@@ -21,6 +21,9 @@
           (if (and (cpad-pressed? (-> self control cpad number) circle) (can-feet? #f))
               (go target-indax-attack-air #f))
 
+          (if (and (recently-pressed? square) (can-hands? #f))
+              (go target-indax-flop 0.0 0.0 0.0))
+
           (let ((f0-3 (fmax 0.0 (fmin 1.0 (* 0.000048828126 (+ -10240.0 (-> self control ctrl-xz-vel)))))))
             (if (< (-> self control unknown-float35) f0-3)
                 (seek! (-> self control unknown-float35) f0-3 (* 4.0 (seconds-per-frame))))))
