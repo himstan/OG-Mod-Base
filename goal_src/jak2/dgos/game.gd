@@ -435,6 +435,7 @@
   "daxter-roll.o"
   "daxter-misc-states.o"
   "daxter-ride-along.o"
+  "daxter-pole.o"
   "jak-indax+0-ag.go"
   "board-ag.go"
   "gun-ag.go"

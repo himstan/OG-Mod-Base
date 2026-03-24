@@ -85,6 +85,9 @@
         (('swim 'slide 'edge-grab 'vehicle-mount 'board-mount)
          #f
          )
+        (('pole-grab)
+         (go target-indax-pole-cycle (process->handle arg0))
+         )
         (('flop 'uppercut 'spin)
          #f
          )
@@ -259,6 +262,11 @@
   ;; 1. Sidekick draws Daxter
   (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
       (set! (-> self draw art-group) (-> self sidekick 0 draw art-group)))
+
+  ;; Daxter has different joint indices for hands
+  (set! (-> self control lhand-cspace) (-> self node-list data 16))
+  (set! (-> self control rhand-cspace) (-> self node-list data 23))
+
   (ja-channel-set! 1)
   ;; 2. Hide Jak shell
   (logior! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
@@ -302,13 +310,23 @@
                                              (= v1-3 'target-tube-death)
                                              (= v1-3 'target-indax-long-jump)
                                              (= v1-3 'target-indax-roll)
-                                             (= v1-3 'target-indax-roll-flip)))))
+                                             (= v1-3 'target-indax-roll-flip)
+                                             (= v1-3 'target-indax-pole-cycle)
+                                             (= v1-3 'target-indax-pole-flip-up)
+                                             (= v1-3 'target-indax-pole-flip-up-jump)
+                                             (= v1-3 'target-indax-pole-flip-forward)
+                                             (= v1-3 'target-indax-pole-flip-forward-jump)))))
     (format 0 "[MP] Triggered target-indax-exit. Next state: ~A ~%" (-> self next-state))
     (logclear! (-> self focus-status) (focus-status indax))
     (logclear! (-> self control root-prim prim-core action) (collide-action stuck-wall-escape))
     (set! (-> self control mod-surface) *walk-mods*)
     (logclear! (-> self state-flags) (state-flags sf6))
     (target-collide-set! 'normal 0.0)
+
+    ;; Restore hand cspaces to Jak defaults
+    (set! (-> self control lhand-cspace) (-> self node-list data 45))
+    (set! (-> self control rhand-cspace) (-> self node-list data 46))
+
     (set! (-> self draw art-group) (-> self indax art-group-backup))
     (logclear! (-> self draw status) (draw-control-status no-draw no-draw-bounds2))
     (if (and (-> self sidekick) (!= (the-as uint (-> self sidekick)) 0))
@@ -401,6 +419,7 @@
     (update-rates! (-> self clock) f30-0))
   (evaluate-joint-control self)
   (joint-points)
+  (target-calc-camera-pos) ;; Added: Allows pole-specific camera overrides to work
   (do-joint-math (-> self draw) (-> self node-list) (-> self skel))
   (do-target-gspot)
   (logior! (-> self draw status) (draw-control-status no-draw-bounds2))

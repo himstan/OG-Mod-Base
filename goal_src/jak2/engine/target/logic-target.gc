@@ -2207,7 +2207,10 @@
         (let ((v1-10 (new 'stack-no-clear 'vector)))
           (vector+! v1-10 s4-1 s3-1)
           (vector-float*! v1-10 v1-10 0.5)
-          (+! (-> v1-10 y) -6144.0)
+          (if (focus-test? self indax)
+              (+! (-> v1-10 y) -2048.0)
+              (+! (-> v1-10 y) -6144.0)
+              )
           (send-event *camera* 'ease-in 0.5 v1-10)
           )
         (vector-segment-distance-point! (-> self control midpoint-of-hands) s4-1 s3-1 s5-0)
@@ -2245,9 +2248,13 @@
            )
           (else
             (set! (-> self control did-move-to-pole-or-max-jump-height) (the-as float #t))
-            (move-to-point!
-              (-> self control)
-              (vector-! (new 'stack-no-clear 'vector) s5-0 (-> self control ctrl-to-hands-offset))
+            (let ((v1-25 (vector-! (new 'stack-no-clear 'vector) s5-0 (-> self control ctrl-to-hands-offset))))
+              (if (focus-test? self indax)
+                  (begin
+                    (set! (-> v1-25 y) (+ (-> s5-0 y) *daxter-pole-y-offset*)) 
+                    )
+                  )
+              (move-to-point! (-> self control) v1-25)
               )
             (set! (-> self control last-trans-any-surf quad) (-> self control trans quad))
             )

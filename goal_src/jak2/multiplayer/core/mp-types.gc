@@ -365,6 +365,7 @@
 (define-perm *mp-event-queue-write-ptr* int 0)
 (define-perm *mp-event-queue-read-ptr* int 0)
 
+(define *daxter-pole-y-offset* 950.0)
 (define *local-riding?* #f)
 (define *mp-processing-remote-event* #f)
 (define-perm *mp-last-remote-scene-active* uint (the uint 0))
