@@ -27,7 +27,7 @@
           ((-> target-indax-falling trans))
           (mod-var-jump #t #t (cpad-hold? (-> self control cpad number) x) (-> self control transv))
           (if (and (cpad-pressed? (-> self control cpad number) x)
-                   (< (vector-dot (-> self control dynam gravity-normal) (-> self control transv)) 12288.0)
+                   (< (vector-dot (-> self control dynam gravity-normal) (-> self control transv)) 16384.0)
                    (and (< -61440.0 (vector-dot (-> self control dynam gravity-normal) (-> self control transv)))
                         (not (logtest? (water-flags touch-water) (-> self water flags)))
                         (not (logtest? (state-flags prevent-jump prevent-double-jump) (-> self state-flags)))))

@@ -18,6 +18,7 @@
 (define-extern target-powerup-process (function none :behavior target))
 (define-extern target-exit (function none :behavior target))
 (define-extern target-collision-no-reaction (function control-info collide-query vector vector none))
+(define-extern target-indax-compute-edge (function none :behavior target))
 (define-extern target-gun-setup (function symbol none :behavior target))
 (define-extern target-darkjak-setup (function symbol none :behavior target))
 (define-extern target-collide-set! (function symbol float int :behavior target))
@@ -1743,7 +1744,7 @@
                  )
              (and (< f0-17 0.0)
                   (and (or (not (and (= *cheat-mode* 'debug) (cpad-hold? (-> self control cpad number) r2))) *pause-lock*)
-                       (not (focus-test? self flut pilot mech indax))
+                       (not (focus-test? self flut pilot mech))
                        (not (logtest? (-> self state-flags) (state-flags prevent-jump)))
                        #t
                        )
@@ -2439,7 +2440,10 @@
   (update-from-cspace (-> self control impact-ctrl))
   (cond
     ((focus-test? self edge-grab)
-     (target-compute-edge)
+     (if (focus-test? self indax)
+         (target-indax-compute-edge)
+         (target-compute-edge)
+         )
      )
     ((focus-test? self pole)
      (target-compute-pole)
