@@ -328,6 +328,7 @@
    (ghost-quat         quaternion :inline)
    (ghost-state        mp-enemy-state-id)
    (ghost-focus-aid    uint32)
+   (just-taken-authority symbol)
    )
   )
 

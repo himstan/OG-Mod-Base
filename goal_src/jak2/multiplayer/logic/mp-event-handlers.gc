@@ -219,6 +219,7 @@
       (format 0 "[MP-WorldEvent] Remote granted authority over AID ~D. Taking ownership.~%" aid)
       (set! (-> rec owner) local-role)
       (set! (-> rec last-transfer-time) (current-time))
+      (set! (-> rec just-taken-authority) #t)
       )
     )
   (none))
