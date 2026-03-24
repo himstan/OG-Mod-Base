@@ -37,6 +37,12 @@
   (set! (-> v1-10 seek180) 0.9)
   (set! *indax-long-jump-mods* v1-10))
 
+(let ((v1-11 (copy *duck-mods* 'loading-level)))
+  (set! (-> v1-11 target-speed) 20480.0)
+  (set! (-> v1-11 transv-max) 20480.0)
+  (set! *indax-duck-mods* v1-11)
+  )
+
 (let ((v1-34 (copy *indax-walk-mods* 'global)))
   (set! (-> v1-34 name) 'edge-grab)
   (set! (-> v1-34 target-speed) 0.0)
@@ -346,6 +352,9 @@
                                              (= v1-3 'target-indax-hit)
                                              (= v1-3 'target-indax-death)
                                              (= v1-3 'target-indax-high-jump)
+                                             (= v1-3 'target-indax-high-jump-jump)
+                                             (= v1-3 'target-indax-duck-stance)
+                                             (= v1-3 'target-indax-duck-walk)
                                              (= v1-3 'target-indax-jump-on)
                                              (= v1-3 'target-ride-along)
                                              (= v1-3 'target-swim-stance)

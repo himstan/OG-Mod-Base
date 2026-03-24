@@ -427,6 +427,7 @@
   "daxter.o"
   "daxter-stance.o"
   "daxter-walk.o"
+  "daxter-duck.o"
   "daxter-jump.o"
   "daxter-falling.o"
   "daxter-attack.o"

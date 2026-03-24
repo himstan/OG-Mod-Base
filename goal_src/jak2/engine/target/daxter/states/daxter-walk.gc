@@ -19,6 +19,9 @@
           (if (and (recently-pressed? l1 r1)
                    (and (!= (-> *cpad-list* cpads (-> self control cpad number) stick0-speed) 0.0) (can-roll?)))
               (go target-indax-roll))
+          (if (and (cpad-hold? (-> self control cpad number) l1)
+                   (not (logtest? (-> self state-flags) (state-flags prevent-duck))))
+              (go target-indax-duck-walk #f))
     ;; og:preserve-this - High FPS Fix
           (if (and (recently-pressed? x)
                    (can-jump? #f))
