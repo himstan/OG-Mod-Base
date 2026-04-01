@@ -116,6 +116,7 @@
         (when (and v-proc (nonzero? v-proc) (nonzero? (-> v-proc net-id)))
           (let ((v-slot (-> *local-info* veh-state)))
             (set! (-> v-slot net-id) (-> v-proc net-id))
+            (set! (-> v-slot vehicle-type) (the uint8 (-> v-proc info object-type)))
             (set! (-> v-slot x) (-> v-proc root trans x))
             (set! (-> v-slot y) (-> v-proc root trans y))
             (set! (-> v-slot z) (-> v-proc root trans z))

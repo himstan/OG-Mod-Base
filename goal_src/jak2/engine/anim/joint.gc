@@ -1771,57 +1771,18 @@
   )
 
 (defun cspace<-transformq! ((arg0 cspace) (arg1 transformq))
-  ;; MULTIPLAYER GUARD
-  (if (or (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 15) (>= (the-as uint arg0) #x70000000)
-          (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000))
-      (return (the-as matrix #f)))
-
-  (let ((b0 (-> arg0 bone)))
-    (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000))
-        (return (the-as matrix #f)))
-    )
   (matrix<-transformq! (-> arg0 bone transform) arg1)
   )
 
 (defun cspace<-transformq+trans! ((arg0 cspace) (arg1 transformq) (arg2 vector))
-  ;; MULTIPLAYER GUARD
-  (if (or (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 15) (>= (the-as uint arg0) #x70000000)
-          (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000)
-          (not arg2) (zero? (the-as uint arg2)) (logtest? (the-as uint arg2) 15) (>= (the-as uint arg2) #x70000000))
-      (return (the-as matrix #f)))
-
-  (let ((b0 (-> arg0 bone)))
-    (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000))
-        (return (the-as matrix #f)))
-    )
   (matrix<-transformq+trans! (-> arg0 bone transform) arg1 arg2)
   )
 
 (defun cspace<-transformq+world-trans! ((arg0 cspace) (arg1 transformq) (arg2 vector))
-  ;; MULTIPLAYER GUARD
-  (if (or (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 15) (>= (the-as uint arg0) #x70000000)
-          (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000)
-          (not arg2) (zero? (the-as uint arg2)) (logtest? (the-as uint arg2) 15) (>= (the-as uint arg2) #x70000000))
-      (return (the-as matrix #f)))
-
-  (let ((b0 (-> arg0 bone)))
-    (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000))
-        (return (the-as matrix #f)))
-    )
   (matrix<-transformq+world-trans! (-> arg0 bone transform) arg1 arg2)
   )
 
 (defun cspace<-transformq+rot-offset! ((arg0 cspace) (arg1 transformq) (arg2 vector))
-  ;; MULTIPLAYER GUARD
-  (if (or (not arg0) (zero? (the-as uint arg0)) (logtest? (the-as uint arg0) 15) (>= (the-as uint arg0) #x70000000)
-          (not arg1) (zero? (the-as uint arg1)) (logtest? (the-as uint arg1) 15) (>= (the-as uint arg1) #x70000000)
-          (not arg2) (zero? (the-as uint arg2)) (logtest? (the-as uint arg2) 15) (>= (the-as uint arg2) #x70000000))
-      (return (the-as matrix #f)))
-
-  (let ((b0 (-> arg0 bone)))
-    (if (or (not b0) (zero? (the-as uint b0)) (logtest? (the-as uint b0) 15) (>= (the-as uint b0) #x70000000))
-        (return (the-as matrix #f)))
-    )
   (matrix<-transformq+rot-offset! (-> arg0 bone transform) arg1 arg2)
   )
 

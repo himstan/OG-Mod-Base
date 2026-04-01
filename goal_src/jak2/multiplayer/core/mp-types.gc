@@ -398,6 +398,25 @@
 (define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-debug-simulate-loss-time* time-frame 0)
 (define-perm *mp-hijacks-applied?* symbol #f)
+
+(define *mp-daxter-veh-offsets* (new 'static 'inline-array vector 32))
+
+(defun mp-init-daxter-offsets ()
+  (dotimes (i 32)
+    (set-vector! (-> *mp-daxter-veh-offsets* i) (meters 0.15) (meters 0.85) (meters -0.15) 1.0)
+    )
+  ;; BIKE DEFAULTS (Verified by user)
+  (let ((bike-offset (meters 0.05))
+        (bike-height (meters 0.85))
+        (bike-forward (meters 0.35)))
+    (set-vector! (-> *mp-daxter-veh-offsets* 11) bike-offset bike-height bike-forward 1.0) ;; Bike A
+    (set-vector! (-> *mp-daxter-veh-offsets* 12) bike-offset bike-height bike-forward 1.0) ;; Bike B
+    (set-vector! (-> *mp-daxter-veh-offsets* 13) bike-offset bike-height bike-forward 1.0) ;; Bike C
+    (set-vector! (-> *mp-daxter-veh-offsets* 18) bike-offset bike-height bike-forward 1.0) ;; Guard Bike
+    )
+  (none)
+  )
+(mp-init-daxter-offsets)
 (define *mp-daxter-damage-mult* 2.0)
 
 ;; --- Enemy Hijack Variables ---
