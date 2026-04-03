@@ -131,10 +131,23 @@
       (((traffic-type crimson-guard-1) (traffic-type crimson-guard-0)) (set! ag-name "skel-crimson-guard"))
       )
     (if ag-name
-        (if (art-group-get-by-name *level* ag-name (the-as (pointer uint32) #f))
-            #t
-            #f
-            )
+        (let ((skel (the-as skeleton-group (art-group-get-by-name *level* ag-name (the-as (pointer uint32) #f)))))
+          (if (and skel (nonzero? skel))
+              ;; The skeleton-group doesn't have the data array, the actual art-group does!
+              ;; We must look up the actual art-group by its name to check if it's linked.
+              (let ((ag (art-group-get-by-name *level* (-> skel art-group-name) (the-as (pointer uint32) #f))))
+                (if (and ag
+                         (nonzero? ag)
+                         (> (-> ag length) 0)
+                         (-> ag data 0)
+                         (nonzero? (-> ag data 0)))
+                    #t
+                    #f
+                    )
+                )
+              #f
+              )
+          )
         #f
         )
     )

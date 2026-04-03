@@ -111,6 +111,8 @@ goal_src/user/stan
 goal_src/user/user.txt
 
 .gemini/
+.claude/
 GEMINI.md
+CLAUDE.md
 
 /snapshots

@@ -77,7 +77,7 @@
 
 (defun mp-update-traffic-authority ()
   "Determine who owns the open-world traffic and suppress local spawning if needed"
-  (when (and *target* *traffic-manager*)
+  (when (and *target* (-> *target* control) *traffic-manager*)
     (let ((dist (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*))
           (is-active? (nonzero? (pc-multi-get-status))))
       
