@@ -185,5 +185,6 @@
 
     (mp-draw-enemy-debug)
     (mp-draw-task-debug)
+    (mp-draw-traffic-debug)
 
     (none)))

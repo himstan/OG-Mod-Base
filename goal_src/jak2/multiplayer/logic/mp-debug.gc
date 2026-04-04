@@ -115,3 +115,69 @@
     (format *stdcon* "~%-------------------------~%~%")
     )
   (none))
+
+(defun mp-draw-traffic-debug ()
+  "Overlay real-time traffic synchronization data"
+  (when *mp-traffic-debug?*
+    (iterate-process-tree *active-pool* (lambda ((p process-tree))
+      (let ((proc (the-as process p)))
+        (when (and proc (or (type? proc vehicle) (type? proc citizen)))
+          (let ((net-id (the uint 0))
+                (is-vehicle (type? proc vehicle))
+                (type-str "UNK"))
+            
+            (if is-vehicle
+                (begin
+                  (set! net-id (-> (the-as vehicle proc) net-id))
+                  (set! type-str (symbol->string (-> (the-as vehicle proc) type symbol)))
+                  )
+                (begin
+                  (set! net-id (-> (the-as citizen proc) net-id))
+                  (set! type-str (symbol->string (-> (the-as citizen proc) type symbol)))
+                  )
+                )
+
+            (when (nonzero? net-id)
+              (let ((draw-pos (new 'stack-no-clear 'vector)))
+                (vector-copy! draw-pos (-> (the-as process-drawable proc) root trans))
+                (set! (-> draw-pos y) (+ (-> draw-pos y) (meters 2.0)))
+
+                (let ((dist (vector-vector-distance (-> (the-as process-drawable proc) root trans) (-> *target* root trans)))
+                      (is-remote-driven (= net-id (-> *remote-info* veh-state net-id)))
+                      (is-local-driven (= net-id (-> *local-info* veh-state net-id))))
+                  
+                  (let ((color (font-color white))
+                        (status-str "SYNCED"))
+                    
+                    (cond
+                      (is-local-driven
+                        (set! color (font-color green))
+                        (set! status-str "LOCAL-DRIVEN")
+                        )
+                      (is-remote-driven
+                        (set! color (font-color yellow))
+                        (set! status-str "REMOTE-DRIVEN")
+                        )
+                      )
+
+                    (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                      (the-as string (format #f "ID: ~D~%~S (~S)~%DIST: ~M" 
+                                              net-id 
+                                              status-str
+                                              type-str
+                                              dist))
+                                      draw-pos 
+                                      color 
+                                      (the-as vector2h #f))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      #t)
+      *kernel-context*)
+    )
+  (none)
+)

@@ -394,6 +394,7 @@
 (define *mp-continue-name* (new 'global 'string 32 (the-as string #f)))
 (define *mp-pending-scene-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #f)
+(define-perm *mp-traffic-debug?* symbol #f)
 (define-perm *mp-debug-task-sync* symbol #f)
 (define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-debug-simulate-loss-time* time-frame 0)
