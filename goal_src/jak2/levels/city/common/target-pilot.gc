@@ -363,6 +363,14 @@
          )
     (when s5-0
       (compute-seat-position (the-as vehicle s5-0) (-> self control trans) (-> gp-2 seat-index))
+      ;; og:preserve-this added for Daxter hijack: Offset Daxter so he sits on the rider's shoulder
+      (when (-> gp-2 as-daxter?)
+        (let ((rider (get-rider-in-seat (the-as vehicle s5-0) (-> gp-2 seat-index))))
+          (when (and rider (!= rider self))
+            (+! (-> self control trans y) (meters 0.5))
+            )
+          )
+        )
       (set! (-> self control transv quad) (-> (the-as vehicle s5-0) root transv quad))
       (quaternion-copy! (-> self control quat) (-> (the-as vehicle s5-0) root quat))
       (quaternion-copy! (-> self control quat-for-control) (-> self control quat))

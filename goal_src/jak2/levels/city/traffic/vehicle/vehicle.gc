@@ -1834,7 +1834,10 @@
        (when s5-3
          (format #t "vehicle::event-handler: pilot-on (pid ~d) from pid ~d~%" (-> this pid) (-> arg0 pid))
          (logior! (-> this flags) (rigid-body-object-flag riding))
-         (put-rider-in-seat this (the-as int s3-2) (the-as process-focusable s5-3))
+         ;; og:preserve-this added for Daxter hijack: Don't displace existing NPC rider if we are Daxter
+         (if (not (and (mp-is-daxter?) (zero? s3-2) (get-rider-in-seat this 0)))
+             (put-rider-in-seat this (the-as int s3-2) (the-as process-focusable s5-3))
+             )
          (if (logtest? (-> s5-3 mask) (process-mask target))
              (logior! (-> this flags) (rigid-body-object-flag player-driving))
              )
