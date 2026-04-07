@@ -28,6 +28,9 @@
     ;; BUDGET/SAFETY: Only spawn if art is loaded to avoid linking crash
     (when (mp-traffic-type-loaded? (the-as traffic-type (-> slot vehicle-type)))
       (let ((params (new 'stack 'traffic-object-spawn-params)))
+        ;; Zero the struct to avoid garbage in uninitialized fields (like net-id if we weren't setting it)
+        (mem-set32! (the-as pointer params) 0 (/ (size-of traffic-object-spawn-params) 4))
+
         (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
         (set! (-> params behavior) (the uint64 0))
         (set! (-> params id) (the uint32 0))
@@ -45,10 +48,9 @@
             (set! (-> params flags) (traffic-spawn-flags trsflags-01))
             (set! (-> params flags) (the-as traffic-spawn-flags 0))
             )
-        
+
         (let ((proc (traffic-object-spawn (the-as process *traffic-manager*) params)))
           (when (and proc (nonzero? proc))
-            ;; Force into puppet state immediately
             (go-process proc mp-vehicle-puppet)
             )
           )
@@ -58,79 +60,92 @@
   (none)
 )
 
-(defun mp-vehicle-update-puppet ((proc vehicle) (slot mp-vehicle-state))
-  (let ((target-pos (new 'stack-no-clear 'vector))
-        (target-quat (new 'stack-no-clear 'quaternion))
-        (target-vel (new 'stack-no-clear 'vector)))
-    (set-vector! target-pos (-> slot x) (-> slot y) (-> slot z) 1.0)
-    (quaternion-set! target-quat (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
-    (set-vector! target-vel (-> slot lin-vel-x) (-> slot lin-vel-y) (-> slot lin-vel-z) 1.0)
-    
-    ;; Smoothly chase the target (scaled by time for consistent smoothing)
-    (let ((lerp-factor (fmin 1.0 (* 10.0 (seconds-per-frame)))))
-      (vector-lerp! (-> proc root trans) (-> proc root trans) target-pos lerp-factor)
-      (quaternion-slerp! (-> proc root quat) (-> proc root quat) target-quat lerp-factor)
-      (vector-lerp! (-> proc root transv) (-> proc root transv) target-vel lerp-factor)
-      )
-    
-    ;; Dead Reckoning: Extrapolate the target ghost's position forward
-    (vector+float*! target-pos target-pos target-vel (seconds-per-frame))
-    (set! (-> slot x) (-> target-pos x))
-    (set! (-> slot y) (-> target-pos y))
-    (set! (-> slot z) (-> target-pos z))
-    
-    (if (not (and (-> proc next-state) (= (-> proc next-state name) 'mp-vehicle-puppet)))
-        (send-event proc 'go-mp-puppet)
-        )
-    
-    ;; Sync riders dynamically
-    (dotimes (i 4)
-      (let ((client-rider-proc (handle->process (-> proc rider-array i)))
-            (host-has-rider (nonzero? (-> slot rider-aids i))))
-        (cond
-          ((and host-has-rider (not client-rider-proc))
-           ;; Host has a rider, but client doesn't.
-           ;; SAFETY: Only spawn rider if art is loaded and traffic is ready
-           (when (and (= i 0) (mp-traffic-type-loaded? (the-as traffic-type (-> slot vehicle-type))))
-             (let ((params (new 'stack 'traffic-object-spawn-params)))
-               (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
-               (set! (-> params behavior) (the uint64 0))
-               (set! (-> params id) (the uint32 0))
-               (set! (-> params nav-mesh) #f)
-               (set! (-> params nav-branch) #f)
-               (set! (-> params proc) #f)
-               (set! (-> params handle) (the-as handle #f))
-               (set! (-> params user-data) (the uint 0))
-               (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
-               (set! (-> params guard-type) (the uint8 0))
-               (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
-               (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
-               (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
-               (vehicle-method-137 proc params)
-               )
+(defun mp-vehicle-update-riders ((proc vehicle) (slot mp-vehicle-state))
+  "Spawn or despawn riders on a puppet vehicle to match the host's state."
+  (dotimes (i 4)
+    (let ((client-rider-proc (handle->process (-> proc rider-array i)))
+          (host-has-rider (nonzero? (-> slot rider-aids i))))
+      (cond
+        ((and host-has-rider (not client-rider-proc))
+         ;; Host has a rider but client doesn't — spawn one
+         (when (and (= i 0) (mp-traffic-type-loaded? (the-as traffic-type (-> slot vehicle-type))))
+           (let ((params (new 'stack 'traffic-object-spawn-params)))
+             (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
+             (set! (-> params behavior) (the uint64 0))
+             (set! (-> params id) (the uint32 0))
+             (set! (-> params nav-mesh) #f)
+             (set! (-> params nav-branch) #f)
+             (set! (-> params proc) #f)
+             (set! (-> params handle) (the-as handle #f))
+             (set! (-> params user-data) (the uint 0))
+             (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
+             (set! (-> params guard-type) (the uint8 0))
+             (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
+             (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
+             (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
+             (vehicle-method-137 proc params)
              )
            )
-          ((and (not host-has-rider) client-rider-proc)
-           ;; Host has no rider, client has a rider.
-           (send-event client-rider-proc 'rider-off)
-           (deactivate client-rider-proc)
-           (set! (-> proc rider-array i) (the-as handle #f))
-           )
-          )
+         )
+        ((and (not host-has-rider) client-rider-proc)
+         ;; Host has no rider but client does — remove it
+         (send-event client-rider-proc 'rider-off)
+         (deactivate client-rider-proc)
+         (set! (-> proc rider-array i) (the-as handle #f))
+         )
         )
       )
     )
   (none)
-)
+  )
+
+(defun mp-vehicle-apply-ghost-state ((proc vehicle) (slot mp-vehicle-state))
+  "Update the ghost record for a vehicle from the latest remote data.
+   The ghost P-controller (mp-vehicle-apply-ghost-correction) runs each frame in :trans."
+  ;; 1. Find or allocate ghost record
+  (let ((rec (mp-get-traffic-ghost (-> slot net-id))))
+    (when (not rec)
+      (set! rec (mp-get-free-traffic-ghost))
+      (when rec
+        (set! (-> rec net-id) (-> slot net-id))
+        (set! (-> rec entity-kind) (the uint8 1))  ;; 1 = vehicle
+        )
+      )
+    (when rec
+      ;; 2. Update ghost from slot data
+      (set-vector! (-> rec ghost-trans) (-> slot x) (-> slot y) (-> slot z) 1.0)
+      (quaternion-set! (-> rec ghost-quat) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
+      (set-vector! (-> rec ghost-linvel) (-> slot lin-vel-x) (-> slot lin-vel-y) (-> slot lin-vel-z) 0.0)
+      (set-vector! (-> rec ghost-angvel) (-> slot ang-vel-x) (-> slot ang-vel-y) (-> slot ang-vel-z) 0.0)
+      (set! (-> rec last-seen) (current-time))
+      )
+    )
+  ;; 3. Sync riders
+  (mp-vehicle-update-riders proc slot)
+  (none)
+  )
 
 (defun mp-vehicle-apply-piggyback ()
   (let ((driven-net-id (-> *remote-info* veh-state net-id)))
-    ;; 1. Handle Piggy-backed Driven Vehicle (High Priority)
+    ;; Handle the vehicle being driven by the remote player (highest priority)
     (when (nonzero? driven-net-id)
       (let ((proc (mp-vehicle-find-by-net-id driven-net-id)))
         (if proc
-            (mp-vehicle-update-puppet proc (-> *remote-info* veh-state))
-            ;; If it doesn't exist, we might need to wait for ambient spawn or force it
+            (begin
+              ;; Ensure it's in the puppet state so it follows the remote player
+              (if (!= (-> proc state name) 'mp-vehicle-puppet)
+                  (begin
+                    (format 0 "[MP-Traffic] Forcing driven vehicle ~D into mp-vehicle-puppet~%" driven-net-id)
+                    (go-process proc mp-vehicle-puppet)
+                    )
+                  )
+              (mp-vehicle-apply-ghost-state proc (-> *remote-info* veh-state))
+              )
+            ;; SPAWN it if it's missing! (e.g. Host hijacked it before it reached our buffer)
+            (begin
+              (format 0 "[MP-Traffic] Missing driven vehicle ~D! Spawning...~%" driven-net-id)
+              (mp-vehicle-spawn-puppet (-> *remote-info* veh-state))
+              )
             )
         )
       )
@@ -143,13 +158,18 @@
         (driven-net-id (-> *remote-info* veh-state net-id))
         (local-driven-net-id (-> *local-info* veh-state net-id)))
 
-    ;; 2. Handle Ambient Traffic
+    ;; Handle ambient traffic
     (dotimes (i (the int MP_MAX_SYNC_VEHICLES))
       (let ((slot (-> *mp-traffic-buffer* veh-enemies i)))
         (when (and (nonzero? (-> slot net-id)) (!= (-> slot net-id) driven-net-id) (!= (-> slot net-id) local-driven-net-id))
           (let ((proc (mp-vehicle-find-by-net-id (-> slot net-id))))
             (if proc
-                (mp-vehicle-update-puppet proc slot)
+                (begin
+                  ;; Ensure even ambient vehicles with IDs are in puppet state
+                  (if (!= (-> proc state name) 'mp-vehicle-puppet)
+                      (send-event proc 'go-mp-puppet))
+                  (mp-vehicle-apply-ghost-state proc slot)
+                  )
                 (when (> spawn-budget 0)
                   (mp-vehicle-spawn-puppet slot)
                   (-! spawn-budget 1)
@@ -159,7 +179,7 @@
           )
         )
       )
-  
+
   (when *traffic-manager*
     (let ((curr (-> *traffic-manager* child)))
       (while (and curr (nonzero? curr))
@@ -197,9 +217,16 @@
      (go mp-vehicle-puppet)
      (return #t)
      )
-    (('enable-physics)
-     (return #t)
+    (('traffic-off 'traffic-off-force)
+     (let ((v-net-id (-> self net-id)))
+       (if (or (= v-net-id (-> *remote-info* veh-state net-id))
+               (= v-net-id (-> *local-info* veh-state net-id)))
+           (return #t) ;; Protect driven vehicles from being culled
+           )
+       )
      )
+    ;; NOTE: 'enable-physics is NO LONGER blocked here.
+    ;; We want physics to run so the P-controller can work with real momentum.
     )
   (if *old-vehicle-event-handler*
       (*old-vehicle-event-handler* self arg0 arg1 arg2 arg3)
@@ -234,8 +261,10 @@
     (set-time! (-> self state-time))
     (if (type? self vehicle)
         (begin
-          (rigid-body-object-method-39 (the-as vehicle self))
-          ;; Enable ignition so thrusters and smoke logic runs
+          ;; CHANGED: Enable physics (was method-39 which disables it).
+          ;; With physics enabled the P-controller can steer via velocity nudges
+          ;; and the engine handles gravity, friction, and collision normally.
+          (rigid-body-object-method-38 (the-as vehicle self))
           (logior! (-> (the-as vehicle self) flags) (rigid-body-object-flag ignition))
           )
         )
@@ -243,8 +272,10 @@
   :trans (behavior ()
     (if (and (nonzero? self) (type? self vehicle))
         (begin
-          ;; Allow local player to enter the puppet
+          ;; Allow local player to enter the puppet vehicle
           (check-player-get-on (the-as vehicle self))
+          ;; Apply ghost P-controller: nudge rbody velocity toward authoritative position
+          (mp-vehicle-apply-ghost-correction (the-as vehicle self))
           )
         )
     )
@@ -254,32 +285,16 @@
       )
     )
   :post (behavior ()
-    ;; For vehicles, we use the custom renderer prep
-    (if (type? self rigid-body-object)
-        (let ((v-self (the-as vehicle self)))
-          ;; Manual rbody sync (instead of method-37) to keep collision but skip physics fight
-          (rigid-body-method-26 (-> v-self rbody state) (-> self root trans) (-> self root quat))
-          (set! (-> v-self rbody state lin-velocity quad) (-> self root transv quad))
-          (vector-float*! (-> v-self rbody state lin-momentum) (-> self root transv) (-> v-self info info mass))
-          
-          ;; --- Polish: Visuals & Audio ---
-          (set! (-> v-self engine-thrust) 1.0)
-          (set! (-> v-self force-scale) 1.0)
-          ;; Map velocity to engine RPM and throttle
-          (let ((speed (vector-length (-> self root transv))))
-            (set! (-> v-self power-level) (fmin 1.0 (/ speed 204800.0)))
-            (set! (-> v-self engine-sound-factor) (-> v-self power-level))
-            (set! (-> v-self controls throttle) (if (> speed 409.6) 1.0 0.0))
-            )
-          
-          (vehicle-method-120 v-self) ;; Shadow and Bounds
-          (vehicle-method-122 v-self) ;; Sounds & Particles (exhaust, etc)
-          (vehicle-method-119 v-self) ;; Riders
-          )
+    ;; CHANGED: Call vehicle-method-122 (the standard active-state update) instead of
+    ;; manually syncing rbody state. This runs real physics integration (vehicle-method-106),
+    ;; rider detection (vehicle-method-121), shadow/bounds (vehicle-method-120), and sounds.
+    ;; Our P-controller in :trans already set the velocity before this runs.
+    (if (type? self vehicle)
+        (vehicle-method-122 (the-as vehicle self))
         (ja-post)
         )
     )
-)
+) ;; end defstate mp-vehicle-puppet
 
 (defun mp-vehicle-apply-hijacks ()
   (when (not *old-vehicle-event-handler*)

@@ -209,9 +209,6 @@
     )
   :enter (behavior ()
     (set-time! (-> self state-time))
-    (if (type? self citizen)
-        (logior! (-> (the-as citizen self) flags) (citizen-flag persistent))
-        )
     )
   :trans (behavior ()
     ;; TODO: Handle authority hand-back (go-virtual idle)
@@ -227,7 +224,7 @@
         (update-transforms (the-as collide-shape (-> self root)))
         )
     )
-)
+) ;; end defstate mp-puppet
 
 (defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
   ;; Detect when an entity is being marked as dead or task-complete locally
@@ -247,7 +244,7 @@
 
 (defun mp-apply-ai-hijacks ()
   "Main entry point for applying engine-wide multiplayer hijacks."
-  
+
   ;; 1. Enemy Hijacks
   (mp-apply-enemy-hijacks)
 
@@ -258,6 +255,9 @@
 
   ;; 3. Vehicle Hijacks
   (mp-vehicle-apply-hijacks)
+
+  ;; 4. Traffic Ghost Correction Hijacks (citizen common-post)
+  (mp-apply-traffic-hijacks)
 
   (none))
 

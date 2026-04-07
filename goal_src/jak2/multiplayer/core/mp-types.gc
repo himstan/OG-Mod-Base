@@ -11,7 +11,7 @@
 (define-perm *mp-traffic-sync-active* symbol #f)
 (define-perm *mp-traffic-host-spawning-active* symbol #f)
 (define-perm *mp-pedestrian-net-id-counter* uint (the uint 1))
-(define-perm *mp-vehicle-net-id-counter* uint (the uint 1))
+(define-perm *mp-vehicle-net-id-counter* uint (the uint 32768))
 (define *multi-sync-tps* 20)
 
 ;; --- Animation Sync Tuning Globals ---
@@ -236,11 +236,59 @@
    (last-sync-time  uint64)
    )
   :size-assert 20520)
+;; --- Pedestrian State IDs (for state-based sync, replaces raw animation index) ---
+(defenum mp-ped-state-id (uint8)
+  (none                  0)
+  (inactive              1)
+  (wait                  2)
+  (active                3)
+  (flee                  4)
+  (avoid-danger          5)
+  (clear-path            6)
+  (on-ground             7)
+  (dive                  8)
+  (cower-ground          9)
+  (get-up-front          10)
+  (get-up-back           11)
+  (knocked               12)
+  (knocked-off-vehicle   13)
+  (wait-for-ride         14)
+  (move-to-vehicle       15)
+  (board-vehicle         16)
+  (ride                  17)
+  (exit-vehicle          18)
+  (wait-at-dest          19)
+  (in-ditch              20)
+  (idle                  21)
+  (dormant               22)
+  (notice                23)
+  (hostile               24)
+  (stare                 25)
+  (hit                   26)
+  (die                   27)
+  (walk                  28)
+  (run                   29)
+  (talk                  30)
+  (hide                  31)
+  ;; Guard-specific combat states (crimson-guard)
+  (search                32)
+  (close-attack          33)
+  (close-attack-active   34)
+  (gun-shoot             35)
+  (roll-right            36)
+  (roll-left             37)
+  (arrest                38)
+  (waiting-ambush        39)
+  (attack                40)
+  (exit-transport        41)
+  )
+
 (deftype mp-pedestrian-state (structure)
   ((net-id          uint32)
    (object-type     uint8)
    (object-variance uint8)
-   (pad-align       uint8 2)
+   (state-id        uint8)    ;; Replaces anim-index: numeric mp-ped-state-id
+   (pad-align       uint8)    ;; Alignment padding (was 2 bytes, now 1 since we use one for state-id)
    (x               float)
    (y               float)
    (z               float)
@@ -248,10 +296,9 @@
    (quat-y          float)
    (quat-z          float)
    (quat-w          float)
-   (anim-index      int32)
-   (anim-speed      float)
    (flags           uint8)
-   (pad             uint8 19)
+   (target-aid      uint8)    ;; 0 = none, 1 = Host, 2 = Client
+   (pad             uint8 26) ;; Reduced from 27 to compensate for target-aid
    )
   :size-assert 64)
 
@@ -266,6 +313,29 @@
    (last-sync-time  uint64)
    )
   :size-assert 13352)
+
+;; --- Ghost Record for Traffic Sync (Position Prediction) ---
+;; Stores the last-known authoritative position/state for each traffic entity.
+;; Used by the non-authoritative side's P-controller to smoothly correct local simulation.
+(deftype mp-traffic-ghost-record (structure)
+  ((net-id          uint32)
+   (entity-kind     uint8)       ;; 0=pedestrian, 1=vehicle
+   (pad             uint8 3)
+   (last-seen       time-frame)  ;; Timestamp of last remote update
+   (ghost-trans     vector :inline)
+   (ghost-quat      quaternion :inline)
+   (ghost-linvel    vector :inline)   ;; Vehicles: last received linear velocity; peds: unused
+   (ghost-angvel    vector :inline)   ;; Vehicles: last received angular velocity; peds: unused
+   (ghost-state-id  uint8)           ;; Pedestrian state ID; unused for vehicles
+   (ghost-target-aid uint8)          ;; Target sync for pedestrians (e.g. crimson-guard)
+   (pad2            uint8 2)
+   )
+  )
+
+(defconstant MP_MAX_TRAFFIC_GHOST_RECORDS 192)
+(define-perm *mp-traffic-ghosts*
+  (inline-array mp-traffic-ghost-record)
+  (new 'static 'inline-array mp-traffic-ghost-record 192))
 
 (defenum mp-enemy-state-id (uint32)
   (none 0)
@@ -395,6 +465,9 @@
 (define *mp-pending-scene-name* (new 'global 'string 32 (the-as string #f)))
 (define-perm *mp-debug-draw* symbol #f)
 (define-perm *mp-traffic-debug?* symbol #f)
+(define-perm *mp-traffic-ped-debug?* symbol #f)
+(define-perm *mp-traffic-veh-debug?* symbol #f)
+(define-perm *mp-traffic-debug-dist* float (meters 30.0))
 (define-perm *mp-debug-task-sync* symbol #f)
 (define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-debug-simulate-loss-time* time-frame 0)
@@ -448,8 +521,11 @@
   )
 
 (defmacro mp-is-jak? ()
-  "Is the local player the Host (Jak)?"
-  `(= (-> *local-info* role) 0)
+  "Is the local player the Host (Jak)? Handles early load (null pointer) and uninitialized role (-1)."
+  `(if (or (not *local-info*) (zero? *local-info*))
+       #t
+       (or (= (-> *local-info* role) 0) (= (-> *local-info* role) -1))
+       )
   )
 
 (defmacro mp-is-daxter? ()
@@ -506,3 +582,13 @@
 (define-extern mp-airlock-remote-ready? (function vector symbol))
 (define-extern mp-event-handler-authority-request (function uint none))
 (define-extern mp-event-handler-authority-ack (function uint none))
+
+;; --- Traffic Ghost System Externs ---
+(define-extern mp-get-traffic-ghost (function uint mp-traffic-ghost-record))
+(define-extern mp-get-free-traffic-ghost (function mp-traffic-ghost-record))
+(define-extern mp-ped-get-state-id (function citizen uint))
+(define-extern mp-ped-get-state-from-id (function uint symbol))
+(define-extern mp-apply-traffic-hijacks (function none))
+(define-extern mp-ped-predictive-move (function citizen none))
+(define-extern mp-vehicle-apply-ghost-correction (function vehicle none))
+(define-extern mp-cleanup-traffic-ghosts (function none))

@@ -1,0 +1,145 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Pedestrian Debug ---
+
+(defun mp-draw-traffic-ped-debug ((proc citizen))
+  (when (and *mp-traffic-ped-debug?* *target*)
+    (let ((dist (vector-vector-distance (-> proc root trans) (-> *target* root trans))))
+      (when (< dist *mp-traffic-debug-dist*)
+        (let ((net-id (-> proc net-id)))
+          (when (nonzero? net-id)
+            (let ((draw-pos (new 'stack-no-clear 'vector)))
+              (vector-copy! draw-pos (-> proc root trans))
+              (set! (-> draw-pos y) (+ (-> draw-pos y) (meters 2.0)))
+              
+              (let ((is-owner (mp-is-traffic-authoritative?)))
+                (let ((color (if is-owner (font-color green) (font-color yellow)))
+                      (status-str (if is-owner "OWNER" "PUPPET"))
+                      (type-str (symbol->string (-> proc type symbol)))
+                      (cur-state (if (-> proc state) (-> proc state name) 'none)))
+                  
+                  (if is-owner
+                      (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                        (the-as string (format #f "PED-ID: ~D (~S)~%STATE: ~S(~D)~%TYPE: ~S" 
+                                                net-id 
+                                                status-str
+                                                cur-state
+                                                (the uint8 (mp-ped-get-state-id proc))
+                                                type-str))
+                                        draw-pos 
+                                        color 
+                                        (the-as vector2h #f))
+                      (let ((rec (mp-get-traffic-ghost net-id)))
+                        (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                          (the-as string (format #f "PED-ID: ~D (~S)~%STATE: ~S~%GHOST-STATE: ~S(~D)~%TYPE: ~S" 
+                                                  net-id 
+                                                  status-str
+                                                  cur-state
+                                                  (if rec (mp-ped-get-state-from-id (the uint (-> rec ghost-state-id))) 'none)
+                                                  (if rec (-> rec ghost-state-id) 0)
+                                                  type-str))
+                                          draw-pos 
+                                          color 
+                                          (the-as vector2h #f))
+                        
+                        (when rec
+                          ;; Draw ghost sphere at authoritative target position
+                          (add-debug-sphere #t (bucket-id debug-no-zbuf1) (-> rec ghost-trans) (meters 0.5) (static-rgba 255 255 0 128))
+                          ;; Draw line connecting puppet to ghost
+                          (add-debug-line #t (bucket-id debug-no-zbuf1) (-> proc root trans) (-> rec ghost-trans) (static-rgba 255 255 0 128) #f (the-as rgba 0))
+                          )
+                        )
+                      )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+;; --- Vehicle Debug ---
+
+(defun mp-draw-traffic-veh-debug ((proc vehicle))
+  (when (and *mp-traffic-veh-debug?* *target*)
+    (let ((dist (vector-vector-distance (-> proc root trans) (-> *target* root trans))))
+      (when (< dist *mp-traffic-debug-dist*)
+        (let ((net-id (-> proc net-id)))
+          (when (nonzero? net-id)
+            (let ((draw-pos (new 'stack-no-clear 'vector)))
+              (vector-copy! draw-pos (-> proc root trans))
+              (set! (-> draw-pos y) (+ (-> draw-pos y) (meters 2.0)))
+
+              (let ((is-remote-driven (= net-id (-> *remote-info* veh-state net-id)))
+                    (is-local-driven (= net-id (-> *local-info* veh-state net-id)))
+                    (type-str (symbol->string (-> proc type symbol))))
+                
+                (let ((color (font-color white))
+                      (status-str "SYNCED"))
+                  
+                  (cond
+                    (is-local-driven
+                      (set! color (font-color green))
+                      (set! status-str "LOCAL-DRIVEN")
+                      )
+                    (is-remote-driven
+                      (set! color (font-color yellow))
+                      (set! status-str "REMOTE-DRIVEN")
+                      )
+                    )
+
+                  (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                    (the-as string (format #f "VEH-ID: ~D~%~S (~S)" 
+                                            net-id 
+                                            status-str
+                                            type-str))
+                                    draw-pos 
+                                    color 
+                                    (the-as vector2h #f))
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+;; --- Master High-Level Call ---
+
+(defun mp-draw-traffic-debug ()
+  "Overlay real-time traffic synchronization data"
+  ;; Budget and generic info (legacy master toggle)
+  (when *mp-traffic-debug?*
+    (format *stdcon* "~0k--- MP TRAFFIC DEBUG ---~%")
+    (format *stdcon* "BUDGET: ~D peds, ~D vehs~%" 
+            (-> *mp-traffic-buffer* ped-count) 
+            (-> *mp-traffic-buffer* veh-count))
+    (format *stdcon* "AUTHORITATIVE: ~S~%" (if (mp-is-traffic-authoritative?) "YES" "NO"))
+    (format *stdcon* "-------------------------~%")
+    )
+
+  ;; World overlays (independent toggles)
+  (when (or *mp-traffic-ped-debug?* *mp-traffic-veh-debug?*)
+    (iterate-process-tree *active-pool* (lambda ((p process-tree))
+      (let ((proc (the-as process p)))
+        (cond
+          ((type? proc vehicle)
+           (mp-draw-traffic-veh-debug (the-as vehicle proc))
+           )
+          ((type? proc citizen)
+           (mp-draw-traffic-ped-debug (the-as citizen proc))
+           )
+          )
+        )
+      #t)
+      *kernel-context*)
+    )
+  (none)
+)

@@ -36,8 +36,8 @@ void handle_pedestrian_sync_packet(const _ENetEvent& event, MultiplayerData& dat
         state.quat_y = unpack_float_q(incoming->quat[1]);
         state.quat_z = unpack_float_q(incoming->quat[2]);
         state.quat_w = unpack_float_q(incoming->quat[3]);
-        state.anim_index = incoming->anim_index;
-        state.anim_speed = (float)incoming->anim_speed; 
+        state.state_id = incoming->state_id;
+        state.target_aid = incoming->target_aid;
         data.ped_last_updated[j] = current_time;
         found = true; break;
       }
@@ -54,8 +54,8 @@ void handle_pedestrian_sync_packet(const _ENetEvent& event, MultiplayerData& dat
           state.quat_y = unpack_float_q(incoming->quat[1]);
           state.quat_z = unpack_float_q(incoming->quat[2]);
           state.quat_w = unpack_float_q(incoming->quat[3]);
-          state.anim_index = incoming->anim_index;
-          state.anim_speed = (float)incoming->anim_speed;
+          state.state_id = incoming->state_id;
+          state.target_aid = incoming->target_aid;
           data.ped_last_updated[j] = current_time;
           found = true; break;
         }
@@ -78,7 +78,8 @@ void send_pedestrian_sync_packets(MultiplayerData& data, MPTrafficSyncBufferGOAL
       dst->x = src->x; dst->y = src->y; dst->z = src->z;
       dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
       dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
-      dst->anim_index = (int16_t)src->anim_index; dst->anim_speed = (int16_t)src->anim_speed;
+      dst->state_id = src->state_id;
+      dst->target_aid = src->target_aid;
     }
     size_t packet_size = sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (sizeof(MPPedestrianStatePacked) * chunk_size);
     MultiplayerManager::broadcast(data, exclude_peer, &packet, packet_size, ENET_PACKET_FLAG_UNSEQUENCED);

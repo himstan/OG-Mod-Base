@@ -503,7 +503,9 @@
   "mp-pedestrian-puppet.o" ;; added
   "mp-vehicle-authoritative.o" ;; added
   "mp-vehicle-puppet.o" ;; added
+  "mp-traffic-hijacks.o" ;; added
   "mp-traffic-sync.o" ;; added
+  "mp-traffic-debug.o" ;; added
   "mp-enemy-debug.o" ;; added  
   "mp-enemy-hijacks.o" ;; added
   "mp-debug.o" ;; added

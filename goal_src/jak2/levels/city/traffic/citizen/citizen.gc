@@ -9,6 +9,35 @@
 
 (define *citizen-debug* #f)
 
+(define *citizen-prng-seed* (the-as uint 0))
+
+(defun citizen-rand-float ()
+  (set! *citizen-prng-seed* (the-as uint (logand #xffffffff (+ (* (the-as int *citizen-prng-seed*) 1103515245) 12345))))
+  (let ((val (logand (shr *citizen-prng-seed* 16) #x7fff)))
+    (/ (the float val) (the float #x7fff))
+    )
+  )
+
+(defmethod rnd-float ((this citizen))
+  (citizen-rand-float)
+  )
+
+(defmethod rnd-float-range ((this citizen) (low float) (high float))
+  (+ low (* (citizen-rand-float) (- high low)))
+  )
+
+(defmethod rnd-int-count ((this citizen) (high int))
+  (the int (* (citizen-rand-float) (the float high)))
+  )
+
+(defmethod rnd-int-range ((this citizen) (low int) (high int))
+  (+ low (the int (* (citizen-rand-float) (the float (+ (- 1 low) high)))))
+  )
+
+(defmethod rnd-percent? ((this citizen) (chance float))
+  (>= chance (citizen-rand-float))
+  )
+
 (defmethod citizen-nav-init! ((this citizen))
   "Initialize nav related fields."
   (let ((v1-0 (-> this nav)))
@@ -310,6 +339,13 @@
                )
              )
            (citizen-nav-init! this)
+           
+           ;; MULTIPLAYER: Deterministically seed the RNG using the net-id so visual variants 
+           ;; (like clothes masks set in citizen-init!) are identical across all connected clients!
+           (when (nonzero? (-> this net-id))
+             (set! *citizen-prng-seed* (the-as uint (+ (the-as int (-> this net-id)) (the-as int (-> this traffic-type)))))
+             )
+           
            (citizen-init! this)
            (enemy-method-127 this 40960.0 40960.0 #t (the-as collide-spec (-> this gnd-collide)))
            (set! (-> this gnd-height) (-> this root gspot-pos y))
@@ -671,6 +707,13 @@
   (if (logtest? (-> arg0 flags) (traffic-spawn-flags dark-guard))
       (logior! (-> self flags) (citizen-flag dark-guard))
       )
+  
+  ;; MULTIPLAYER: Deterministically seed the RNG using the net-id so visual variants 
+  ;; (masks, scale, colors, anims) are identical across all connected clients!
+  (when (nonzero? (-> arg0 net-id))
+    (set! *citizen-prng-seed* (the-as uint (+ (the-as int (-> arg0 net-id)) (the-as int (-> arg0 object-type)))))
+    )
+
   (init-enemy! self)
   (set! (-> self traffic-id) (the-as int (-> arg0 id)))
   (set! (-> self traffic-type) (-> arg0 object-type))

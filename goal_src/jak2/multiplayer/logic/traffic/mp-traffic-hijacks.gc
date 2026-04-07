@@ -1,0 +1,284 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Traffic Ghost Record Helpers ---
+
+(defun mp-get-traffic-ghost ((net-id uint))
+  "Find an existing ghost record by net-id. Returns #f if not found."
+  (dotimes (i MP_MAX_TRAFFIC_GHOST_RECORDS)
+    (let ((rec (-> *mp-traffic-ghosts* i)))
+      (when (= (-> rec net-id) net-id)
+        (return rec)
+        )
+      )
+    )
+  (the-as mp-traffic-ghost-record #f)
+  )
+
+(defun mp-get-free-traffic-ghost ()
+  "Find an empty ghost record slot. Returns #f if array is full."
+  (dotimes (i MP_MAX_TRAFFIC_GHOST_RECORDS)
+    (let ((rec (-> *mp-traffic-ghosts* i)))
+      (when (zero? (-> rec net-id))
+        (return rec)
+        )
+      )
+    )
+  (the-as mp-traffic-ghost-record #f)
+  )
+
+(defun mp-cleanup-traffic-ghosts ()
+  "Clear ghost records not updated in the last 10 seconds."
+  (dotimes (i MP_MAX_TRAFFIC_GHOST_RECORDS)
+    (let ((rec (-> *mp-traffic-ghosts* i)))
+      (when (and (nonzero? (-> rec net-id))
+                 (time-elapsed? (-> rec last-seen) (seconds 10)))
+        (set! (-> rec net-id) (the uint 0))
+        )
+      )
+    )
+  (none)
+  )
+
+;; --- Pedestrian P-Controller ---
+
+(defun mp-ped-predictive-move ((ped citizen))
+  "Smoothly nudge a citizen's velocity and position toward the authoritative ghost position.
+   Called from the citizen common-post hijack each frame on the non-authoritative side."
+  (let ((net-id (-> ped net-id)))
+    (when (nonzero? net-id)
+      (let ((rec (mp-get-traffic-ghost net-id)))
+        (when rec
+          ;; 1. Position correction
+          (let ((dist (vector-vector-distance (-> ped root trans) (-> rec ghost-trans))))
+            (cond
+              ((> dist (meters 15))
+               ;; Hard snap only for massive desyncs
+               (vector-copy! (-> ped root trans) (-> rec ghost-trans))
+               (vector-reset! (-> ped root transv))
+               )
+              ((> dist (meters 0.01))
+               ;; DIRECT POSITION LERP: Move the root directly toward the ghost
+               ;; Scales up if distance is large to avoid snapping
+               (let ((lerp-factor 0.05)
+                     (pull-factor 5.0))
+                 (when (> dist (meters 2))
+                   (set! lerp-factor 0.15)
+                   (set! pull-factor 10.0)
+                   )
+                 (when (> dist (meters 5))
+                   (set! lerp-factor 0.30)
+                   (set! pull-factor 20.0)
+                   )
+                 (vector-lerp! (-> ped root trans) (-> ped root trans) (-> rec ghost-trans) lerp-factor)
+
+                 ;; Soft P-controller on velocity: dampen local velocity and add ghost pull for smoothness
+                 (let ((nudge (new 'stack-no-clear 'vector)))
+                   (vector-! nudge (-> rec ghost-trans) (-> ped root trans))
+                   (set! (-> ped root transv x) (* (-> ped root transv x) 0.85))
+                   (set! (-> ped root transv z) (* (-> ped root transv z) 0.85))
+                   (vector-float*! nudge nudge pull-factor)
+                   (vector+! (-> ped root transv) (-> ped root transv) nudge)
+                   )
+                 )
+               )
+              )
+            )
+          ;; 2. Rotation copy: Overcome engine velocity-aligned turning by forcing ghost rotation.
+          ;; The velocity P-controller can cause the velocity vector to point backward when pulling the ghost,
+          ;; which causes the vanilla engine to turn the guard backward. Forcing the quat fixes this.
+          (quaternion-copy! (-> ped root quat) (-> rec ghost-quat))
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+;; --- Vehicle Ghost Correction ---
+
+(defun mp-vehicle-apply-ghost-correction ((veh vehicle))
+  "Smooth a puppet vehicle's rbody velocity toward the authoritative ghost position.
+   Called from mp-vehicle-puppet :trans each frame on the non-authoritative side."
+  (let ((net-id (-> veh net-id)))
+    (when (nonzero? net-id)
+      (let ((rec (mp-get-traffic-ghost net-id)))
+        (when rec
+          (let ((dist (vector-vector-distance (-> veh root trans) (-> rec ghost-trans))))
+            (cond
+              ((> dist (meters 15))
+               ;; Hard snap: teleport rbody and copy velocities
+               (vector-copy! (-> veh root trans) (-> rec ghost-trans))
+               (vector-copy! (-> veh rbody state lin-velocity) (-> rec ghost-linvel))
+               (vector-copy! (-> veh rbody state ang-velocity) (-> rec ghost-angvel))
+               (vector-copy! (-> veh root transv) (-> rec ghost-linvel))
+               )
+              ((> dist (meters 0.05))
+               ;; Soft nudge: blend existing velocity toward ghost-pull direction
+               (let ((nudge (new 'stack-no-clear 'vector)))
+                 (vector-! nudge (-> rec ghost-trans) (-> veh root trans))
+                 ;; Gentle damping — let momentum carry, just steer
+                 (vector-float*! (-> veh rbody state lin-velocity) (-> veh rbody state lin-velocity) 0.85)
+                 (vector-float*! nudge nudge 5.0)
+                 (vector+! (-> veh rbody state lin-velocity) (-> veh rbody state lin-velocity) nudge)
+                 (vector-copy! (-> veh root transv) (-> veh rbody state lin-velocity))
+                 )
+               )
+              )
+            )
+          ;; Rotation: gentle slerp (vehicles have inertia, too fast looks wrong)
+          (quaternion-slerp! (-> veh root quat) (-> veh root quat) (-> rec ghost-quat) 0.1)
+          ;; Angular velocity: blend toward ghost to reduce spin artifacts
+          (vector-lerp! (-> veh rbody state ang-velocity) (-> veh rbody state ang-velocity) (-> rec ghost-angvel) 0.15)
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+;; --- Hijacks ---
+
+(define *old-citizen-common-post* (the-as (function citizen none) #f))
+(define *old-citizen-event-handler* (the-as (function citizen process int symbol event-message-block object) #f))
+;; Track whether cwi.gd subtypes have been patched yet (they load after game.gd).
+(define *mp-citizen-subtypes-patched* #f)
+
+(defun mp-citizen-event-handler-hijack ((this citizen) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  "Handles traffic-off events for puppet peds. No state forcing — the vanilla AI owns
+   the state machine. Forcing transitions externally bypasses the setup that active's
+   :trans does (decelerate, set wait-return-state) and causes enter-state to immediately
+   call wait's :trans with wait-return-state == 0, crashing with pp->next-state == 0."
+  (case arg2
+    (('traffic-off 'traffic-off-force)
+     (set! (-> this net-id) (the uint 0))
+     (deactivate this)
+     (return #t)
+     )
+    )
+
+  ;; Fallback to vanilla handler
+  (if *old-citizen-event-handler*
+      (*old-citizen-event-handler* this arg0 arg1 arg2 arg3)
+      #f
+      )
+  )
+
+(defun mp-citizen-common-post-hijack ((this citizen))
+  "Run original citizen common-post first, then state sync and position correction.
+   Both run here (not via send-event) because pp == this == *current-process* in
+   common-post context, making enter-state safe. send-event context is unreliable
+   for enter-state since pp may differ from the target citizen."
+  (if *old-citizen-common-post*
+      (*old-citizen-common-post* this)
+      )
+  (when (and (not (mp-is-traffic-authoritative?))
+             (nonzero? (-> this net-id)))
+    ;; State sync: read desired state from ghost record, transition if desynced.
+    (let ((rec (mp-get-traffic-ghost (-> this net-id))))
+      (when rec
+        (let ((target-sym (mp-ped-get-state-from-id (the uint (-> rec ghost-state-id)))))
+          (when (and target-sym
+                     (!= (if (-> this state) (-> this state name) #f) target-sym)
+                     (not (logtest? (-> this enemy-flags) (enemy-flag death-start))))
+            (let ((st (method-state (-> this type) (the-as basic target-sym))))
+              (when (and st (nonzero? st))
+                ;; For 'wait: mirror what active's :trans does before go-virtual wait.
+                ;; enter-state immediately calls the new state's :trans, which checks
+                ;; wait-return-state. If it is 0 (never set), go(0) crashes.
+                ;; We set it to the 'active state and reset wait-time, exactly as vanilla does.
+                (when (= target-sym 'wait)
+                  (let ((active-st (method-state (-> this type) (the-as basic 'active))))
+                    (when (and active-st (nonzero? active-st))
+                      (set! (-> this wait-return-state) (the-as (state citizen) active-st))
+                      (set! (-> this wait-time) (the-as time-frame (rnd-int-range this 300 1500)))
+                      )
+                    )
+                  )
+                (set! (-> this next-state) (the-as state st))
+                (enter-state (the-as object st) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f) (the-as object #f))
+                )
+              )
+            )
+          )
+
+        ;; Sync guard target
+        (when (and (nonzero? (-> rec ghost-target-aid)) *mp-set-guard-target*)
+          (let ((target-role (the-as uint8 (+ -1 (-> rec ghost-target-aid)))))
+            (let ((focus-proc (if (= target-role (-> *local-info* role))
+                                  (the-as process-focusable *target*)
+                                  (the-as process-focusable (mp-get-remote-target-process)))))
+              (when (and focus-proc (nonzero? focus-proc))
+                (*mp-set-guard-target* this (process->handle focus-proc))
+                )
+              )
+            )
+          )
+
+        )
+      )
+    ;; Position correction: applied last so it overrides the nav/AI result.
+    (mp-ped-predictive-move this)
+    )
+  (none)
+  )
+
+;; --- Hijack Application ---
+
+(defun mp-apply-traffic-hijacks ()
+  "Apply citizen hijacks for ghost correction and state syncing.
+   Must patch citizen + all civilian subtypes individually — defmethod on a parent
+   does not retroactively update slots already copied by cwi.gd subtypes.
+   Uses method-set! with compile-time indices for forward-declared cwi.gd types.
+   Safe to call multiple times: citizen is patched once on connect; subtypes are
+   patched lazily once cwi.gd has loaded (their GOAL symbol table entries become
+   non-zero after deftype runs in that DGO)."
+  (let ((cpost-id (method-id-of-type citizen common-post))
+        (evhnd-id (method-id-of-type citizen general-event-handler)))
+
+    ;; --- Phase 1: patch citizen (always available, in game.gd) ---
+    ;; Use method-set! directly so the slot holds the exact function pointer.
+    ;; defmethod wraps in a lambda, so the slot != the function → guard fires every frame.
+    (let ((cur-common-post (method-of-type citizen common-post)))
+      (when (!= cur-common-post mp-citizen-common-post-hijack)
+        (format 0 "[MP-Traffic] Applying citizen common-post hijack (slot ~D)~%" cpost-id)
+        (set! *old-citizen-common-post* (the-as (function citizen none) cur-common-post))
+        (method-set! citizen cpost-id mp-citizen-common-post-hijack)
+        )
+      )
+
+    (let ((cur-event-handler (method-of-type citizen general-event-handler)))
+      (when (!= cur-event-handler (the-as function mp-citizen-event-handler-hijack))
+        (format 0 "[MP-Traffic] Applying citizen event-handler hijack (slot ~D)~%" evhnd-id)
+        (set! *old-citizen-event-handler* (the-as (function citizen process int symbol event-message-block object) cur-event-handler))
+        (method-set! citizen evhnd-id (the-as function mp-citizen-event-handler-hijack))
+        )
+      )
+
+    ;; --- Phase 2: patch cwi.gd subtypes (civilian, citizen-norm, fat, chick) ---
+    ;; These types live in cwi.gd which loads only when the city level loads — AFTER
+    ;; game.gd and after our first call on connect. Their GOAL symbol table values are
+    ;; 0 until deftype runs, so we guard every method-set! with a null check and retry
+    ;; each frame until all four are loaded. *mp-citizen-subtypes-patched* prevents
+    ;; redundant work once they're all done.
+    (when (not *mp-citizen-subtypes-patched*)
+      (when (and (nonzero? (the-as uint civilian))
+                 (nonzero? (the-as uint citizen-norm))
+                 (nonzero? (the-as uint citizen-fat))
+                 (nonzero? (the-as uint citizen-chick)))
+        (method-set! civilian      cpost-id mp-citizen-common-post-hijack)
+        (method-set! civilian      evhnd-id (the-as function mp-citizen-event-handler-hijack))
+        (method-set! citizen-norm  cpost-id mp-citizen-common-post-hijack)
+        (method-set! citizen-norm  evhnd-id (the-as function mp-citizen-event-handler-hijack))
+        (method-set! citizen-fat   cpost-id mp-citizen-common-post-hijack)
+        (method-set! citizen-fat   evhnd-id (the-as function mp-citizen-event-handler-hijack))
+        (method-set! citizen-chick cpost-id mp-citizen-common-post-hijack)
+        (method-set! citizen-chick evhnd-id (the-as function mp-citizen-event-handler-hijack))
+        (set! *mp-citizen-subtypes-patched* #t)
+        (format 0 "[MP-Traffic] All citizen subtypes patched (common-post=~D event-handler=~D)~%"
+                cpost-id evhnd-id)
+        )
+      )
+    )
+  (none)
+  )

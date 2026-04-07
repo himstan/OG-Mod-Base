@@ -3690,3 +3690,14 @@
   (ja-channel-set! 0)
   0
   (none))
+
+(defun mp-set-guard-target-impl ((proc citizen) (target handle))
+  (when (type? proc crimson-guard)
+    (let ((guard (the-as crimson-guard proc)))
+      (set! (-> guard focus handle) target)
+      (set! (-> guard traffic-target-status handle) target)
+      )
+    )
+  (none)
+  )
+(set! *mp-set-guard-target* mp-set-guard-target-impl)

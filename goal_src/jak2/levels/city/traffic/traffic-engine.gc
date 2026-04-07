@@ -553,6 +553,26 @@
   (local-vars (sv-16 handle))
   (let ((gp-0 (-> arg0 object-type)))
     (set! (-> arg0 proc) #f)
+    (set! (-> arg0 net-id) (the uint 0))
+
+    ;; MULTIPLAYER: Assign unique NetID if we are the Host AND one isn't already provided
+    (when (mp-is-jak?)
+      (if (= (-> this id) 0) ;; Vehicle (Tracker ID 0)
+          (begin
+            (set! (-> arg0 net-id) *mp-vehicle-net-id-counter*)
+            ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Vehicle type ~D~%" *mp-vehicle-net-id-counter* (-> arg0 object-type))
+            (+! *mp-vehicle-net-id-counter* 1)
+            (if (>= *mp-vehicle-net-id-counter* (the uint16 65535)) (set! *mp-vehicle-net-id-counter* (the uint16 32768)))
+            )
+          (begin ;; Pedestrian (Tracker ID 1)
+            (set! (-> arg0 net-id) *mp-pedestrian-net-id-counter*)
+            ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Pedestrian type ~D~%" *mp-pedestrian-net-id-counter* (-> arg0 object-type))
+            (+! *mp-pedestrian-net-id-counter* 1)
+            (if (>= *mp-pedestrian-net-id-counter* (the uint16 65535)) (set! *mp-pedestrian-net-id-counter* (the uint16 1)))
+            )
+          )
+      )
+
     (let ((v1-2 (-> this traffic object-type-info-array gp-0)))
       (when (and (> (-> v1-2 inactive-count) 0) (> (-> v1-2 reserve-count) 0))
         (set! sv-16 (get-from-inactive-by-type this gp-0))
@@ -629,24 +649,6 @@
             (new 'static 'vector :y 1.0 :w 1.0)
             )
 
-          ;; MULTIPLAYER: Assign unique NetID if we are the Host
-          (when (and (nonzero? (pc-multi-get-status)) (mp-is-jak?))
-            (if (= (-> arg1 tracker-id) 1) ;; Vehicle
-                (begin
-                  (set! (-> s4-0 params net-id) *mp-vehicle-net-id-counter*)
-                  ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Vehicle type ~D~%" *mp-vehicle-net-id-counter* (-> s4-0 params object-type))
-                  (+! *mp-vehicle-net-id-counter* 1)
-                  (if (>= *mp-vehicle-net-id-counter* (the uint16 65535)) (set! *mp-vehicle-net-id-counter* (the uint16 1)))
-                  )
-                (begin ;; Pedestrian
-                  (set! (-> s4-0 params net-id) *mp-pedestrian-net-id-counter*)
-                  ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Pedestrian type ~D~%" *mp-pedestrian-net-id-counter* (-> s4-0 params object-type))
-                  (+! *mp-pedestrian-net-id-counter* 1)
-                  (if (>= *mp-pedestrian-net-id-counter* (the uint16 65535)) (set! *mp-pedestrian-net-id-counter* (the uint16 1)))
-                  )
-                )
-            )
-
           (set! (-> this rand) (rand-vu))          (activate-from-params this (-> s4-0 params))
           )
         )
@@ -661,6 +663,25 @@
   (local-vars (sv-16 handle))
   (let ((gp-0 (-> arg0 object-type)))
     (set! (-> arg0 proc) #f)
+    (set! (-> arg0 net-id) (the uint 0)) 
+    ;; MULTIPLAYER: Assign unique NetID if we are the Host AND one isn't already provided
+    (when (mp-is-jak?)
+      (if (= (-> this id) 0) ;; Vehicle (Tracker ID 0)
+          (begin
+            (set! (-> arg0 net-id) *mp-vehicle-net-id-counter*)
+            ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Vehicle type ~D~%" *mp-vehicle-net-id-counter* (-> arg0 object-type))
+            (+! *mp-vehicle-net-id-counter* 1)
+            (if (>= *mp-vehicle-net-id-counter* (the uint16 65535)) (set! *mp-vehicle-net-id-counter* (the uint16 32768)))
+            )
+          (begin ;; Pedestrian (Tracker ID 1)
+            (set! (-> arg0 net-id) *mp-pedestrian-net-id-counter*)
+            ;; (format 0 "[MP-Traffic] Assigned NetID ~D to Pedestrian type ~D~%" *mp-pedestrian-net-id-counter* (-> arg0 object-type))
+            (+! *mp-pedestrian-net-id-counter* 1)
+            (if (>= *mp-pedestrian-net-id-counter* (the uint16 65535)) (set! *mp-pedestrian-net-id-counter* (the uint16 1)))
+            )
+          )
+      )
+
     (when (> (-> this traffic object-type-info-array gp-0 inactive-count) 0)
       (set! sv-16 (get-from-inactive-by-handle this gp-0 (-> arg0 handle)))
       (let ((s3-0 (handle->process sv-16)))

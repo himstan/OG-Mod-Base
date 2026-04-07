@@ -261,7 +261,7 @@
 
 (defun mp-sync-enemies-update-callback ((p process-tree))
   (let ((proc (the-as process p)))
-    (when (and proc (logtest? (-> proc mask) (process-mask enemy collectable)) (type? proc enemy) (not (type? proc civilian)))
+    (when (and proc (logtest? (-> proc mask) (process-mask enemy collectable)) (type? proc enemy) (not (logtest? (-> proc mask) (process-mask civilian guard))))
       (let ((e-proc (the-as enemy proc))
             (enemy-aid (mp-get-enemy-aid (the-as enemy proc))))
         (when (!= enemy-aid 0)

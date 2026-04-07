@@ -40,10 +40,12 @@
         (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
         (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
         (set! (-> params flags) (the-as traffic-spawn-flags 0))
+        (set! (-> params nav-mesh) (find-nearest-nav-mesh (-> params position) (the-as float #x7f800000)))
 
         (let ((proc (traffic-object-spawn (the-as process *traffic-manager*) params)))
           (when (and proc (nonzero? proc))
             (let ((c-proc (the-as citizen proc)))
+              (send-event proc 'traffic-activate params *traffic-engine*) 
               (when (and (-> c-proc draw) (nonzero? (-> c-proc draw)))
                 (logclear! (-> c-proc draw status) (draw-control-status no-draw))
                 )
@@ -56,8 +58,6 @@
                 )
               (logior! (-> c-proc root nav-flags) (nav-flags has-root-sphere has-extra-sphere))
               )
-            ;; Force into puppet state immediately
-            (go-process proc mp-puppet)
             )
           )
         )
@@ -66,47 +66,41 @@
   (none)
 )
 
-(defun mp-pedestrian-update-puppet ((proc citizen) (slot mp-pedestrian-state))
-  (let ((target-pos (new 'stack-no-clear 'vector))
-        (target-quat (new 'stack-no-clear 'quaternion)))
-    (set-vector! target-pos (-> slot x) (-> slot y) (-> slot z) 1.0)
-    (quaternion-set! target-quat (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
-    
-    (vector-lerp! (-> proc root trans) (-> proc root trans) target-pos 0.25)
-    (quaternion-slerp! (-> proc root quat) (-> proc root quat) target-quat 0.25)
-    
-    (if (not (and (-> proc next-state) (= (-> proc next-state name) 'mp-puppet)))
-        (send-event proc 'go-mp-puppet)
-        )
-
-    (let ((anim-idx (-> slot anim-index)))
-      (when (and (>= anim-idx 0) (-> proc draw art-group) (nonzero? (-> proc draw art-group)))
-        (when (< anim-idx (-> proc draw art-group length))
-          (let ((fgroup (-> proc draw art-group data anim-idx)))
-            (when (and fgroup (nonzero? fgroup) (type? fgroup art-joint-anim))
-              (when (= (-> proc skel active-channels) 0)
-                (set! (-> proc skel active-channels) 1)
-                (set! (-> proc skel root-channel 0 command) (joint-control-command push))
-                (set! (-> proc skel root-channel 0 frame-interp 0) 0.0)
-                (set! (-> proc skel root-channel 0 frame-interp 1) 0.0)
-                )
-
-              (let ((chan (-> proc skel root-channel 0)))
-                (set! (-> chan frame-group) (the-as art-joint-anim fgroup))
-                (set! (-> chan param 0) (-> slot anim-speed))
-                (set! (-> chan num-func) num-func-identity)
-                (set! (-> chan frame-num) (-> slot anim-speed))
-                (joint-control-channel-group! chan (the-as art-joint-anim fgroup) num-func-identity)
-                )
-              )
-            )
-          )
+(defun mp-pedestrian-apply-ghost-state ((proc citizen) (slot mp-pedestrian-state))
+  "Update the ghost record for a pedestrian from the latest remote data.
+   The actual position correction runs each frame via mp-citizen-common-post-hijack."
+  ;; 1. Find or allocate ghost record
+  (let ((rec (mp-get-traffic-ghost (-> slot net-id))))
+    (when (not rec)
+      (set! rec (mp-get-free-traffic-ghost))
+      (when rec
+        (set! (-> rec net-id) (-> slot net-id))
+        (set! (-> rec entity-kind) (the uint8 0))  ;; 0 = pedestrian
         )
       )
+    (when rec
+      ;; 2. Update ghost from slot data
+      (set-vector! (-> rec ghost-trans) (-> slot x) (-> slot y) (-> slot z) 1.0)
+      (quaternion-set! (-> rec ghost-quat) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
+      (set! (-> rec ghost-state-id) (-> slot state-id))
+      (set! (-> rec ghost-target-aid) (-> slot target-aid))
+      (set! (-> rec last-seen) (current-time))
+      )
+    )
+
+  ;; 3. Sync Process State & Visibility
+  (when (and proc (nonzero? proc))
+    ;; Keep alive: prevent traffic-manager culling
+    (logior! (-> proc flags) (citizen-flag persistent))
+
+    ;; Force visibility (clearing flags potentially set by inactive/spawn states)
+    (when (and (-> proc draw) (nonzero? (-> proc draw)))
+      (logclear! (-> proc draw status) (draw-control-status no-draw force-fade))
+      )
+
     )
   (none)
 )
-
 (defun mp-pedestrian-apply-remote ()
   (let ((spawn-budget 2))
     (dotimes (i (the int MP_MAX_SYNC_PEDESTRIANS))
@@ -114,9 +108,18 @@
         (when (nonzero? (-> slot net-id))
           (let ((proc (mp-pedestrian-find-by-net-id (-> slot net-id))))
             (if proc
-                (mp-pedestrian-update-puppet proc slot)
+                ;; Update ghost record for existing pedestrian (P-controller handles correction)
+                (mp-pedestrian-apply-ghost-state proc slot)
                 (when (> spawn-budget 0)
+                  ;; Spawn new pedestrian (stays in normal AI state)
                   (mp-pedestrian-spawn-puppet slot)
+                  ;; Also initialise the ghost record immediately after spawn so the
+                  ;; P-controller can start correcting from the first frame.
+                  (let ((new-proc (mp-pedestrian-find-by-net-id (-> slot net-id))))
+                    (when new-proc
+                      (mp-pedestrian-apply-ghost-state new-proc slot)
+                      )
+                    )
                   (-! spawn-budget 1)
                   )
                 )
@@ -125,7 +128,7 @@
         )
       )
     )
-  
+
   (when *traffic-manager*
     (let ((curr (-> *traffic-manager* child)))
       (while (and curr (nonzero? curr))

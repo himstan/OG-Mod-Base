@@ -12,7 +12,7 @@
          (when (and (nonzero? (-> e-proc net-id)) 
                     (not (focus-test? e-proc inactive))
                     (not (logtest? (-> e-proc focus-status) (focus-status dead))))
-           (let ((slot (-> *mp-traffic-buffer* ped-enemies (-> *mp-traffic-buffer* ped-count))))
+             (let ((slot (-> *mp-traffic-buffer* ped-enemies (-> *mp-traffic-buffer* ped-count))))
              (when (< (-> *mp-traffic-buffer* ped-count) (the uint MP_MAX_SYNC_PEDESTRIANS))
                (mp-pedestrian-pack e-proc slot)
                (+! (-> *mp-traffic-buffer* ped-count) 1)
@@ -23,17 +23,19 @@
        )
       ((type? proc vehicle)
        (let ((v-proc (the-as vehicle proc)))
-         ;; Only sync if it has a NetID, is NOT inactive, NOT dead, and IS managed by traffic
+         ;; Only sync if it is NOT inactive, NOT dead, and IS managed by traffic
          ;; BUDGET: If a remote player is driving this vehicle, SKIP it here (it's synced via piggy-back)
-         (when (and (nonzero? (-> v-proc net-id)) 
+         (when (and (nonzero? (-> v-proc net-id))
                     (!= (-> v-proc net-id) (-> *remote-info* veh-state net-id))
                     (not (focus-test? v-proc inactive))
                     (not (logtest? (-> v-proc focus-status) (focus-status dead)))
                     (logtest? (-> v-proc flags) (rigid-body-object-flag traffic-managed))
-                    (< (-> *mp-traffic-buffer* veh-count) (the uint MP_MAX_SYNC_VEHICLES)))
-           (let ((slot (-> *mp-traffic-buffer* veh-enemies (-> *mp-traffic-buffer* veh-count))))
-             (mp-vehicle-pack v-proc slot)
-             (+! (-> *mp-traffic-buffer* veh-count) 1)
+                    (< (-> *mp-traffic-buffer* veh-count) (the uint MP_MAX_SYNC_VEHICLES))
+
+             (let ((slot (-> *mp-traffic-buffer* veh-enemies (-> *mp-traffic-buffer* veh-count))))
+               (mp-vehicle-pack v-proc slot)
+               (+! (-> *mp-traffic-buffer* veh-count) 1)
+               )
              )
            )
          )
@@ -56,6 +58,10 @@
                )
             )
           (begin
+            ;; Re-apply hijacks each frame until cwi.gd subtypes are patched.
+            ;; Phase 1 (citizen) is a no-op after the first call; Phase 2 retries
+            ;; until civilian/citizen-norm/fat/chick symbols become non-null.
+            (mp-apply-traffic-hijacks)
             ;; ALWAYS apply piggybacked vehicle data from remote players
             (mp-vehicle-apply-piggyback)
             
@@ -71,6 +77,8 @@
                     (mp-pedestrian-apply-remote)
                     (mp-vehicle-apply-remote)
                     )
+                  ;; Periodically clear stale ghost records for despawned traffic
+                  (mp-cleanup-traffic-ghosts)
                   )
                 ;; Authoritative Logic: Gather and Pack
                 (begin
