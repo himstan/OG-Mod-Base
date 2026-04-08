@@ -36,6 +36,7 @@ void handle_pedestrian_sync_packet(const _ENetEvent& event, MultiplayerData& dat
         state.quat_y = unpack_float_q(incoming->quat[1]);
         state.quat_z = unpack_float_q(incoming->quat[2]);
         state.quat_w = unpack_float_q(incoming->quat[3]);
+        state.hp = incoming->hp;
         state.state_id = incoming->state_id;
         state.target_aid = incoming->target_aid;
         data.ped_last_updated[j] = current_time;
@@ -54,6 +55,7 @@ void handle_pedestrian_sync_packet(const _ENetEvent& event, MultiplayerData& dat
           state.quat_y = unpack_float_q(incoming->quat[1]);
           state.quat_z = unpack_float_q(incoming->quat[2]);
           state.quat_w = unpack_float_q(incoming->quat[3]);
+          state.hp = incoming->hp;
           state.state_id = incoming->state_id;
           state.target_aid = incoming->target_aid;
           data.ped_last_updated[j] = current_time;
@@ -78,6 +80,7 @@ void send_pedestrian_sync_packets(MultiplayerData& data, MPTrafficSyncBufferGOAL
       dst->x = src->x; dst->y = src->y; dst->z = src->z;
       dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
       dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);
+      dst->hp = src->hp;
       dst->state_id = src->state_id;
       dst->target_aid = src->target_aid;
     }

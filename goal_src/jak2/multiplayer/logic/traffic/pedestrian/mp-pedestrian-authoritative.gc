@@ -120,6 +120,8 @@
   ;; State-based sync: send numeric state ID instead of raw animation data
   (set! (-> slot state-id) (the uint8 (mp-ped-get-state-id e-proc)))
 
+  (set! (-> slot hp) (the int32 (-> e-proc hit-points)))
+
   (let ((flags (the uint 0)))
     (if (logtest? (-> e-proc focus-status) (focus-status dead)) (set! flags (logior flags (the uint 1))))
     (set! (-> slot flags) (the uint8 flags))

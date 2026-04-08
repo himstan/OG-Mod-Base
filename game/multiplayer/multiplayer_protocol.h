@@ -141,9 +141,10 @@ struct MPPedestrianState {
   uint8_t pad_align;  // Replaces second pad_align byte
   float x, y, z;
   float quat_x, quat_y, quat_z, quat_w;
+  int32_t hp;
   uint8_t flags;
   uint8_t target_aid; // 0 = none, 1 = Host, 2 = Client
-  uint8_t pad[26];    // Reduced from 27 to compensate for target_aid
+  uint8_t pad[22];    // Reduced from 26 to compensate for target-aid and hp
 };
 static_assert(sizeof(MPPedestrianState) == 64, "MPPedestrianState must be 64 bytes");
 
@@ -153,9 +154,12 @@ struct MPPedestrianStatePacked {
   uint8_t object_variance;
   float x, y, z;
   int16_t quat[4];
+  int32_t hp;
   uint8_t state_id;   // Replaces int16_t anim_index
   uint8_t target_aid; // Replaces int16_t anim_speed
+  uint8_t pad[2];
 };
+
 
 struct PacketPedestrianSync {
   PacketHeader header;

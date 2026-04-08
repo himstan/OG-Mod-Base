@@ -83,6 +83,7 @@
       (set-vector! (-> rec ghost-trans) (-> slot x) (-> slot y) (-> slot z) 1.0)
       (quaternion-set! (-> rec ghost-quat) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
       (set! (-> rec ghost-state-id) (-> slot state-id))
+      (set! (-> rec ghost-hp) (-> slot hp))
       (set! (-> rec ghost-target-aid) (-> slot target-aid))
       (set! (-> rec last-seen) (current-time))
       )

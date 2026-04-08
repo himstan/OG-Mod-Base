@@ -41,6 +41,8 @@
 (defconstant MP_EVENT_SCENE_SKIPPED (the-as uint 11))
 (defconstant MP_EVENT_ENEMY_AUTHORITY_REQUEST (the-as uint 12))
 (defconstant MP_EVENT_ENEMY_AUTHORITY_ACK (the-as uint 13))
+(defconstant MP_EVENT_ATTACK_PED (the-as uint 14))
+(defconstant MP_EVENT_PED_DEATH (the-as uint 15))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
@@ -296,9 +298,10 @@
    (quat-y          float)
    (quat-z          float)
    (quat-w          float)
+   (hp              int32)
    (flags           uint8)
    (target-aid      uint8)    ;; 0 = none, 1 = Host, 2 = Client
-   (pad             uint8 26) ;; Reduced from 27 to compensate for target-aid
+   (pad             uint8 22) ;; Reduced from 26 to compensate for target-aid
    )
   :size-assert 64)
 
@@ -326,9 +329,13 @@
    (ghost-quat      quaternion :inline)
    (ghost-linvel    vector :inline)   ;; Vehicles: last received linear velocity; peds: unused
    (ghost-angvel    vector :inline)   ;; Vehicles: last received angular velocity; peds: unused
+   (ghost-hp         int32)
    (ghost-state-id  uint8)           ;; Pedestrian state ID; unused for vehicles
    (ghost-target-aid uint8)          ;; Target sync for pedestrians (e.g. crimson-guard)
-   (pad2            uint8 2)
+   (last-attack-id   uint32)
+   (last-local-attack-id uint32)
+   (last-local-attack-time time-frame)
+   (pad2            uint8 4)
    )
   )
 
@@ -578,10 +585,12 @@
 (define-extern mp-sidekick-frame (function float))
 (define-extern mp-send-world-event (function uint uint none))
 (define-extern mp-send-enemy-attack-event (function uint uint none))
-(define-extern mp-receive-world-event (function uint uint none))
+(define-extern mp-receive-world-event (function mp-world-event none))
 (define-extern mp-airlock-remote-ready? (function vector symbol))
 (define-extern mp-event-handler-authority-request (function uint none))
 (define-extern mp-event-handler-authority-ack (function uint none))
+(define-extern mp-event-handler-attack-ped (function uint none))
+(define-extern mp-event-handler-ped-death (function uint none))
 
 ;; --- Traffic Ghost System Externs ---
 (define-extern mp-get-traffic-ghost (function uint mp-traffic-ghost-record))

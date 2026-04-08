@@ -105,6 +105,38 @@
     )
   (none))
 
+(defun mp-event-handler-attack-ped ((net-id uint))
+  "Host receives hit request from Client for a pedestrian."
+  (when (mp-is-traffic-authoritative?)
+    (let ((proc (mp-pedestrian-find-by-net-id net-id)))
+      (if (and proc (nonzero? proc))
+          (let ((attacker (mp-get-remote-target-process)))
+            (format 0 "[MP-WorldEvent] Applying Authoritative hit to Pedestrian ~A from remote attacker ~A (NetID ~D).~%" proc attacker net-id)
+            (set! *mp-processing-remote-event* #t)
+            (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5)))))
+            (set! *mp-processing-remote-event* #f)
+            )
+          (format 0 "[MP-WorldEvent] ERROR: Could not find pedestrian for hit! NetID ~D~%" net-id)
+          )
+      )
+    )
+  (none))
+
+(defun mp-event-handler-ped-death ((net-id uint))
+  "Mark a pedestrian as dead locally (non-authoritative side)."
+  (let ((proc (mp-pedestrian-find-by-net-id net-id)))
+    (if (and proc (nonzero? proc))
+        (begin
+          (format 0 "[MP-WorldEvent] Authoritative death received for pedestrian ~A (NetID ~D).~%" proc net-id)
+          (set! (-> proc hit-points) 0)
+          (set! *mp-processing-remote-event* #t)
+          (send-event proc 'die)
+          (set! *mp-processing-remote-event* #f)
+          )
+        )
+    )
+  (none))
+
 (defun mp-event-handler-player-hit ((aid uint))
   (let ((local-aid (the uint (+ (-> *local-info* role) 1))))
     (when (= aid local-aid)
