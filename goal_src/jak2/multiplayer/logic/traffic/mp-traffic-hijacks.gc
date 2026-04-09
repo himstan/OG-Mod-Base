@@ -114,6 +114,14 @@
                (vector-copy! (-> veh root transv) (-> rec ghost-linvel))
                )
               ((> dist (meters 0.05))
+               ;; DIRECT POSITION LERP: Force the root towards the ghost in case physics is asleep
+               (let ((lerp-factor 0.1))
+                 (when (> dist (meters 2)) (set! lerp-factor 0.2))
+                 (when (> dist (meters 5)) (set! lerp-factor 0.5))
+                 (vector-lerp! (-> veh root trans) (-> veh root trans) (-> rec ghost-trans) lerp-factor)
+                 (vector-copy! (-> veh rbody state position) (-> veh root trans))
+                 )
+
                ;; Soft nudge: blend existing velocity toward ghost-pull direction
                (let ((nudge (new 'stack-no-clear 'vector)))
                  (vector-! nudge (-> rec ghost-trans) (-> veh root trans))

@@ -1181,7 +1181,7 @@
   :event vehicle-event-handler
   :enter (behavior ()
     (let ((v1-0 (-> self controller branch)))
-      (when (or (not v1-0) (zero? v1-0))
+      (when (and (or (not v1-0) (zero? v1-0)) (mp-is-traffic-authoritative?))
         (cond
           ((logtest? (-> self draw status) (draw-control-status on-screen))
            (set! (-> self hit-points) 0.0)

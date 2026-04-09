@@ -62,6 +62,7 @@
             ;; Phase 1 (citizen) is a no-op after the first call; Phase 2 retries
             ;; until civilian/citizen-norm/fat/chick symbols become non-null.
             (mp-apply-traffic-hijacks)
+            (mp-vehicle-apply-hijacks)
             ;; ALWAYS apply piggybacked vehicle data from remote players
             (mp-vehicle-apply-piggyback)
             

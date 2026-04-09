@@ -13,12 +13,20 @@
 (declare-type citizen-fat civilian)
 (declare-type citizen-chick civilian)
 
-;; --- Authority Macros ---
+;; Forward-declare vehicle subtypes (defined in cwi.gd).
+(declare-type bikea vehicle)
+(declare-type bikeb vehicle)
+(declare-type bikec vehicle)
+(declare-type cara vehicle)
+(declare-type carb vehicle)
+(declare-type carc vehicle)
+(declare-type vehicle-guard vehicle)
+(declare-type guard-bike vehicle-guard)
+(declare-type hellcat vehicle-guard)
+(declare-type test-bike vehicle)
+(declare-type test-car vehicle)
 
-(defmacro mp-is-traffic-authoritative? ()
-  "Is the local player authoritative over traffic? (Current: Host-only)"
-  `(mp-is-jak?)
-  )
+;; --- Authority Macros ---
 
 (define-extern mp-is-traffic-ready? (function symbol))
 

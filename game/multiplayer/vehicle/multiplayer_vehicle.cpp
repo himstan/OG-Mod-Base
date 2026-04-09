@@ -31,6 +31,8 @@ void handle_vehicle_sync_packet(const _ENetEvent& event, MultiplayerData& data) 
         state.net_id = incoming->net_id;
         state.vehicle_type = incoming->vehicle_type;
         state.color_index = incoming->color_index;
+        state.state_id = incoming->state_id;
+        state.target_aid = incoming->target_aid;
         state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
         state.quat_x = unpack_float_q(incoming->quat[0]);
         state.quat_y = unpack_float_q(incoming->quat[1]);
@@ -55,6 +57,8 @@ void handle_vehicle_sync_packet(const _ENetEvent& event, MultiplayerData& data) 
           state.net_id = incoming->net_id;
           state.vehicle_type = incoming->vehicle_type;
           state.color_index = incoming->color_index;
+          state.state_id = incoming->state_id;
+          state.target_aid = incoming->target_aid;
           state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
           state.quat_x = unpack_float_q(incoming->quat[0]);
           state.quat_y = unpack_float_q(incoming->quat[1]);
@@ -87,6 +91,7 @@ void send_vehicle_sync_packets(MultiplayerData& data, MPTrafficSyncBufferGOAL* b
     for (uint32_t i = 0; i < chunk_size; i++) {
       auto* src = &buffer->vehicles[sent_vehs + i]; auto* dst = &packet.vehs[i];
       dst->net_id = src->net_id; dst->vehicle_type = src->vehicle_type; dst->color_index = src->color_index;
+      dst->state_id = src->state_id; dst->target_aid = src->target_aid;
       dst->x = src->x; dst->y = src->y; dst->z = src->z;
       dst->quat[0] = pack_float_q(src->quat_x); dst->quat[1] = pack_float_q(src->quat_y);
       dst->quat[2] = pack_float_q(src->quat_z); dst->quat[3] = pack_float_q(src->quat_w);

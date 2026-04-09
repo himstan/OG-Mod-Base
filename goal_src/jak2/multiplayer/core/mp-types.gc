@@ -121,11 +121,35 @@
    )
   )
 
+(defenum mp-veh-state-id (uint8)
+  (none                  0)
+  (idle                  1)
+  (inactive              2)
+  (active                3)
+  (waiting               4)
+  (player-control        5)
+  (crash                 6)
+  (explode               7)
+  (die                   8)
+  (measure-control-parameters 9)
+  ;; Guard specific
+  (hostile               10)
+  (stop-and-shoot        11)
+  (slow-pursuit          12)
+  (waiting-ambush        13)
+  ;; Racer specific
+  (waiting-race          14)
+  (waiting-for-start     15)
+  (racing                16)
+  (race-finished         17)
+  )
+
 (deftype mp-vehicle-state (structure)
   ((net-id          uint32)
    (vehicle-type    uint8)
    (color-index     uint8)
-   (pad-align       uint8 2)
+   (state-id        uint8)
+   (target-aid      uint8)
    (x               float)
    (y               float)
    (z               float)
@@ -474,7 +498,7 @@
 (define-perm *mp-traffic-debug?* symbol #f)
 (define-perm *mp-traffic-ped-debug?* symbol #f)
 (define-perm *mp-traffic-veh-debug?* symbol #f)
-(define-perm *mp-traffic-debug-dist* float (meters 30.0))
+(define-perm *mp-traffic-debug-dist* float (meters 100.0))
 (define-perm *mp-debug-task-sync* symbol #f)
 (define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-debug-simulate-loss-time* time-frame 0)
@@ -545,6 +569,11 @@
   `(or (mp-enemy-authoritative? ,e-proc) *mp-processing-remote-event*)
   )
 
+(defmacro mp-is-traffic-authoritative? ()
+  "Is the local player authoritative over traffic? (Current: Host-only)"
+  `(mp-is-jak?)
+  )
+
 ;; --- Extern Declarations ---
 
 (define-extern pc-multi-debug-stop-receive (function uint none))
@@ -575,7 +604,7 @@
 (define-extern mp-vehicle-apply-hijacks (function none))
 (define-extern mp-enemy-sync-idle (state enemy))
 (define-extern mp-puppet (state process))
-(define-extern mp-vehicle-puppet (state process))
+
 (define-extern pc-multi-send-enemies (function uint none))
 (define-extern pc-multi-receive-enemies (function uint none))
 (define-extern pc-multi-get-enemy-sync-time (function uint64))
@@ -597,6 +626,8 @@
 (define-extern mp-get-free-traffic-ghost (function mp-traffic-ghost-record))
 (define-extern mp-ped-get-state-id (function citizen uint))
 (define-extern mp-ped-get-state-from-id (function uint symbol))
+(define-extern mp-veh-get-state-id (function vehicle uint))
+(define-extern mp-veh-get-state-from-id (function uint symbol))
 (define-extern mp-apply-traffic-hijacks (function none))
 (define-extern mp-ped-predictive-move (function citizen none))
 (define-extern mp-vehicle-apply-ghost-correction (function vehicle none))

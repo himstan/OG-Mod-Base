@@ -76,30 +76,52 @@
 
               (let ((is-remote-driven (= net-id (-> *remote-info* veh-state net-id)))
                     (is-local-driven (= net-id (-> *local-info* veh-state net-id)))
-                    (type-str (symbol->string (-> proc type symbol))))
-                
-                (let ((color (font-color white))
-                      (status-str "SYNCED"))
-                  
-                  (cond
-                    (is-local-driven
-                      (set! color (font-color green))
-                      (set! status-str "LOCAL-DRIVEN")
-                      )
-                    (is-remote-driven
-                      (set! color (font-color yellow))
-                      (set! status-str "REMOTE-DRIVEN")
-                      )
-                    )
+                    (type-str (symbol->string (-> proc type symbol)))
+                    (cur-state (if (-> proc state) (-> proc state name) 'none)))
+                (let ((is-owner (or is-local-driven (and (not is-remote-driven) (mp-is-traffic-authoritative?)))))
+                  (let ((color (if is-owner (font-color green) (font-color yellow)))
+                        (status-str (if is-owner "OWNER" "PUPPET")))
+                    
+                    (if is-local-driven
+                        (set! status-str "LOCAL-DRIVEN")
+                        )
+                    (if is-remote-driven
+                        (set! status-str "REMOTE-DRIVEN")
+                        )
 
-                  (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
-                                    (the-as string (format #f "VEH-ID: ~D~%~S (~S)" 
-                                            net-id 
-                                            status-str
-                                            type-str))
-                                    draw-pos 
-                                    color 
-                                    (the-as vector2h #f))
+                    (if is-owner
+                        (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                          (the-as string (format #f "VEH-ID: ~D (~S)~%STATE: ~S(~D)~%TYPE: ~S" 
+                                                  net-id 
+                                                  status-str
+                                                  cur-state
+                                                  (the uint8 (mp-veh-get-state-id proc))
+                                                  type-str))
+                                          draw-pos 
+                                          color 
+                                          (the-as vector2h #f))
+                        (let ((rec (mp-get-traffic-ghost net-id)))
+                          (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                            (the-as string (format #f "VEH-ID: ~D (~S)~%STATE: ~S~%GHOST-STATE: ~S(~D)~%TYPE: ~S" 
+                                                    net-id 
+                                                    status-str
+                                                    cur-state
+                                                    (if rec (mp-veh-get-state-from-id (the uint (-> rec ghost-state-id))) 'none)
+                                                    (if rec (-> rec ghost-state-id) 0)
+                                                    type-str))
+                                            draw-pos 
+                                            color 
+                                            (the-as vector2h #f))
+                          
+                          (when rec
+                            ;; Draw ghost sphere at authoritative target position
+                            (add-debug-sphere #t (bucket-id debug-no-zbuf1) (-> rec ghost-trans) (meters 1.5) (static-rgba 255 255 0 128))
+                            ;; Draw line connecting puppet to ghost
+                            (add-debug-line #t (bucket-id debug-no-zbuf1) (-> proc root trans) (-> rec ghost-trans) (static-rgba 255 255 0 128) #f (the-as rgba 0))
+                            )
+                          )
+                        )
+                    )
                   )
                 )
               )
