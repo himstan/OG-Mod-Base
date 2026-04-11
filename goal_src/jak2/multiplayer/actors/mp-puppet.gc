@@ -246,11 +246,13 @@
 ;; --- Puppet Initialization ---
 
 (defbehavior mp-puppet-init target ((arg0 continue-point))
-  "Initialize a target process as a remote player puppet. Mirrors target-init but skips HUD."
+  "Initialize a target process as a remote player puppet. Bypasses continue/title states."
   (init-target self arg0 'mp-puppet)
-  (set! (-> self event-hook) (-> target-continue event))
-  (logior! (-> self focus-status) (focus-status teleporting))
-  (go target-continue arg0)
+  ;; Directly go to the correct state based on role to avoid resets/overrides
+  (if (mp-is-jak?)
+      (go target-indax-start (the handle #f))
+      (go target-stance)
+      )
   (none)
   )
 
@@ -273,7 +275,13 @@
 
 (defun mp-puppet-spawn ((id uint))
   "Spawn a new puppet target using native engine initialization."
-  (when (not (mp-puppet-alive?))
+  (when (and (not (mp-puppet-alive?))
+             *target*
+             (-> *game-info* current-continue)
+             ;; Safety: Don't spawn if we are in title or demo
+             (not (or (= (-> *target* next-state name) 'target-title)
+                      (= (-> *target* next-state name) 'target-demo))))
+    (format 0 "[MP-Puppet] Spawning new target puppet for Status ~D...~%" id)
     (let ((p (process-spawn target :init mp-puppet-init (-> *game-info* current-continue) :from *target-dead-pool* :to *target-pool* :stack *kernel-dram-stack*)))
       (when p
         (set! *mp-puppet* (-> p 0))

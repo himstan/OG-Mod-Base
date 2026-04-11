@@ -819,7 +819,10 @@
         (vector-matrix*! (-> self control align-xz-vel) gp-1 (-> self control c-R-w))
         )
       (when (!= (the-as float (-> self control unknown-word04)) 0.0)
-        (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+        (when (= self *target*)
+                      (activate! *camera-smush-control* 1638.4 15 75 1.0 0.9 (-> *display* camera-clock))
+                      )
+
         (set! sv-16 (the-as float (-> self control unknown-word04)))
         (set! (-> self control unknown-word04) (the-as uint 0.0))
         )
@@ -888,7 +891,10 @@
                   imp-sound
                   )
                 )
-              (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+              (when (= self *target*)
+                            (activate! *camera-smush-control* 1638.4 15 75 1.0 0.9 (-> *display* camera-clock))
+                            )
+
               (set! sv-16 (the-as float -61440.0))
               )
             )
@@ -1156,7 +1162,10 @@
       (the-as process #f)
       )
     (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 255 (seconds 0.5))
-    (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+    (when (= self *target*)
+                  (activate! *camera-smush-control* 1638.4 15 75 1.0 0.9 (-> *display* camera-clock))
+                  )
+
     (target-start-attack)
     (target-danger-set! 'bomb #f)
     (set! sv-80 (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node jakb-lod0-jg sk_lhand)))
@@ -1521,7 +1530,10 @@
       (ja-eval)
       )
     (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 255 (seconds 0.5))
-    (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+    (when (= self *target*)
+                  (activate! *camera-smush-control* 1638.4 15 75 1.0 0.9 (-> *display* camera-clock))
+                  )
+
     (let ((gp-0 (-> self post-hook)))
       (set! (-> self post-hook) target-no-move-post)
       (set! sv-32 (-> self focus-search))

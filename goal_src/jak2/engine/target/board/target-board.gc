@@ -2579,7 +2579,7 @@
                   (set! (-> *collide-edge-board-spec* touching-segment) (the-as symbol (-> self board ride-touch-segment)))
                   )
                 )
-              (do-edge-grabs *target* *collide-cache* *collide-edge-board-spec*)
+              (do-edge-grabs self *collide-cache* *collide-edge-board-spec*)
               )
             (when *debug-segment*
               (let ((s3-1 (-> *display* frames (-> *display* on-screen) profile-array data 0)))

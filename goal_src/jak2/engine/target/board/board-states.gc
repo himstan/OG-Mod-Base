@@ -1075,7 +1075,7 @@
       )
     (set! (-> self control unknown-word04) (the-as uint #f))
     (set! (-> self control did-move-to-pole-or-max-jump-height) (the-as float #f))
-    (do-edge-grabs *target* *collide-cache* *collide-edge-board-halfpipe-spec*)
+    (do-edge-grabs self *collide-cache* *collide-edge-board-halfpipe-spec*)
     (when (not (-> self control unknown-spool-anim00))
       (let ((gp-0 (vector-flatten!
                     (-> self control edge-grab-across-edge-dir)

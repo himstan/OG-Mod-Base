@@ -129,7 +129,6 @@
     ;; 3. Basic Handshake Updates (Must run before guard to avoid frozen puppets during load)
     (mp-sync-clock-host)
     (mp-sync-clock-client)
-    (mp-manage-remote-puppet)
 
     ;; Debug: Simulate connection loss (must be above sync guard)
 
@@ -170,6 +169,7 @@
         (return #f))
 
     ;; 4. High-Frequency Local Updates
+    (mp-manage-remote-puppet)
     (mp-extract-local-stats)
     (mp-apply-remote-world-state)
     

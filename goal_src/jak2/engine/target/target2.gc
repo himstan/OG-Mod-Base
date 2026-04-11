@@ -1025,7 +1025,7 @@
     (target-exit)
     )
   :code (behavior ((arg0 float))
-    (when (!= arg0 0.0)
+    (when (and (!= arg0 0.0) (!= (-> self tobot?) 'mp-puppet))
       (let ((f0-5 (the float (the int (+ 1.0 (/ (- arg0 (-> *TARGET-bank* fall-far)) (-> *TARGET-bank* fall-far-inc))))))
             )
         (pickup-collectable!
@@ -1038,7 +1038,7 @@
       (target-timed-invulnerable (the-as time-frame (-> *TARGET-bank* hit-invulnerable-timeout)) self 1)
       )
     (cond
-      ((and (= (-> self game mode) 'play) (>= 0.0 (-> (the-as fact-info-target (-> self fact)) health)))
+      ((and (= (-> self game mode) 'play) (>= 0.0 (-> (the-as fact-info-target (-> self fact)) health)) (!= (-> self tobot?) 'mp-puppet))
        (set! (-> self attack-info attacker) (the-as handle #f))
        (go target-death 'target-hit-ground-hard)
        )

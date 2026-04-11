@@ -806,12 +806,18 @@
 
 (defmethod add-setting ((this setting-control) (arg0 process) (arg1 symbol) (arg2 object) (arg3 object) (arg4 object))
   "Originally called `setting-set` see (anon-function 48 script)"
+  (when (and arg0 (string-prefix= "mp-puppet" (-> arg0 name)))
+    (return 0)
+    )
   (add-connection (-> this engine) arg0 arg1 arg2 arg3 arg4)
   0
   (none)
   )
 
 (defmethod set-setting ((this setting-control) (arg0 process) (arg1 symbol) (arg2 object) (arg3 object) (arg4 object))
+  (when (and arg0 (string-prefix= "mp-puppet" (-> arg0 name)))
+    (return 0)
+    )
   (remove-setting this arg0 arg1)
   (add-connection (-> this engine) arg0 arg1 arg2 arg3 arg4)
   0
@@ -896,6 +902,11 @@
   )
 
 (defmethod apply-settings ((this setting-control))
+  (with-pp
+    (when (and pp (string-prefix= "mp-puppet" (-> pp name)))
+      (return (-> this user-current))
+      )
+    )
   (speech-control-method-11 *speech-control*)
   (let ((s5-0 (-> this user-current)))
     (let ((s4-0 (-> this user-target)))

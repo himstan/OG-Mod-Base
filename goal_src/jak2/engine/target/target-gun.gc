@@ -2825,7 +2825,7 @@
                      (-> *TARGET-bank* edge-grab-height-off-ground)
                      )
                  )
-            (do-edge-grabs *target* *collide-cache* *collide-edge-spec*)
+            (do-edge-grabs self *collide-cache* *collide-edge-spec*)
             )
         (when *debug-segment*
           (let ((s5-2 (-> *display* frames (-> *display* on-screen) profile-array data 0)))

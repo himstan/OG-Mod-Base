@@ -459,7 +459,10 @@
          (send-event (-> this process) arg0 arg1 s5-0)
          )
         ((= arg0 'camera-shake)
-         (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+         ;; MP GUARD: Only the local *target* should trigger target-related camera shakes.
+         (when (or (not (type? (-> this process) target)) (= (-> this process) *target*))
+           (activate! *camera-smush-control* 819.2 15 75 1.0 0.9 (-> *display* camera-clock))
+           )
          )
         ((zero? s3-0)
          (play-effect-sound this arg0 arg1 s5-0 (-> this res) (string->sound-name (symbol->string arg0)))
