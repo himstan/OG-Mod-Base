@@ -56,15 +56,14 @@ struct PacketPlayerState {
   uint32_t netId;
   uint8_t status;
   float x, y, z, angle;
-  uint16_t anim;
-  float anim_frame;
+  uint32_t state_id;
   uint32_t level_hash;
   uint32_t riding;
-  int32_t sidekick_anim;
-  float sidekick_frame;
   uint64_t clock;
-  float last_anim_frame;
-  float last_sidekick_frame;
+  uint16_t buttons;
+  uint8_t leftx, lefty, rightx, righty;
+  float cam_angle_y;
+  uint8_t pad_reserved[6];
   // World Sync Fields (Continuous Sync)
   float money;
   float gems;
@@ -204,9 +203,9 @@ struct PacketFullSync {
   uint32_t sync_aids_count;
   uint32_t riding;
   uint32_t sync_aids[128];
-  int32_t sidekick_anim;
-  float sidekick_frame;
   uint64_t clock;
+  float cam_angle_y;
+  uint8_t pad_reserved[16];
 };
 
 #pragma pack(pop)

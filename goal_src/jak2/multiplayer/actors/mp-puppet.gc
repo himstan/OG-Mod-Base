@@ -1,0 +1,296 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Remote Target Puppet Module ---
+;; This module handles spawning a secondary 'target' process to represent remote players.
+;; It uses a P-Controller to nudge the puppet towards an authoritative "ghost" position.
+
+(defconstant MP_PUPPET_MAX 1) ;; Currently 1 remote player (Jak/Daxter split)
+
+;; Global pointer to the remote player's process (Robust Singleton)
+(define *mp-puppet* (the-as target #f))
+(define *mp-puppet-ghost* (new 'static 'mp-target-ghost-record))
+
+;; --- Puppet Sync Logic ---
+
+(defun mp-target-get-state-from-id ((id uint))
+  "Map a numeric mp-target-state-id back to a state name symbol."
+  (case (the-as mp-target-state-id (the int id))
+    (((mp-target-state-id stance))      'target-stance)
+    (((mp-target-state-id walk))        'target-walk)
+    (((mp-target-state-id jump))        'target-jump)
+    (((mp-target-state-id falling))     'target-falling)
+    (((mp-target-state-id double-jump)) 'target-double-jump)
+    (((mp-target-state-id attack))      'target-attack)
+    (((mp-target-state-id hit))         'target-hit)
+    (((mp-target-state-id death))       'target-death)
+    (((mp-target-state-id duck-stance)) 'target-duck-stance)
+    (((mp-target-state-id duck-walk))   'target-duck-walk)
+    (((mp-target-state-id swim-stance)) 'target-swim-stance)
+    (((mp-target-state-id swim-walk))   'target-swim-walk)
+    (((mp-target-state-id board-stance)) 'target-board-stance)
+    (((mp-target-state-id board-walk))   'target-board-walk)
+    (((mp-target-state-id gun-stance))   'target-gun-stance)
+    (((mp-target-state-id gun-walk))     'target-gun-walk)
+    (((mp-target-state-id high-jump))    'target-high-jump)
+    (((mp-target-state-id roll))         'target-roll)
+    (((mp-target-state-id roll-flip))    'target-roll-flip)
+    (((mp-target-state-id flop))         'target-flop)
+    (((mp-target-state-id indax-stance)) 'target-indax-stance)
+    (((mp-target-state-id indax-walk))   'target-indax-walk)
+    (((mp-target-state-id indax-jump))   'target-indax-jump)
+    (((mp-target-state-id indax-falling)) 'target-indax-falling)
+    (((mp-target-state-id indax-double-jump)) 'target-indax-double-jump)
+    (((mp-target-state-id indax-attack)) 'target-indax-attack)
+    (((mp-target-state-id indax-hit))    'target-indax-hit)
+    (((mp-target-state-id indax-death))  'target-indax-death)
+    (((mp-target-state-id indax-duck-stance)) 'target-indax-duck-stance)
+    (((mp-target-state-id indax-duck-walk)) 'target-indax-duck-walk)
+    (((mp-target-state-id indax-high-jump)) 'target-indax-high-jump)
+    (((mp-target-state-id indax-roll))   'target-indax-roll)
+    (((mp-target-state-id indax-roll-flip)) 'target-indax-roll-flip)
+    (((mp-target-state-id indax-flop))   'target-indax-flop)
+    (((mp-target-state-id indax-jump-on)) 'target-indax-jump-on)
+    (((mp-target-state-id indax-trip))   'target-indax-trip)
+    (((mp-target-state-id indax-hit-ground)) 'target-indax-hit-ground)
+    (((mp-target-state-id indax-edge-grab)) 'target-indax-edge-grab)
+    (((mp-target-state-id indax-edge-grab-jump)) 'target-indax-edge-grab-jump)
+    (((mp-target-state-id indax-edge-grab-off)) 'target-indax-edge-grab-off)
+    (((mp-target-state-id indax-high-jump-jump)) 'target-indax-high-jump-jump)
+    (((mp-target-state-id indax-attack-air)) 'target-indax-attack-air)
+    (((mp-target-state-id indax-flop-hit-ground)) 'target-indax-flop-hit-ground)
+    (((mp-target-state-id indax-running-attack)) 'target-indax-running-attack)
+    (((mp-target-state-id ride-along))    'target-ride-along)
+    (else                                #f)
+    )
+  )
+
+(defun mp-target-get-id-from-state ((state symbol))
+  "Map a state name symbol back to a numeric mp-target-state-id."
+  (case state
+    (('target-stance)           (the uint (mp-target-state-id stance)))
+    (('target-walk)             (the uint (mp-target-state-id walk)))
+    (('target-jump)             (the uint (mp-target-state-id jump)))
+    (('target-falling)          (the uint (mp-target-state-id falling)))
+    (('target-double-jump)      (the uint (mp-target-state-id double-jump)))
+    (('target-attack)           (the uint (mp-target-state-id attack)))
+    (('target-hit)              (the uint (mp-target-state-id hit)))
+    (('target-death)            (the uint (mp-target-state-id death)))
+    (('target-duck-stance)      (the uint (mp-target-state-id duck-stance)))
+    (('target-duck-walk)        (the uint (mp-target-state-id duck-walk)))
+    (('target-swim-stance)      (the uint (mp-target-state-id swim-stance)))
+    (('target-swim-walk)        (the uint (mp-target-state-id swim-walk)))
+    (('target-board-stance)     (the uint (mp-target-state-id board-stance)))
+    (('target-board-walk)       (the uint (mp-target-state-id board-walk)))
+    (('target-gun-stance)       (the uint (mp-target-state-id gun-stance)))
+    (('target-gun-walk)         (the uint (mp-target-state-id gun-walk)))
+    (('target-high-jump)        (the uint (mp-target-state-id high-jump)))
+    (('target-roll)             (the uint (mp-target-state-id roll)))
+    (('target-roll-flip)        (the uint (mp-target-state-id roll-flip)))
+    (('target-flop)             (the uint (mp-target-state-id flop)))
+    (('target-indax-stance)      (the uint (mp-target-state-id indax-stance)))
+    (('target-indax-walk)        (the uint (mp-target-state-id indax-walk)))
+    (('target-indax-jump)        (the uint (mp-target-state-id indax-jump)))
+    (('target-indax-falling)     (the uint (mp-target-state-id indax-falling)))
+    (('target-indax-double-jump) (the uint (mp-target-state-id indax-double-jump)))
+    (('target-indax-attack)      (the uint (mp-target-state-id indax-attack)))
+    (('target-indax-hit)         (the uint (mp-target-state-id indax-hit)))
+    (('target-indax-death)       (the uint (mp-target-state-id indax-death)))
+    (('target-indax-duck-stance) (the uint (mp-target-state-id indax-duck-stance)))
+    (('target-indax-duck-walk)   (the uint (mp-target-state-id indax-duck-walk)))
+    (('target-indax-high-jump)   (the uint (mp-target-state-id indax-high-jump)))
+    (('target-indax-roll)        (the uint (mp-target-state-id indax-roll)))
+    (('target-indax-roll-flip)   (the uint (mp-target-state-id indax-roll-flip)))
+    (('target-indax-flop)        (the uint (mp-target-state-id indax-flop)))
+    (('target-indax-jump-on)     (the uint (mp-target-state-id indax-jump-on)))
+    (('target-indax-trip)        (the uint (mp-target-state-id indax-trip)))
+    (('target-indax-hit-ground)  (the uint (mp-target-state-id indax-hit-ground)))
+    (('target-indax-edge-grab)   (the uint (mp-target-state-id indax-edge-grab)))
+    (('target-indax-edge-grab-jump) (the uint (mp-target-state-id indax-edge-grab-jump)))
+    (('target-indax-edge-grab-off) (the uint (mp-target-state-id indax-edge-grab-off)))
+    (('target-indax-high-jump-jump) (the uint (mp-target-state-id indax-high-jump-jump)))
+    (('target-indax-attack-air)  (the uint (mp-target-state-id indax-attack-air)))
+    (('target-indax-flop-hit-ground) (the uint (mp-target-state-id indax-flop-hit-ground)))
+    (('target-indax-running-attack) (the uint (mp-target-state-id indax-running-attack)))
+    (('target-ride-along)        (the uint (mp-target-state-id ride-along)))
+    (else                       (the uint (mp-target-state-id none)))
+    )
+  )
+
+(defun mp-puppet-update-ghost! ((ghost mp-target-ghost-record) (info remote-player-info))
+  "Update the ghost record from incoming remote player info."
+  (set-vector! (-> ghost trans) (-> info x) (-> info y) (-> info z) 1.0)
+  (quaternion-axis-angle! (-> ghost quat) 0.0 1.0 0.0 (-> info angle)) ;; Using y-axis angle
+  ;; (vector-copy! (-> ghost velocity) ...)
+  (set! (-> ghost state-id) (-> info state-id))
+  (set! (-> ghost buttons) (-> info buttons))
+  (set! (-> ghost leftx) (-> info leftx))
+  (set! (-> ghost lefty) (-> info lefty))
+  (set! (-> ghost rightx) (-> info rightx))
+  (set! (-> ghost righty) (-> info righty))
+  (set! (-> ghost last-update) (-> *display* game-clock frame-counter))
+  (set! (-> ghost active?) #t)
+  (none)
+  )
+
+(defun mp-puppet-update-pad ((pad cpad-info) (buttons uint) (lx uint) (ly uint) (rx uint) (ry uint))
+  "Manually update a cpad-info structure with raw input data, shifting history and calculating derived fields."
+  ;; 1. Shift history (Old values)
+  (set! (-> pad old-leftx 1) (-> pad old-leftx 0))
+  (set! (-> pad old-leftx 0) (-> pad leftx))
+  (set! (-> pad old-lefty 1) (-> pad old-lefty 0))
+  (set! (-> pad old-lefty 0) (-> pad lefty))
+  (set! (-> pad old-rightx 1) (-> pad old-rightx 0))
+  (set! (-> pad old-rightx 0) (-> pad rightx))
+  (set! (-> pad old-righty 1) (-> pad old-righty 0))
+  (set! (-> pad old-righty 0) (-> pad righty))
+  
+  (set! (-> pad button0-abs 2) (-> pad button0-abs 1))
+  (set! (-> pad button0-abs 1) (-> pad button0-abs 0))
+  (set! (-> pad button0-rel 2) (-> pad button0-rel 1))
+  (set! (-> pad button0-rel 1) (-> pad button0-rel 0))
+
+  ;; Shift *cpad-history-list* for recently-pressed? macro support
+  (let ((history (-> *cpad-history-list* cpads (-> pad number))))
+    (dotimes (i 14)
+      (set! (-> history button0-abs (- 14 i)) (-> history button0-abs (- 13 i)))
+      (set! (-> history button0-rel (- 14 i)) (-> history button0-rel (- 13 i)))
+      )
+    )
+
+  ;; 2. Set new raw values
+  (set! (-> pad valid) (the-as uint 0))
+  (set! (-> pad status) (the-as uint #x73)) ;; DualShock 2 ID
+  (set! (-> pad button0) buttons)
+  (set! (-> pad leftx) lx)
+  (set! (-> pad lefty) ly)
+  (set! (-> pad rightx) rx)
+  (set! (-> pad righty) ry)
+
+  ;; 3. Update abs and rel buttons (Expansion of raw buttons to full enum)
+  (let ((buttons-pushed (the-as pad-buttons buttons)))
+     ;; Stick to D-Pad mapping (Matches service-cpads in pad.gc)
+     (if (< lx (the-as uint 30)) (set! buttons-pushed (logior (pad-buttons l-analog-left) buttons-pushed)))
+     (if (> lx (the-as uint 225)) (set! buttons-pushed (logior (pad-buttons l-analog-right) buttons-pushed)))
+     (if (< ly (the-as uint 30)) (set! buttons-pushed (logior (pad-buttons l-analog-up) buttons-pushed)))
+     (if (> ly (the-as uint 225)) (set! buttons-pushed (logior (pad-buttons l-analog-down) buttons-pushed)))
+     
+     ;; Right analog mapping
+     (if (< rx (the-as uint 30)) (set! buttons-pushed (logior (pad-buttons r-analog-left) buttons-pushed)))
+     (if (> rx (the-as uint 225)) (set! buttons-pushed (logior (pad-buttons r-analog-right) buttons-pushed)))
+     (if (< ry (the-as uint 30)) (set! buttons-pushed (logior (pad-buttons r-analog-up) buttons-pushed)))
+     (if (> ry (the-as uint 225)) (set! buttons-pushed (logior (pad-buttons r-analog-down) buttons-pushed)))
+
+     (set! (-> pad button0-abs 0) buttons-pushed)
+     )
+  (set! (-> pad button0-rel 0) (logclear (-> pad button0-abs 0) (-> pad button0-abs 1)))
+
+  ;; Update history index 0
+  (let ((history (-> *cpad-history-list* cpads (-> pad number))))
+    (set! (-> history button0-abs 0) (-> pad button0-abs 0))
+    (set! (-> history button0-rel 0) (-> pad button0-rel 0))
+    )
+
+  ;; 4. Update stick dir and speed for physics/state machine checks
+  (let ((f30-0 (* 0.0078125 (the float (+ (the int lx) -128))))
+        (f28-0 (* 0.0078125 (the float (- 127 (the int ly))))))
+    (set! (-> pad stick0-dir) (atan (- f30-0) f28-0))
+    (set! (-> pad stick0-speed) (fmin 1.0 (sqrtf (+ (* f30-0 f30-0) (* f28-0 f28-0)))))
+    )
+  (if (< (-> pad stick0-speed) 0.3) ;; Standard Stick Deadzone
+      (set! (-> pad stick0-speed) 0.0)
+      )
+  (none)
+  )
+
+(defun mp-puppet-apply-ghost-correction! ((proc target))
+  "Smoothly nudge the puppet target's root towards the ghost position and inject inputs."
+  (let ((ghost *mp-puppet-ghost*))
+    (when (and proc (-> ghost active?))
+      ;; 1. Position Sync (P-Controller)
+      (let ((dist (vector-vector-distance (-> proc control trans) (-> ghost trans))))
+        (cond
+          ((> dist (meters 15.0))
+           ;; Hard snap if too far
+           (vector-copy! (-> proc control trans) (-> ghost trans))
+           (vector-reset! (-> proc control transv))
+           )
+          (else
+           ;; Smoothly nudge towards ghost to correct drift
+           (let ((lerp-factor 0.15))
+             (vector-lerp! (-> proc control trans) (-> proc control trans) (-> ghost trans) lerp-factor)
+             )
+           )
+          )
+        )
+      ;; 2. Rotation sync
+      (quaternion-slerp! (-> proc control quat) (-> proc control quat) (-> ghost quat) 0.2)
+
+      ;; 3. Input Sync (Injected into puppet's dedicated pad)
+      (mp-puppet-update-pad (-> proc control cpad) 
+                            (the-as uint16 (-> ghost buttons)) 
+                            (-> ghost leftx) (-> ghost lefty) 
+                            (-> ghost rightx) (-> ghost righty))
+
+      ;; 4. Camera Orientation Sync
+      ;; Construct a camera-relative input matrix from the remote player's camera angle.
+      ;; This ensures the stick inputs are evaluated in the correct world-space direction.
+      (matrix-rotate-y! (-> proc control cam-R-w) (-> ghost cam-angle-y))
+      ;; Prevent the target state machine from overwriting this with the local camera.
+      (set! (-> proc control update-cam-R-w-start-time) (the-as int64 #x7fffffffffffffff))
+      )
+    )
+  (none)
+  )
+
+;; --- Puppet Initialization ---
+
+(defbehavior mp-puppet-init target ((arg0 continue-point))
+  "Initialize a target process as a remote player puppet. Mirrors target-init but skips HUD."
+  (init-target self arg0 'mp-puppet)
+  (set! (-> self event-hook) (-> target-continue event))
+  (logior! (-> self focus-status) (focus-status teleporting))
+  (go target-continue arg0)
+  (none)
+  )
+
+(defun mp-puppet-alive? ()
+  "Returns true if the specified target is currently alive."
+  (not (or (= *mp-puppet* (the-as target #f))
+           (= (-> *mp-puppet* state) #f)
+           (= (-> *mp-puppet* state) symbol)
+           (= (-> *mp-puppet* state name) 'dead)
+           ))
+  )
+
+(defun mp-puppet-get-proc ()
+  "Find the puppet target process if it exists."
+  (if (mp-puppet-alive?)
+      *mp-puppet*
+      (the-as target #f)
+      )
+  )
+
+(defun mp-puppet-spawn ((id uint))
+  "Spawn a new puppet target using native engine initialization."
+  (when (not (mp-puppet-alive?))
+    (let ((p (process-spawn target :init mp-puppet-init (-> *game-info* current-continue) :from *target-dead-pool* :to *target-pool* :stack *kernel-dram-stack*)))
+      (when p
+        (set! *mp-puppet* (-> p 0))
+        (set! (-> *mp-puppet* name) "mp-puppet")
+        
+        ;; Assign the second pad in the global list to the puppet
+        ;; We use pad 1 (controller 2) as the dedicated puppet pad
+        (set! (-> *mp-puppet* control cpad) (-> *cpad-list* cpads 1))
+        (set! (-> *cpad-list* num-cpads) 1) ;; Stop the engine from clearing it with hardware polls
+        
+        ;; If we are the Host (Jak), the remote player is Daxter. 
+        ;; Send native change-mode event to initialize Indax (Daxter) states and skeletons.
+        (if (mp-is-jak?)
+            (send-event *mp-puppet* 'change-mode 'indax #f)
+            )
+        )
+      )
+    )
+  *mp-puppet*
+  )

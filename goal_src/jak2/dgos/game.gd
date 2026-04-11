@@ -509,7 +509,9 @@
   "mp-enemy-debug.o" ;; added  
   "mp-enemy-hijacks.o" ;; added
   "mp-debug.o" ;; added
-  "mp-actor.o" ;; added
+  "mp-puppet.o" ;; added
+  "mp-puppet-debug.o" ;; added
+
   "mp-clock.o" ;; added
   "mp-sync-state.o" ;; added
   "mp-event-handlers.o" ;; added

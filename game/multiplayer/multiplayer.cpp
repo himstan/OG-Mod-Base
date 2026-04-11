@@ -58,15 +58,14 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
               entity.status = state->status;
               entity.x = state->x; entity.y = state->y; entity.z = state->z;
               entity.angle = state->angle;
-              entity.anim = state->anim;
-              entity.anim_frame = state->anim_frame;
-              entity.last_anim_frame = state->last_anim_frame;
+              entity.state_id = state->state_id; // Repurposed as state_id
               entity.level_hash = state->level_hash;
               entity.riding = state->riding;
-              entity.sidekick_anim = state->sidekick_anim;
-              entity.sidekick_frame = state->sidekick_frame;
-              entity.last_sidekick_frame = state->last_sidekick_frame;
               entity.clock = state->clock;
+              entity.buttons = state->buttons;
+              entity.leftx = state->leftx; entity.lefty = state->lefty;
+              entity.rightx = state->rightx; entity.righty = state->righty;
+              entity.cam_angle_y = state->cam_angle_y;
               entity.last_sequence_num = state->header.sequenceNum;
               memcpy(&entity.veh_state, &state->veh_state, sizeof(MPVehicleState));
 
@@ -197,16 +196,16 @@ void handle_packet_send(LocalPlayerInfoGOAL* local, MPEventBufferGOAL* events) {
   local_state.status = (uint8_t)gMultiplayerData.join_status;
   local_state.x = local->x; local_state.y = local->y; local_state.z = local->z;
   local_state.angle = local->angle;
-  local_state.anim = (uint16_t)local->anim;
-  local_state.anim_frame = local->anim_frame;
-  local_state.last_anim_frame = local->last_anim_frame;
+  local_state.state_id = (uint32_t)local->state_id;
   local_state.level_hash = local->level;
   local_state.riding = local->riding;
-  local_state.sidekick_anim = local->sidekick_anim;
-  local_state.sidekick_frame = local->sidekick_frame;
-  local_state.last_sidekick_frame = local->last_sidekick_frame;
   local_state.clock = local->clock;
-  local_state.money = local->money; local_state.gems = local->gems; local_state.skill = local->skill;
+  local_state.buttons = local->buttons;
+  local_state.leftx = local->leftx; local_state.lefty = local->lefty;
+  local_state.rightx = local->rightx; local_state.righty = local->righty;
+  local_state.cam_angle_y = local->cam_angle_y;
+  local_state.money = local->money;
+ local_state.gems = local->gems; local_state.skill = local->skill;
   memcpy(local_state.task_mask, local->task_mask, 64);
   memcpy(local_state.active_task_mask, local->active_task_mask, 64);
   memcpy(&local_state.veh_state, &local->veh_state, sizeof(MPVehicleState));
@@ -239,17 +238,16 @@ void sync_to_goal(RemotePlayerInfoGOAL* remote_goal) {
     remote_goal->angle = remote_state.angle;
     remote_goal->id = other_net_id;
     remote_goal->role = (int32_t)other_net_id;
-    remote_goal->anim = (int32_t)remote_state.anim;
-    remote_goal->anim_frame = remote_state.anim_frame;
-    remote_goal->last_anim_frame = remote_state.last_anim_frame;
+    remote_goal->state_id = (int32_t)remote_state.state_id; // state_id
     remote_goal->level = remote_state.level_hash;
     remote_goal->status = (remote_state.status > 0) ? (int32_t)remote_state.status : 1;
     remote_goal->packet_id = remote_state.last_sequence_num;
     remote_goal->riding = remote_state.riding;
-    remote_goal->sidekick_anim = remote_state.sidekick_anim;
-    remote_goal->sidekick_frame = remote_state.sidekick_frame;
-    remote_goal->last_sidekick_frame = remote_state.last_sidekick_frame;
     remote_goal->clock = remote_state.clock;
+    remote_goal->buttons = remote_state.buttons;
+    remote_goal->leftx = remote_state.leftx; remote_goal->lefty = remote_state.lefty;
+    remote_goal->rightx = remote_state.rightx; remote_goal->righty = remote_state.righty;
+    remote_goal->cam_angle_y = remote_state.cam_angle_y;
     memcpy(&remote_goal->veh_state, &remote_state.veh_state, sizeof(MPVehicleState));
   } else { remote_goal->status = 0; }
 }

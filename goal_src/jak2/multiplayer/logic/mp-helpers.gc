@@ -6,98 +6,6 @@
 (define-extern num-func-seek! (function joint-control-channel float float float float :behavior process))
 (define-extern num-func-none (function joint-control-channel float float float float :behavior process))
 
-(define-extern mp-anim-loops? (function art-joint-anim symbol))
-
-(defun mp-anim-loops? ((anim art-joint-anim))
-  "Determine if an animation should loop based on its name. (Authority)"
-  (if (or (not anim) (zero? anim)) (return #f))
-  (let ((name (-> anim name)))
-    (if (or (not name) (zero? name)) (return #f))
-    
-    ;; 1. Absolute Priority: If it explicitly says -loop, it loops.
-    (if (>= (string-position "-loop" name) 0) (return #t))
-
-    ;; 2. Blacklist: Transitions and one-shots. 
-    ;; We check this BEFORE the keywords below so "run-to-stance" doesn't match "run" or "stance".
-    (if (or (>= (string-position "-to-" name) 0)
-            (>= (string-position "land" name) 0)
-            (>= (string-position "jump-up" name) 0)
-            (>= (string-position "hit-" name) 0)
-            (>= (string-position "attack" name) 0)
-            (>= (string-position "death" name) 0)
-            )
-        (return #f))
-
-    ;; 3. Jak 2 Naming Conventions for standard Looping Anims:
-    (if (or (>= (string-position "walk" name) 0)
-            (>= (string-position "run" name) 0)
-            (>= (string-position "idle" name) 0)
-            (>= (string-position "stance" name) 0)
-            (>= (string-position "move" name) 0)
-            (>= (string-position "swim" name) 0)
-            (>= (string-position "skate" name) 0)
-            (>= (string-position "hover" name) 0)
-            (>= (string-position "board-ride" name) 0)
-            (>= (string-position "pilot" name) 0)
-            )
-        (return #t))
-    )
-  #f)
-
-(defun mp-calc-anim-speed ((delta-f float) (delta-c time-frame) (group-speed float))
-  "Calculate the speed multiplier for an animation based on frame and clock deltas."
-  (if (<= group-speed 0.0) (set! group-speed 1.0))
-  (let ((speed 1.0))
-    ;; 1 second of clock is 300 ticks. 1 second of anim is 60 frames.
-    ;; frames/tick = 60 / 300 = 1/5.
-    (if (and (> delta-c 0) (< delta-c (seconds 1)))
-        (set! speed (/ delta-f (* (/ (the float delta-c) 5.0) group-speed)))
-        ;; Fallback to TPS if clock is invalid
-        (let ((frames-per-packet (/ 60.0 (the float *multi-sync-tps*))))
-          (set! speed (/ delta-f (* frames-per-packet group-speed)))))
-    
-    (if (or (< speed 0.0) (> speed 10.0)) (set! speed 1.0))
-    speed))
-
-(defun mp-calc-corrected-speed ((remote-frame float) (local-frame float) (total-frames float) (base-speed float) (is-looping symbol))
-  "Calculate a speed that nudges the local frame towards the remote frame to eliminate drift."
-  (let ((err (- remote-frame local-frame)))
-    (if (<= total-frames 1.0) (return base-speed))
-    
-    ;; Auto-loop detection: IF the animation is marked as looping, 
-    ;; assume large errors are wrap-arounds.
-    (when is-looping
-      (if (> err (/ total-frames 2.0)) (set! err (- err total-frames)))
-      (if (< err (/ total-frames -2.0)) (set! err (+ err total-frames))))
-    
-    ;; Apply nudge (Gain defined in mp-types.gc)
-    (let ((res (+ (+ base-speed *mp-anim-speed-offset*) (* err *mp-anim-gain*))))
-      ;; Safety clamp: Use tuning globals
-      (if (and (> base-speed 0.0) (< res *mp-anim-min-speed*)) (set! res *mp-anim-min-speed*))
-      (if (> res *mp-anim-max-speed*) (set! res *mp-anim-max-speed*))
-      res)))
-
-(defun mp-find-dominant-anim ((proc process-drawable) (out-anim (pointer int32)) (out-frame (pointer float)))
-  "Find the animation index and frame with the highest weight in the process skeleton."
-  (let ((res-anim -1)
-        (res-frame 0.0)
-        (max-weight -1.0))
-    (when (and proc (nonzero? proc) (-> proc draw) (nonzero? (-> proc draw art-group)) (-> proc skel) (nonzero? (-> proc skel)))
-      (let ((skel (-> proc skel)))
-        (let ((limit (min (the int (-> skel active-channels)) (the int (-> skel allocated-length)))))
-          (dotimes (i limit)
-            (let ((chan (-> skel channel i)))
-              (when (and (nonzero? chan) (-> chan frame-group) (= (-> chan frame-group type) art-joint-anim))
-                (let ((weight (-> chan frame-interp 0)))
-                  (if (>= weight max-weight)
-                      (begin
-                        (set! max-weight weight)
-                        (set! res-anim (-> chan frame-group master-art-group-index))
-                        (set! res-frame (-> chan frame-num)))))))))))
-    (set! (-> out-anim 0) res-anim)
-    (set! (-> out-frame 0) res-frame))
-    (none))
-
 (defun mp-is-traffic-ready? ()
   "Is the traffic system fully initialized and ready for sync? (Client Side)"
   (and *traffic-manager*
@@ -163,6 +71,20 @@
     )
   #f)
 
+(defun mp-is-remote-attacker? ((proc process))
+  "Is the process either the remote puppet or in its parentage (e.g., projectile)?"
+  (if (or (not proc) (zero? proc)) (return #f))
+  (let ((puppet (mp-puppet-get-proc)))
+    (if (not puppet) (return #f))
+    (let ((curr proc))
+      (while (and curr (nonzero? curr))
+        (if (= curr puppet) (return #t))
+        (set! curr (if (and (-> curr parent) (nonzero? (-> curr parent))) (the-as process (ppointer->process (-> curr parent))) (the-as process #f)))
+        )
+      )
+    )
+  #f)
+
 (defun mp-get-remote-target-process ()
   (let ((rem-role (if (mp-is-jak?) 1 0)))
     (let ((remote-h (-> *local-info* player-procs rem-role)))
@@ -178,10 +100,6 @@
 (defbehavior mp-traffic-event-handler-hijack citizen ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   "Specialized event handler for traffic puppets (Citizens/Vehicles)."
   (case arg2
-    (('go-mp-puppet)
-     (go mp-puppet)
-     (return #t)
-     )
     (('traffic-off 'traffic-off-force)
      (set! (-> self net-id) (the uint 0))
      (deactivate self)
@@ -195,36 +113,6 @@
 )
 
 ;; --- Generic Puppet States ---
-
-(defstate mp-puppet (process-drawable)
-  :event (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
-    (case message
-      (('go-mp-puppet) #t)
-      (else
-        (if (type? self citizen)
-            (mp-traffic-event-handler-hijack proc argc message block)
-            )
-        )
-      )
-    )
-  :enter (behavior ()
-    (set-time! (-> self state-time))
-    )
-  :trans (behavior ()
-    ;; TODO: Handle authority hand-back (go-virtual idle)
-    )
-  :code (behavior ()
-    (until #f
-      (suspend)
-      )
-    )
-  :post (behavior ()
-    (ja-post)
-    (if (and (-> self root) (type? (-> self root) collide-shape))
-        (update-transforms (the-as collide-shape (-> self root)))
-        )
-    )
-) ;; end defstate mp-puppet
 
 (defun mp-process-entity-status-hijack ((arg0 process) (arg1 entity-perm-status) (arg2 symbol))
   ;; Detect when an entity is being marked as dead or task-complete locally

@@ -2789,7 +2789,8 @@
                  )
              (when v1-43
                (set! s1-5 #f)
-               (if (and (-> v1-43 cshape process) (type? (-> v1-43 cshape process) mp-target-proxy))
+               (if (and (-> v1-43 cshape process) (type? (-> v1-43 cshape process) target) (= (-> (the-as target (-> v1-43 cshape process)) tobot?) 'mp-puppet))
+
                    (begin
                      (format 0 "MP-LOG: Guard lightning probe hit Daxter! (Proxy: ~A)~%" (-> v1-43 cshape process name))
                      (send-event (-> v1-43 cshape process) 'attack #f (static-attack-info ((id (-> this attack-id)) (mode 'shock))))

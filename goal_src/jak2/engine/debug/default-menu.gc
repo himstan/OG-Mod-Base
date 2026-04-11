@@ -4238,6 +4238,10 @@
              (flag "Simulate Connection Loss" *mp-debug-simulate-loss?* dm-boolean-toggle-pick-func)
              )
            (menu
+             "Remote Player"
+             (flag "Puppet Sync View" *mp-puppet-debug?* dm-boolean-toggle-pick-func)
+             )
+           (menu
              "Enemies"
              (flag "Authority Debug Draw" *mp-enemy-debug-auth?* dm-boolean-toggle-pick-func)
              )

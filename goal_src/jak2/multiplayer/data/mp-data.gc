@@ -1,14 +1,6 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-(defun mp-get-anim-name ((proc process-drawable) (idx int))
-  (if (and proc (nonzero? proc) (-> proc draw) (-> proc draw art-group) (>= idx 0) (< idx (-> proc draw art-group length)))
-      (let ((name (-> proc draw art-group data idx name)))
-        (if (and name (nonzero? name))
-            name
-            "unknown"))
-      "unknown"))
-
 (defun mp-extract-local-stats ()
   "Update local info with current game stats"
   (set! (-> *local-info* money) (-> *game-info* money))
@@ -127,25 +119,23 @@
             (if (and lev-name (nonzero? lev-name))
                 (set! (-> *local-info* level) (string-crc32 (symbol->string lev-name)))))))
 
-    (let ((local-anim -1)
-          (local-frame 0.0))
-      (if (and *target* (nonzero? *target*) (-> *target* skel) (nonzero? (-> *target* skel)) (> (-> *target* skel allocated-length) 0))
-          (let ((skel (-> *target* skel)))
-            (if (mp-is-daxter?)
-                (let ((chan (-> skel channel 0)))
-                  (if (and (nonzero? chan) (-> chan frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
-                      (begin
-                        (set! local-anim (-> chan frame-group master-art-group-index))
-                        (set! local-frame (-> chan frame-num)))))
-                (begin
-                  (mp-find-dominant-anim *target* (the (pointer int32) (& local-anim)) (the (pointer float) (& local-frame)))
-                  (if (and (= local-anim -1) (> (-> skel allocated-length) 0) (-> skel channel 0 frame-group) (nonzero? (-> *target* draw)) (nonzero? (-> *target* draw art-group)))
-                      (begin
-                        (set! local-anim (-> skel channel 0 frame-group master-art-group-index))
-                        (set! local-frame (-> skel channel 0 frame-num))))))))
-      (set! (-> *local-info* last-anim-frame) (-> *local-info* anim-frame))
-      (set! (-> *local-info* anim) local-anim)
-      (set! (-> *local-info* anim-frame) local-frame)
+    (let ((local-state 0))
+      (if (and *target* (nonzero? *target*) (-> *target* state))
+          (set! local-state (the int (mp-target-get-id-from-state (-> *target* state name))))
+          )
+      (set! (-> *local-info* state-id) (the uint local-state))
       (+! (-> *local-info* packet-id) 1))
+
+    ;; --- Input Extraction ---
+    (let ((pad (-> *cpad-list* cpads 0)))
+      (set! (-> *local-info* buttons) (the-as uint (-> pad button0)))
+      (set! (-> *local-info* leftx) (-> pad leftx))
+      (set! (-> *local-info* lefty) (-> pad lefty))
+      (set! (-> *local-info* rightx) (-> pad rightx))
+      (set! (-> *local-info* righty) (-> pad righty))
+      )
+    (let ((cam-mat (-> *math-camera* inv-camera-rot)))
+      (set! (-> *local-info* cam-angle-y) (atan (-> cam-mat vector 2 x) (-> cam-mat vector 2 z)))
+      )
     )
   (none))

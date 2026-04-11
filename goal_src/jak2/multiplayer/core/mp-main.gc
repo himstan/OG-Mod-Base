@@ -130,9 +130,9 @@
     (mp-sync-clock-host)
     (mp-sync-clock-client)
     (mp-manage-remote-puppet)
-    (mp-sync-sidekick-anim)
 
     ;; Debug: Simulate connection loss (must be above sync guard)
+
     (if *mp-debug-simulate-loss?*
         (begin
           ;; If timer is 0, we just turned it ON
@@ -186,5 +186,6 @@
     (mp-draw-enemy-debug)
     (mp-draw-task-debug)
     (mp-draw-traffic-debug)
+    (mp-draw-puppet-debug)
 
     (none)))

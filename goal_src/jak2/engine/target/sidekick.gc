@@ -377,17 +377,6 @@
         (set! (-> self offset trans z) (* 409.6 f0-3))
         )
 
-      ;; MULTIPLAYER OVERRIDE
-      (if (and *local-info* (= (-> *local-info* role) 1) (= (-> *local-info* riding?) (the-as uint 1)))
-          (let ((idx (mp-sidekick-anim)))
-            (if (and (>= idx 0) (< idx (-> self draw art-group length)))
-                (let ((anim-elt (-> self draw art-group data idx)))
-                  (if (and anim-elt (nonzero? anim-elt) (= (-> anim-elt type) art-joint-anim))
-                      (let ((anim (the-as art-joint-anim anim-elt))
-                            (chan (-> self skel channel 0)))
-                        (set! (-> chan frame-group) anim)
-                        (set! (-> chan frame-num) (mp-sidekick-frame))
-                        (set! (-> chan num-func) num-func-none)))))))
 
       (update-anim-data (-> self skel))
       (when *debug-segment*

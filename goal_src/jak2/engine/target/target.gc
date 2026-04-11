@@ -47,7 +47,7 @@
 (defstate target-stance (target)
   :event target-standard-event-handler
   :enter (behavior ()
-    (if (and *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
+    (if (and (= self *target*) *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
         (go target-indax-start (the handle #f))
         )
     (set! (-> self control mod-surface) *walk-mods*)
@@ -265,7 +265,7 @@
 (defstate target-slide-down (target)
   :event target-walk-event-handler
   :enter (behavior ()
-    (if (and *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
+    (if (and (= self *target*) *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
         (go target-indax-start (the handle #f))
         )
     (set! (-> self control mod-surface) *jump-mods*)
@@ -402,7 +402,7 @@
       )
     )
   :enter (behavior ()
-    (if (and *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
+    (if (and (= self *target*) *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
           (go target-indax-start (the handle #f))
           )
     (set-time! (-> self state-time))
@@ -1722,7 +1722,7 @@
 (defstate target-hit-ground (target)
   :event target-walk-event-handler
   :enter (behavior ((arg0 symbol))
-    (if (and *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
+    (if (and (= self *target*) *local-info* (= (-> *local-info* role) 1) (not (focus-test? self indax)))
         (go target-indax-start (the handle #f))
         )
     (set! (-> self control turn-go-the-long-way) 0.0)
