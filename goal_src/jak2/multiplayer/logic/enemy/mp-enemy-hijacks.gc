@@ -238,6 +238,12 @@
      )
     (('attack)
      ;; --- TOP LEVEL THROTTLING ---
+     (let ((puppet (mp-puppet-get-proc)))
+      (when (= arg0 puppet)
+        (return #f)
+      )
+     )
+     
      (let ((aid (mp-get-enemy-aid this)))
        (when (nonzero? aid)
          (let ((rec (mp-get-enemy-auth aid))

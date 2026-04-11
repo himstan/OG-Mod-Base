@@ -238,6 +238,15 @@
       (matrix-rotate-y! (-> proc control cam-R-w) (-> ghost cam-angle-y))
       ;; Prevent the target state machine from overwriting this with the local camera.
       (set! (-> proc control update-cam-R-w-start-time) (the-as int64 #x7fffffffffffffff))
+
+      ;; 5. Mode Sync (Ensuring puppet stays in Indax if we are Host)
+      ;; Force Indax mode if we are Host (Jak) and the puppet is NOT in Indax mode (and not loading/teleporting).
+      (when (and (mp-is-jak?)
+                 (not (logtest? (-> proc focus-status) (focus-status indax)))
+                 (not (logtest? (-> proc focus-status) (focus-status teleporting)))
+                 (not (and (-> proc next-state) (= (-> proc next-state name) 'target-load-wait))))
+        (send-event proc 'change-mode 'indax #f)
+        )
       )
     )
   (none)

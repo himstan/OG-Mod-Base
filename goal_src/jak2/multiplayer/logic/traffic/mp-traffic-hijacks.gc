@@ -252,6 +252,12 @@
   (case arg2
     (('attack)
      ;; --- TOP LEVEL THROTTLING ---
+     (let ((puppet (mp-puppet-get-proc)))
+      (when (= arg0 puppet)
+        (return #f)
+      )
+     )
+     
      (let ((net-id (-> this net-id)))
        (when (nonzero? net-id)
          (let ((rec (mp-get-traffic-ghost net-id))
