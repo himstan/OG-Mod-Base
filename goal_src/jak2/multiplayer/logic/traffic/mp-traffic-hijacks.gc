@@ -138,6 +138,12 @@
           (quaternion-slerp! (-> veh root quat) (-> veh root quat) (-> rec ghost-quat) 0.1)
           ;; Angular velocity: blend toward ghost to reduce spin artifacts
           (vector-lerp! (-> veh rbody state ang-velocity) (-> veh rbody state ang-velocity) (-> rec ghost-angvel) 0.15)
+
+          ;; CRITICAL: Ensure rbody state is kept in sync with the root even if integration is disabled
+          (when (not (mp-vehicle-is-local-authoritative? veh))
+            (vector-copy! (-> veh rbody state position) (-> veh root trans))
+            (quaternion-copy! (-> veh rbody state rotation) (-> veh root quat))
+            )
           )
         )
       )

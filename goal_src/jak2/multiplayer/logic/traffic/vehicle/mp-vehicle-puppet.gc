@@ -8,6 +8,30 @@
 (define *old-vehicle-method-121* (the-as (function vehicle none) #f))
 (define *old-vehicle-method-122* (the-as (function vehicle none) #f))
 (define *old-vehicle-method-123* (the-as (function vehicle none) #f))
+(define *old-vehicle-method-105* (the-as (function vehicle symbol) #f))
+(define *old-vehicle-method-51* (the-as (function vehicle none) #f))
+(define *old-vehicle-method-52* (the-as (function vehicle none) #f))
+
+(defun mp-vehicle-is-local-authoritative? ((veh vehicle))
+  "Check if the local machine has authority over this vehicle's physics.
+   If it's in player-control but we aren't driving, it belongs to the remote player."
+  (let ((flags (-> veh flags)))
+    (cond
+      ;; 1. Local machine is driving: We ARE authoritative.
+      ((logtest? flags (rigid-body-object-flag player-driving))
+       #t)
+      
+      ;; 2. Is it in the 'player-control' state but we aren't driving?
+      ;; This means someone else (the remote player) is driving.
+      ((= (mp-veh-get-state-id veh) (the uint (mp-veh-state-id player-control)))
+       #f)
+       
+      ;; 3. Ambient traffic: Only the Host (Jak) is authoritative.
+      (else
+       (mp-is-traffic-authoritative?))
+      )
+    )
+)
 
 (defun mp-vehicle-find-by-net-id ((net-id uint))
   (let ((found-proc (the-as vehicle #f)))
@@ -130,7 +154,29 @@
       (set! (-> rec last-seen) (current-time))
       )
     )
-  ;; 3. Sync riders
+
+  ;; 3. Force Rider Sync: If in player-control but driver seat is empty, force the remote puppet in.
+  (when (= (-> slot state-id) (the uint (mp-veh-state-id player-control)))
+    (let ((pilot (get-rider-in-seat proc 0)))
+      (when (not pilot)
+        ;; Seat 0 (pilot) is empty. Force the puppet in.
+        (when (and *mp-puppet* (not (focus-test? *mp-puppet* dead inactive)))
+           (let ((params (new 'stack 'traffic-object-spawn-params)))
+             (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
+             (set! (-> params behavior) (the uint64 0))
+             (set! (-> params id) (the uint32 0))
+             (set! (-> params proc) *mp-puppet*)
+             (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
+             (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
+             (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
+             (vehicle-method-137 proc params)
+             )
+           )
+        )
+      )
+    )
+
+  ;; 4. Sync riders (ambient)
   (mp-vehicle-update-riders proc slot)
   (none)
   )
@@ -277,6 +323,23 @@
 
     ;; Apply ghost P-controller: nudge rbody velocity toward authoritative position
     (mp-vehicle-apply-ghost-correction this)
+
+    ;; CRITICAL: Even if not authoritative, we MUST call method-121 to update the 
+    ;; collision grid, or players will fall through the vehicle.
+    ;; We use the old method pointer to avoid infinite recursion with our hijack.
+    (when (not (logtest? (-> this rbody state flags) (rigid-body-flag enable-physics)))
+      (if *old-vehicle-method-121* (*old-vehicle-method-121* this))
+      )
+
+    ;; EXTRA STABILITY: If not authoritative, kill all momentum.
+    ;; This ensures that local collisions (which we still want for player solidness)
+    ;; never actually move the vehicle's rigid body.
+    (let ((rb (-> this rbody state)))
+      (vector-reset! (-> rb lin-momentum))
+      (vector-reset! (-> rb ang-momentum))
+      (vector-reset! (-> rb lin-velocity))
+      (vector-reset! (-> rb ang-velocity))
+      )
     )
   (none)
   )
@@ -301,6 +364,27 @@
   (mp-vehicle-common-post-sync this)
   (none))
 
+(defun mp-vehicle-method-105-hijack ((this vehicle))
+  (if (mp-vehicle-is-local-authoritative? this)
+      (if *old-vehicle-method-105* (*old-vehicle-method-105* this) #f)
+      #f
+      )
+  )
+
+(defun mp-vehicle-method-51-hijack ((this vehicle))
+  (if (mp-vehicle-is-local-authoritative? this)
+      (if *old-vehicle-method-51* (*old-vehicle-method-51* this))
+      )
+  (none)
+  )
+
+(defun mp-vehicle-method-52-hijack ((this vehicle))
+  (if (mp-vehicle-is-local-authoritative? this)
+      (if *old-vehicle-method-52* (*old-vehicle-method-52* this))
+      )
+  (none)
+  )
+
 (define *mp-vehicle-subtypes-patched* #f)
 
 (defun mp-vehicle-apply-hijacks ()
@@ -308,6 +392,9 @@
         (m121-id (the int 121))
         (m122-id (the int 122))
         (m123-id (the int 123))
+        (m105-id (the int 105))
+        (m51-id (the int 51))
+        (m52-id (the int 52))
         (m46-id (method-id-of-type vehicle rigid-body-object-method-46))
         (evhnd-hijack (lambda ((this vehicle) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
                         (mp-vehicle-event-handler-hijack arg0 arg1 arg2 arg3))))
@@ -319,7 +406,10 @@
     (let ((cur-m120 (method-of-type vehicle vehicle-method-120))
           (cur-m121 (method-of-type vehicle vehicle-method-121))
           (cur-m122 (method-of-type vehicle vehicle-method-122))
-          (cur-m123 (method-of-type vehicle vehicle-method-123)))
+          (cur-m123 (method-of-type vehicle vehicle-method-123))
+          (cur-m105 (method-of-type vehicle vehicle-method-105))
+          (cur-m51 (method-of-type vehicle rigid-body-object-method-51))
+          (cur-m52 (method-of-type vehicle rigid-body-object-method-52)))
       
       (when (!= cur-m120 mp-vehicle-method-120-hijack)
         (set! *old-vehicle-method-120* (the-as (function vehicle none) cur-m120))
@@ -336,6 +426,18 @@
       (when (!= cur-m123 mp-vehicle-method-123-hijack)
         (set! *old-vehicle-method-123* (the-as (function vehicle none) cur-m123))
         (method-set! vehicle m123-id mp-vehicle-method-123-hijack))
+
+      (when (!= cur-m105 mp-vehicle-method-105-hijack)
+        (set! *old-vehicle-method-105* (the-as (function vehicle symbol) cur-m105))
+        (method-set! vehicle m105-id mp-vehicle-method-105-hijack))
+
+      (when (!= cur-m51 mp-vehicle-method-51-hijack)
+        (set! *old-vehicle-method-51* (the-as (function vehicle none) cur-m51))
+        (method-set! vehicle m51-id mp-vehicle-method-51-hijack))
+
+      (when (!= cur-m52 mp-vehicle-method-52-hijack)
+        (set! *old-vehicle-method-52* (the-as (function vehicle none) cur-m52))
+        (method-set! vehicle m52-id mp-vehicle-method-52-hijack))
       )
 
     ;; Phase 2: patch subtypes (defined in cwi.gd and loaded later)
@@ -355,6 +457,9 @@
               (method-set! t m121-id mp-vehicle-method-121-hijack)
               (method-set! t m122-id mp-vehicle-method-122-hijack)
               (method-set! t m123-id mp-vehicle-method-123-hijack)
+              (method-set! t m105-id mp-vehicle-method-105-hijack)
+              (method-set! t m51-id mp-vehicle-method-51-hijack)
+              (method-set! t m52-id mp-vehicle-method-52-hijack)
               (method-set! t m46-id evhnd-hijack)
               )
             )
