@@ -1163,7 +1163,7 @@
       (set! (-> this turret inaccuracy) 0.0)
       (turret-control-method-9 (-> this turret) this (-> v1-0 rv) (-> v1-0 up))
       )
-    (when (cpad-hold? 0 r1)
+    (when (cpad-hold? (-> this pad-index) r1)
       (when (time-elapsed? (-> this turret shoot-time) (seconds 0.35))
         (set! (-> this turret owner-handle) (process->handle *target*))
         (turret-control-method-17 (-> this turret) this)

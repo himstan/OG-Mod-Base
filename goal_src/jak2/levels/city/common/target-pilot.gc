@@ -201,7 +201,8 @@
     (set! (-> s5-0 backup-nav-radius) (-> self control nav-radius))
     (set! (-> s5-0 gun?) #t)
     (set! (-> s5-0 enable-cam-side-shift) #f)
-    (set! (-> s5-0 as-daxter?) arg1)
+    ;; og:preserve-this Automatically detect Daxter mode for puppets/remote clients
+    (set! (-> s5-0 as-daxter?) (or arg1 (and (= self *mp-puppet*) (focus-test? self indax))))
     (set! (-> s5-0 entity) #f)
     (set! (-> s5-0 cam-side-shift) 0.0)
     (if (-> self pilot as-daxter?)

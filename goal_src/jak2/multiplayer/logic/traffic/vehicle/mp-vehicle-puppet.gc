@@ -11,20 +11,78 @@
 (define *old-vehicle-method-105* (the-as (function vehicle symbol) #f))
 (define *old-vehicle-method-51* (the-as (function vehicle none) #f))
 (define *old-vehicle-method-52* (the-as (function vehicle none) #f))
+(define *old-vehicle-method-94* (the-as (function vehicle none) #f))
+(define *old-vehicle-method-87* (the-as (function vehicle none) #f))
+(define *old-vehicle-enable-bike-mode* (the-as (function vehicle none) #f))
+(define *old-vehicle-enable-rapid-camera* (the-as (function vehicle none) #f))
+
+;; Global handle to the vehicle currently being driven by the remote puppet.
+;; Using a handle is memory-safe; it resolves to #f if the vehicle is deactivated.
+(define *mp-remote-driven-vehicle* (the-as handle #f))
+
+(defun mp-vehicle-get-pad-index ((this vehicle))
+  "Returns 0 for local player, 1 for remote puppet."
+  (let ((pilot (get-rider-in-seat this 0)))
+    (if (and pilot (= pilot *mp-puppet*))
+        1
+        0
+        )
+    )
+  )
+
+(defun mp-vehicle-method-94-hijack ((this vehicle))
+  "Unified input hijack for all vehicle types. Redirects to pad 1 if a puppet is driving."
+  (let ((pad-idx (mp-vehicle-get-pad-index this)))
+    (if (= pad-idx 1)
+        ;; Puppet is driving: implement generic vehicle control
+        (let ((pad (-> *cpad-list* cpads 1)))
+          ;; 1. Standard Controls (Throttle, Steering, Brake, Lean)
+          (let ((s5-0 (new 'stack-no-clear 'vector)))
+            (set! (-> s5-0 x) (analog-input (the-as int (-> pad leftx)) 128.0 48.0 110.0 -1.0))
+            (set! (-> s5-0 w) (analog-input (the-as int (-> pad lefty)) 128.0 48.0 110.0 -1.0))
+            (set! (-> s5-0 y) (fmin 1.0 (* 0.023529412 (the float (-> pad abutton (abutton-idx x))))))
+            (set! (-> s5-0 z) (fmin 1.0 (* 0.023529412 (the float (-> pad abutton (abutton-idx square))))))
+            (vehicle-method-95 this (the-as vector (&-> s5-0 x)))
+            )
+          ;; 2. Zone Switching (R2)
+          (when (and (cpad-pressed? 1 r2) (not *pause-lock*))
+            (if (zero? (-> this flight-level-index)) (switch-zone-high! this) (switch-zone-low! this))
+            )
+          ;; 3. Jumping (L1 / R1)
+          (if (or (cpad-hold? 1 l1) (and (logtest? (-> this info flags) 512) (cpad-hold? 1 r1)))
+              (start-jump this)
+              )
+          ;; 4. Horn/Method-66 (Circle)
+          (if (cpad-pressed? 1 circle) (vehicle-method-66 this))
+          )
+        ;; Local Player or AI: Call the original method
+        (cond
+          (*old-vehicle-method-94*
+           (*old-vehicle-method-94* this)
+           )
+          )
+        )
+    )
+  (none)
+  )
 
 (defun mp-vehicle-is-local-authoritative? ((veh vehicle))
-  "Check if the local machine has authority over this vehicle's physics.
-   If it's in player-control but we aren't driving, it belongs to the remote player."
+  "Check if the local machine has authority over this vehicle's physics."
   (let ((flags (-> veh flags)))
     (cond
-      ;; 1. Local machine is driving: We ARE authoritative.
+      ;; 1. Is a remote puppet in the driver seat?
+      ;; Robust check: use global pointer or direct seat check or net-id
+      ((or (= veh (handle->process *mp-remote-driven-vehicle*))
+           (let ((pilot (get-rider-in-seat veh 0)))
+             (and pilot (= pilot *mp-puppet*))
+             )
+           (and (nonzero? (-> veh net-id)) (= (-> veh net-id) (-> *remote-info* veh-state net-id)))
+           )
+       #f)
+
+      ;; 2. Local machine is driving: We ARE authoritative.
       ((logtest? flags (rigid-body-object-flag player-driving))
        #t)
-      
-      ;; 2. Is it in the 'player-control' state but we aren't driving?
-      ;; This means someone else (the remote player) is driving.
-      ((= (mp-veh-get-state-id veh) (the uint (mp-veh-state-id player-control)))
-       #f)
        
       ;; 3. Ambient traffic: Only the Host (Jak) is authoritative.
       (else
@@ -33,13 +91,26 @@
     )
 )
 
+(defun mp-should-apply-vehicle-camera? ((veh vehicle))
+  "Returns #t if the local camera should follow this vehicle."
+  (cond
+    ;; 1. Local player is driving (target is in seat 0)
+    ((let ((pilot (get-rider-in-seat veh 0)))
+       (and pilot (= pilot *target*)))
+     #t)
+    ;; Default fallback to physics authority (ambient traffic)
+    (else
+     (mp-vehicle-is-local-authoritative? veh))
+    )
+  )
+
 (defun mp-vehicle-find-by-net-id ((net-id uint))
   (let ((found-proc (the-as vehicle #f)))
-    (when *traffic-manager*
+    (when (and *traffic-manager* (nonzero? net-id))
       (let ((curr (-> *traffic-manager* child)))
         (while (and curr (nonzero? curr))
           (let ((proc (ppointer->process curr)))
-            (when (and (type? proc vehicle) (= (-> (the-as vehicle proc) net-id) net-id))
+            (when (and proc (type? proc vehicle) (= (-> (the-as vehicle proc) net-id) net-id))
               (set! found-proc (the-as vehicle proc))
               (set! curr (the-as (pointer process-tree) #f))
               )
@@ -74,7 +145,10 @@
         (set-vector! (-> params velocity) 0.0 0.0 0.0 1.0)
 
         ;; CRITICAL: Give it a dummy branch to prevent vehicle-guard from crashing immediately in 'active' enter
-        (when (and *traffic-engine* (nonzero? (-> *traffic-engine* level-data-array 0 city-info)))
+        ;; ADDED: Check level-data-array and city-info
+        (when (and *traffic-engine* 
+                   (nonzero? (-> *traffic-engine* level-data-array))
+                   (nonzero? (-> *traffic-engine* level-data-array 0 city-info)))
           (let ((graph (-> *traffic-engine* level-data-array 0 city-info nav-graph)))
             (when (and graph (nonzero? graph) (> (-> graph branch-count) 0))
               (set! (-> params nav-branch) (-> graph branch-array 0))
@@ -123,18 +197,28 @@
          )
         ((and (not host-has-rider) client-rider-proc)
          ;; Host has no rider but client does — remove it
-         (send-event client-rider-proc 'rider-off)
-         (deactivate client-rider-proc)
+         ;; ADDED: process validity check
+         (when (and client-rider-proc (nonzero? client-rider-proc) 
+                    (not (logtest? (-> client-rider-proc mask) (process-mask sleep)))
+                    (!= (-> client-rider-proc status) 'dead))
+            (send-event client-rider-proc 'rider-off)
+            (if (type? client-rider-proc vehicle-rider)
+                (deactivate client-rider-proc)
+                )
+            )
          (set! (-> proc rider-array i) (the-as handle #f))
          )
         )
       )
     )
   (none)
-  )
+)
 
 (defun mp-vehicle-apply-ghost-state ((proc vehicle) (slot mp-vehicle-state))
   "Update the ghost record for a vehicle from the latest remote data."
+  ;; ADDED: Guard proc existence
+  (if (not (and proc (nonzero? proc))) (return #f))
+
   ;; 1. Find or allocate ghost record
   (let ((rec (mp-get-traffic-ghost (-> slot net-id))))
     (when (not rec)
@@ -155,25 +239,70 @@
       )
     )
 
-  ;; 3. Force Rider Sync: If in player-control but driver seat is empty, force the remote puppet in.
-  (when (= (-> slot state-id) (the uint (mp-veh-state-id player-control)))
-    (let ((pilot (get-rider-in-seat proc 0)))
-      (when (not pilot)
-        ;; Seat 0 (pilot) is empty. Force the puppet in.
-        (when (and *mp-puppet* (not (focus-test? *mp-puppet* dead inactive)))
-           (let ((params (new 'stack 'traffic-object-spawn-params)))
-             (set! (-> params object-type) (the-as traffic-type (-> slot vehicle-type)))
-             (set! (-> params behavior) (the uint64 0))
-             (set! (-> params id) (the uint32 0))
-             (set! (-> params proc) *mp-puppet*)
-             (set! (-> params flags) (traffic-spawn-flags trsflags-00 trsflags-01))
-             (set-vector! (-> params position) (-> slot x) (-> slot y) (-> slot z) 1.0)
-             (quaternion-set! (-> params rotation) (-> slot quat-x) (-> slot quat-y) (-> slot quat-z) (-> slot quat-w))
-             (vehicle-method-137 proc params)
+  ;; Unpack and apply flight level
+  (if (logtest? (-> slot state-flags) 2)
+      (switch-zone-high! proc)
+      (switch-zone-low! proc)
+      )
+
+  ;; 3. Force Rider Sync: If in player-control, ensure the puppet is in the driver seat.
+  (cond
+    ((= (-> slot state-id) (the uint (mp-veh-state-id player-control)))
+     (let ((pilot (get-rider-in-seat proc 0)))
+       (when (and pilot (!= pilot *mp-puppet*) (!= pilot *target*))
+         (if (mp-is-jak?)
+             ;; Remote player is Daxter. Daxter rides on the driver's shoulder, so do NOT eject them!
+             ;; We just keep the NPC in seat 0.
+             (none)
+             ;; Remote player is Jak. Jak physically kicks the driver out!
+             (begin
+               (send-event pilot 'rider-off)
+               (if (type? pilot vehicle-rider)
+                   (deactivate pilot)
+                   )
+               (set! (-> proc rider-array 0) (the-as handle #f))
+               )
+             )
+         )
+
+       ;; Ensure the remote puppet enters the piloting state visually
+       ;; Pass #t as param 3 to skip get-on animations and go straight to stance loop.
+       (let ((is-already-pilot? (and (focus-test? *mp-puppet* pilot) 
+                                     (nonzero? (-> *mp-puppet* pilot))
+                                     (= (handle->process (-> *mp-puppet* pilot vehicle)) proc))))
+         (when (and *mp-puppet* (not (focus-test? *mp-puppet* dead inactive)) (not is-already-pilot?))
+           ;; NEVER hijack a vehicle the local player is currently driving!
+           (when (not (let ((local-pilot (get-rider-in-seat proc 0))) (and local-pilot (= local-pilot *target*))))
+             (if (mp-is-jak?)
+                 (send-event *mp-puppet* 'change-mode 'pilot-daxter proc 0 #t)
+                 (send-event *mp-puppet* 'change-mode 'pilot proc 0 #t)
+                 )
              )
            )
-        )
-      )
+         )
+
+       ;; If we successfully cleared seat 0 (or it was already empty), put the puppet in it physically
+       ;; Again, NEVER put the puppet in if the local player is there.
+       (when (not (get-rider-in-seat proc 0))
+         (put-rider-in-seat proc 0 *mp-puppet*)
+         )
+       )
+     ;; CRITICAL: Re-enforce persistence masks EVERY frame while driven
+     (logior! (-> proc flags) (rigid-body-object-flag persistent))
+     (logclear! (-> proc mask) (process-mask pause sleep actor-pause))
+     )
+    (else
+     ;; Remote machine is NOT in player-control. 
+     ;; If *mp-puppet* is still our pilot, eject it.
+     (let ((pilot (get-rider-in-seat proc 0)))
+       (when (and pilot (= pilot *mp-puppet*))
+         (send-event pilot 'change-mode 'normal)
+         (set! (-> proc rider-array 0) (the-as handle #f))
+         ;; Allow vehicle to be culled naturally again
+         (logclear! (-> proc flags) (rigid-body-object-flag persistent))
+         )
+       )
+     )
     )
 
   ;; 4. Sync riders (ambient)
@@ -182,15 +311,48 @@
   )
 
 (defun mp-vehicle-apply-piggyback ()
-  (let ((driven-net-id (-> *remote-info* veh-state net-id)))
+  (let ((driven-net-id (-> *remote-info* veh-state net-id))
+        (old-veh (handle->process *mp-remote-driven-vehicle*)))
+
+    ;; If the remote player stopped driving a vehicle we were tracking
+    ;; Or if the old vehicle was culled/destroyed
+    (when (and (nonzero? *mp-remote-driven-vehicle*) 
+               (or (not old-veh) (!= driven-net-id (-> (the-as vehicle old-veh) net-id))))
+      
+      (when (and old-veh (nonzero? old-veh))
+        (let ((v-proc (the-as vehicle old-veh)))
+          ;; Only release it if it's still stuck in player-control
+          ;; and only if the local player is NOT the one driving it now!
+          (when (and (-> v-proc state) (= (-> v-proc state name) 'player-control))
+            (let ((current-pilot (get-rider-in-seat v-proc 0)))
+              (when (!= current-pilot *target*)
+                (if current-pilot
+                    (send-event v-proc 'change-state 'active)
+                    (send-event v-proc 'change-state 'waiting)
+                    )
+                )
+              )
+            )
+          )
+        )
+      (set! *mp-remote-driven-vehicle* (the-as handle #f))
+      )
+
     ;; Handle the vehicle being driven by the remote player (highest priority)
     (when (nonzero? driven-net-id)
       (let ((proc (mp-vehicle-find-by-net-id driven-net-id)))
-        (if proc
-            (if (<= (-> *remote-info* veh-state state-id) 2)
-                (send-event proc 'traffic-off-force)
-                (mp-vehicle-apply-ghost-state proc (-> *remote-info* veh-state))
-                )
+        (if (and proc (nonzero? proc))
+            (begin
+              (set! *mp-remote-driven-vehicle* (process->handle proc))
+              ;; FAILSAFE: Ensure the process is never culled or dormantized
+              (logior! (-> proc flags) (rigid-body-object-flag persistent))
+              (logclear! (-> proc mask) (process-mask pause sleep actor-pause))
+              
+              (if (<= (-> *remote-info* veh-state state-id) 2)
+                  (send-event proc 'traffic-off-force)
+                  (mp-vehicle-apply-ghost-state proc (-> *remote-info* veh-state))
+                  )
+              )
             ;; SPAWN it if it's missing! (e.g. Host hijacked it before it reached our buffer)
             (when (> (-> *remote-info* veh-state state-id) 2)
               (format 0 "[MP-Traffic] Missing driven vehicle ~D! Spawning...~%" driven-net-id)
@@ -198,6 +360,9 @@
               )
             )
         )
+      )
+    (when (zero? driven-net-id)
+      (set! *mp-remote-driven-vehicle* (the-as handle #f))
       )
     )
   (none)
@@ -213,7 +378,7 @@
       (let ((slot (-> *mp-traffic-buffer* veh-enemies i)))
         (when (and (nonzero? (-> slot net-id)) (!= (-> slot net-id) driven-net-id) (!= (-> slot net-id) local-driven-net-id))
           (let ((proc (mp-vehicle-find-by-net-id (-> slot net-id))))
-            (if proc
+            (if (and proc (nonzero? proc))
                 (if (<= (-> slot state-id) 2)
                     (send-event proc 'traffic-off-force)
                     (mp-vehicle-apply-ghost-state proc slot)
@@ -233,7 +398,7 @@
       (while (and curr (nonzero? curr))
         (let ((proc (ppointer->process curr)))
           (let ((next-ptr (-> curr 0 brother)))
-            (when (and (type? proc vehicle) (nonzero? (-> (the-as vehicle proc) net-id)))
+            (when (and proc (type? proc vehicle) (nonzero? (-> (the-as vehicle proc) net-id)))
               (let ((found-in-buffer? #f)
                     (v-net-id (-> (the-as vehicle proc) net-id)))
                 (if (or (= v-net-id driven-net-id) (= v-net-id local-driven-net-id))
@@ -262,6 +427,17 @@
 ;; --- Hijacks ---
 
 (defbehavior mp-vehicle-event-handler-hijack vehicle ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
+  (let ((v-net-id (-> self net-id)))
+    (when (and (nonzero? v-net-id) (= v-net-id (-> *remote-info* veh-state net-id)))
+      ;; If this is the remote player's vehicle, ignore damage events from local machine
+      (case arg2
+        (('attack 'touch 'impulse)
+         (return #f)
+         )
+        )
+      )
+    )
+
   (case arg2
     (('traffic-off 'traffic-off-force)
      (let ((v-net-id (-> self net-id)))
@@ -285,7 +461,13 @@
 
 (defun mp-vehicle-common-post-sync ((this vehicle))
   "Unified synchronization logic for all vehicle post-processing methods."
-  (when (and (not (mp-is-traffic-authoritative?))
+  ;; Guard this
+  (if (not (and this (nonzero? this))) (return #f))
+
+  ;; RESET NUDGE FLAG (for debug visualization)
+  (set! (-> this pad-bytes 0) (the uint8 0))
+
+  (when (and (not (mp-vehicle-is-local-authoritative? this))
              (nonzero? (-> this net-id)))
     
     ;; State sync: read desired state from ghost record, transition if desynced.
@@ -293,7 +475,7 @@
       (when rec
         (let ((target-sym (mp-veh-get-state-from-id (the uint (-> rec ghost-state-id)))))
           
-          (when (and target-sym (!= (if (-> this state) (-> this state name) #f) target-sym))
+          (when (and target-sym (-> this state) (!= (-> this state name) target-sym))
             (let ((st (the-as state #f)))
               (case target-sym
                 (('active) (set! st (method-of-object this active)))
@@ -327,22 +509,25 @@
     ;; CRITICAL: Even if not authoritative, we MUST call method-121 to update the 
     ;; collision grid, or players will fall through the vehicle.
     ;; We use the old method pointer to avoid infinite recursion with our hijack.
-    (when (not (logtest? (-> this rbody state flags) (rigid-body-flag enable-physics)))
+    (when (and (-> this rbody) (not (logtest? (-> this rbody state flags) (rigid-body-flag enable-physics))))
       (if *old-vehicle-method-121* (*old-vehicle-method-121* this))
       )
 
     ;; EXTRA STABILITY: If not authoritative, kill all momentum.
-    ;; This ensures that local collisions (which we still want for player solidness)
-    ;; never actually move the vehicle's rigid body.
-    (let ((rb (-> this rbody state)))
-      (vector-reset! (-> rb lin-momentum))
-      (vector-reset! (-> rb ang-momentum))
-      (vector-reset! (-> rb lin-velocity))
-      (vector-reset! (-> rb ang-velocity))
+    ;; We SKIP this if in player-control, so the local physics can run (driving exhaust/sounds).
+    (when (and (-> this state) (!= (-> this state name) 'player-control))
+      (let ((rb (-> this rbody state)))
+        (when rb
+          (vector-reset! (-> rb lin-momentum))
+          (vector-reset! (-> rb ang-momentum))
+          (vector-reset! (-> rb lin-velocity))
+          (vector-reset! (-> rb ang-velocity))
+          )
+        )
       )
     )
   (none)
-  )
+)
 
 (defun mp-vehicle-method-120-hijack ((this vehicle))
   (if *old-vehicle-method-120* (*old-vehicle-method-120* this))
@@ -372,15 +557,32 @@
   )
 
 (defun mp-vehicle-method-51-hijack ((this vehicle))
-  (if (mp-vehicle-is-local-authoritative? this)
-      (if *old-vehicle-method-51* (*old-vehicle-method-51* this))
-      )
+  (if *old-vehicle-method-51* (*old-vehicle-method-51* this))
   (none)
   )
 
 (defun mp-vehicle-method-52-hijack ((this vehicle))
-  (if (mp-vehicle-is-local-authoritative? this)
-      (if *old-vehicle-method-52* (*old-vehicle-method-52* this))
+  (if *old-vehicle-method-52* (*old-vehicle-method-52* this))
+  (none)
+  )
+
+(defun mp-vehicle-method-87-hijack ((this vehicle))
+  (if (mp-should-apply-vehicle-camera? this)
+      (if *old-vehicle-method-87* (*old-vehicle-method-87* this))
+      )
+  (none)
+  )
+
+(defun mp-vehicle-enable-bike-mode-hijack ((this vehicle))
+  (if (mp-should-apply-vehicle-camera? this)
+      (if *old-vehicle-enable-bike-mode* (*old-vehicle-enable-bike-mode* this))
+      )
+  (none)
+  )
+
+(defun mp-vehicle-enable-rapid-camera-hijack ((this vehicle))
+  (if (mp-should-apply-vehicle-camera? this)
+      (if *old-vehicle-enable-rapid-camera* (*old-vehicle-enable-rapid-camera* this))
       )
   (none)
   )
@@ -388,13 +590,17 @@
 (define *mp-vehicle-subtypes-patched* #f)
 
 (defun mp-vehicle-apply-hijacks ()
-  (let ((m120-id (the int 120))
+  (let ((m94-id (the int 94))
+        (m120-id (the int 120))
         (m121-id (the int 121))
         (m122-id (the int 122))
         (m123-id (the int 123))
         (m105-id (the int 105))
         (m51-id (the int 51))
         (m52-id (the int 52))
+        (m87-id (method-id-of-type vehicle vehicle-method-87))
+        (ebm-id (method-id-of-type vehicle enable-bike-mode))
+        (erc-id (method-id-of-type vehicle enable-rapid-camera-tracking))
         (m46-id (method-id-of-type vehicle rigid-body-object-method-46))
         (evhnd-hijack (lambda ((this vehicle) (arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
                         (mp-vehicle-event-handler-hijack arg0 arg1 arg2 arg3))))
@@ -403,13 +609,21 @@
       (set! *old-vehicle-event-handler* (the-as (function vehicle process int symbol event-message-block object) (method-of-type vehicle rigid-body-object-method-46)))
       (method-set! vehicle m46-id evhnd-hijack))
     
-    (let ((cur-m120 (method-of-type vehicle vehicle-method-120))
+    (let ((cur-m94 (method-of-type vehicle vehicle-method-94))
+          (cur-m120 (method-of-type vehicle vehicle-method-120))
           (cur-m121 (method-of-type vehicle vehicle-method-121))
           (cur-m122 (method-of-type vehicle vehicle-method-122))
           (cur-m123 (method-of-type vehicle vehicle-method-123))
           (cur-m105 (method-of-type vehicle vehicle-method-105))
           (cur-m51 (method-of-type vehicle rigid-body-object-method-51))
-          (cur-m52 (method-of-type vehicle rigid-body-object-method-52)))
+          (cur-m52 (method-of-type vehicle rigid-body-object-method-52))
+          (cur-m87 (method-of-type vehicle vehicle-method-87))
+          (cur-ebm (method-of-type vehicle enable-bike-mode))
+          (cur-erc (method-of-type vehicle enable-rapid-camera-tracking)))
+
+      (when (!= cur-m94 mp-vehicle-method-94-hijack)
+        (set! *old-vehicle-method-94* (the-as (function vehicle none) cur-m94))
+        (method-set! vehicle m94-id mp-vehicle-method-94-hijack))
       
       (when (!= cur-m120 mp-vehicle-method-120-hijack)
         (set! *old-vehicle-method-120* (the-as (function vehicle none) cur-m120))
@@ -438,6 +652,18 @@
       (when (!= cur-m52 mp-vehicle-method-52-hijack)
         (set! *old-vehicle-method-52* (the-as (function vehicle none) cur-m52))
         (method-set! vehicle m52-id mp-vehicle-method-52-hijack))
+
+      (when (!= cur-m87 mp-vehicle-method-87-hijack)
+        (set! *old-vehicle-method-87* (the-as (function vehicle none) cur-m87))
+        (method-set! vehicle m87-id mp-vehicle-method-87-hijack))
+
+      (when (!= cur-ebm mp-vehicle-enable-bike-mode-hijack)
+        (set! *old-vehicle-enable-bike-mode* (the-as (function vehicle none) cur-ebm))
+        (method-set! vehicle ebm-id mp-vehicle-enable-bike-mode-hijack))
+
+      (when (!= cur-erc mp-vehicle-enable-rapid-camera-hijack)
+        (set! *old-vehicle-enable-rapid-camera* (the-as (function vehicle none) cur-erc))
+        (method-set! vehicle erc-id mp-vehicle-enable-rapid-camera-hijack))
       )
 
     ;; Phase 2: patch subtypes (defined in cwi.gd and loaded later)
@@ -453,6 +679,7 @@
                      ((9) test-bike) ((10) test-car)
                      (else (the-as type #f)))))
             (when (and t (nonzero? t))
+              (method-set! t m94-id mp-vehicle-method-94-hijack)
               (method-set! t m120-id mp-vehicle-method-120-hijack)
               (method-set! t m121-id mp-vehicle-method-121-hijack)
               (method-set! t m122-id mp-vehicle-method-122-hijack)
@@ -460,6 +687,9 @@
               (method-set! t m105-id mp-vehicle-method-105-hijack)
               (method-set! t m51-id mp-vehicle-method-51-hijack)
               (method-set! t m52-id mp-vehicle-method-52-hijack)
+              (method-set! t m87-id mp-vehicle-method-87-hijack)
+              (method-set! t ebm-id mp-vehicle-enable-bike-mode-hijack)
+              (method-set! t erc-id mp-vehicle-enable-rapid-camera-hijack)
               (method-set! t m46-id evhnd-hijack)
               )
             )

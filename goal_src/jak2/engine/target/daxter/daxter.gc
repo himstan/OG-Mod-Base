@@ -517,9 +517,18 @@
 
 (defbehavior target-indax-ride-along-check target ()
   (let ((remote-pos (new 'stack-no-clear 'vector)))
-    (set! (-> remote-pos x) (-> *remote-info* x))
-    (set! (-> remote-pos y) (-> *remote-info* y))
-    (set! (-> remote-pos z) (-> *remote-info* z))
+    (if (mp-is-daxter?)
+        (begin
+          (set! (-> remote-pos x) (-> *remote-info* x))
+          (set! (-> remote-pos y) (-> *remote-info* y))
+          (set! (-> remote-pos z) (-> *remote-info* z))
+        )
+        (begin
+          (set! (-> remote-pos x) (-> *local-info* x))
+          (set! (-> remote-pos y) (-> *local-info* y))
+          (set! (-> remote-pos z) (-> *local-info* z))
+        )
+    )
     (set! (-> remote-pos w) 1.0)
     (let ((dist (vector-vector-distance (-> self control trans) remote-pos)))
       (when (< dist (meters 2.0))

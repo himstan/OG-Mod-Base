@@ -5,6 +5,9 @@
 
 (defun mp-veh-get-state-id ((v-proc vehicle))
   "Map a vehicle's current state name to a numeric mp-veh-state-id."
+  ;; ADDED: v-proc safety
+  (if (not (and v-proc (nonzero? v-proc))) (return (the uint 0)))
+
   (let ((state-name (if (-> v-proc state) (-> v-proc state name) 'none)))
     (case state-name
       (('idle)               (the uint (mp-veh-state-id idle)))
@@ -56,6 +59,9 @@
 ;; --- Vehicle Packing (Authoritative Side) ---
 
 (defun mp-vehicle-pack ((v-proc vehicle) (slot mp-vehicle-state))
+  ;; ADDED: pointer guards
+  (if (not (and v-proc (nonzero? v-proc) (-> v-proc root) (-> v-proc rbody))) (return #f))
+
   (set! (-> slot net-id) (-> v-proc net-id))
   (set! (-> slot vehicle-type) (the uint8 (-> v-proc traffic-type)))
   (set! (-> slot color-index) (the uint8 0))
@@ -73,18 +79,24 @@
   (set! (-> slot lin-vel-y) (-> v-proc root transv y))
   (set! (-> slot lin-vel-z) (-> v-proc root transv z))
   
-  (set! (-> slot ang-vel-x) (-> v-proc rbody state ang-velocity x))
-  (set! (-> slot ang-vel-y) (-> v-proc rbody state ang-velocity y))
-  (set! (-> slot ang-vel-z) (-> v-proc rbody state ang-velocity z))
+  (if (-> v-proc rbody state)
+      (begin
+        (set! (-> slot ang-vel-x) (-> v-proc rbody state ang-velocity x))
+        (set! (-> slot ang-vel-y) (-> v-proc rbody state ang-velocity y))
+        (set! (-> slot ang-vel-z) (-> v-proc rbody state ang-velocity z))
+        )
+      )
 
   (let ((flags (the uint 0)))
     (if (logtest? (-> v-proc focus-status) (focus-status dead)) (set! flags (logior flags (the uint 1))))
+    ;; Bit 1: Flight Level Index (0 = low, 1 = high)
+    (if (nonzero? (-> v-proc flight-level-index)) (set! flags (logior flags (the uint 2))))
     (set! (-> slot state-flags) (the uint8 flags))
     )
   
   (dotimes (i 4)
     (let ((rider-proc (handle->process (-> v-proc rider-array i))))
-      (if (and rider-proc (type? rider-proc vehicle-rider))
+      (if (and rider-proc (nonzero? rider-proc) (or (type? rider-proc vehicle-rider) (type? rider-proc target)))
           (set! (-> slot rider-aids i) (the uint 1))
           (set! (-> slot rider-aids i) (the uint 0))
           )

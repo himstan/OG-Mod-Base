@@ -74,13 +74,14 @@
               (vector-copy! draw-pos (-> proc root trans))
               (set! (-> draw-pos y) (+ (-> draw-pos y) (meters 2.0)))
 
-              (let ((is-remote-driven (= net-id (-> *remote-info* veh-state net-id)))
-                    (is-local-driven (= net-id (-> *local-info* veh-state net-id)))
+              (let ((is-remote-driven (and (nonzero? net-id) (= net-id (-> *remote-info* veh-state net-id))))
+                    (is-local-driven (and (nonzero? net-id) (= net-id (-> *local-info* veh-state net-id))))
                     (type-str (symbol->string (-> proc type symbol)))
                     (cur-state (if (-> proc state) (-> proc state name) 'none)))
                 (let ((is-owner (or is-local-driven (and (not is-remote-driven) (mp-is-traffic-authoritative?)))))
                   (let ((color (if is-owner (font-color green) (font-color yellow)))
-                        (status-str (if is-owner "OWNER" "PUPPET")))
+                        (status-str (if is-owner "OWNER" "PUPPET"))
+                        (pad-idx (cond (is-local-driven 0) (is-remote-driven 1) (else (-> proc pad-index)))))
                     
                     (if is-local-driven
                         (set! status-str "LOCAL-DRIVEN")
@@ -89,38 +90,43 @@
                         (set! status-str "REMOTE-DRIVEN")
                         )
 
-                    (if is-owner
-                        (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
-                                          (the-as string (format #f "VEH-ID: ~D (~S)~%STATE: ~S(~D)~%TYPE: ~S" 
-                                                  net-id 
-                                                  status-str
-                                                  cur-state
-                                                  (the uint8 (mp-veh-get-state-id proc))
-                                                  type-str))
-                                          draw-pos 
-                                          color 
-                                          (the-as vector2h #f))
-                        (let ((rec (mp-get-traffic-ghost net-id)))
+                    (let ((nudged-status (-> proc pad-bytes 0)))
+                      (if is-owner
                           (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
-                                            (the-as string (format #f "VEH-ID: ~D (~S)~%STATE: ~S~%GHOST-STATE: ~S(~D)~%TYPE: ~S" 
+                                            (the-as string (format #f "VEH-ID: ~D (~S)~%STATE: ~S(~D)~%TYPE: ~S~%PAD: ~D" 
                                                     net-id 
                                                     status-str
                                                     cur-state
-                                                    (if rec (mp-veh-get-state-from-id (the uint (-> rec ghost-state-id))) 'none)
-                                                    (if rec (-> rec ghost-state-id) 0)
-                                                    type-str))
+                                                    (the uint8 (mp-veh-get-state-id proc))
+                                                    type-str
+                                                    pad-idx))
                                             draw-pos 
                                             color 
                                             (the-as vector2h #f))
-                          
-                          (when rec
-                            ;; Draw ghost sphere at authoritative target position
-                            (add-debug-sphere #t (bucket-id debug-no-zbuf1) (-> rec ghost-trans) (meters 1.5) (static-rgba 255 255 0 128))
-                            ;; Draw line connecting puppet to ghost
-                            (add-debug-line #t (bucket-id debug-no-zbuf1) (-> proc root trans) (-> rec ghost-trans) (static-rgba 255 255 0 128) #f (the-as rgba 0))
+                          (let ((rec (mp-get-traffic-ghost net-id)))
+                            (let ((nudged-str (cond ((= nudged-status 1) "Y") ((= nudged-status 2) "SNAP") (else "N"))))
+                              (add-debug-text-3d #t (bucket-id debug-no-zbuf1) 
+                                                (the-as string (format #f "ID: ~D (~S) G:~S~%TYPE: ~S PAD: ~D~%NUDGED: ~S" 
+                                                        net-id 
+                                                        status-str
+                                                        (if rec (mp-veh-get-state-from-id (the uint (-> rec ghost-state-id))) 'none)
+                                                        type-str
+                                                        pad-idx
+                                                        nudged-str))
+                                                draw-pos 
+                                                color 
+                                                (the-as vector2h #f))
+                              )
+                            
+                            (when rec
+                              ;; Draw ghost sphere at authoritative target position
+                              (add-debug-sphere #t (bucket-id debug-no-zbuf1) (-> rec ghost-trans) (meters 1.5) (static-rgba 255 255 0 128))
+                              ;; Draw line connecting puppet to ghost
+                              (add-debug-line #t (bucket-id debug-no-zbuf1) (-> proc root trans) (-> rec ghost-trans) (static-rgba 255 255 0 128) #f (the-as rgba 0))
+                              )
                             )
                           )
-                        )
+                      )
                     )
                   )
                 )
