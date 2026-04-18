@@ -32,10 +32,15 @@
     (when (and *multi-sync-enabled?*
                (mp-is-jak?) ;; Only the Host broadcasts mission events
                (not *mp-processing-remote-event*)
-               (valid? proc process (the-as string #f) #f 0)
+               (valid? proc process (the-as string #f) #t 0)
                )
       (let ((evt-msg (-> msg message))
-            (p-name (-> proc name)))
+            (raw-name (the-as basic (-> proc name)))
+            (p-name (the-as string #f)))
+        (cond
+          ((type? raw-name string) (set! p-name (the-as string raw-name)))
+          ((type? raw-name symbol) (set! p-name (symbol->string (the-as symbol raw-name))))
+          )
         (case evt-msg
           (('leave)
            (when (and p-name (!= p-name ""))

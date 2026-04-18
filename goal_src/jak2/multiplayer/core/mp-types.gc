@@ -12,6 +12,7 @@
 (define-perm *mp-traffic-host-spawning-active* symbol #f)
 (define-perm *mp-pedestrian-net-id-counter* uint (the uint 1))
 (define-perm *mp-vehicle-net-id-counter* uint (the uint 32768))
+(define-perm *mp-last-local-state-id* uint (the uint 0))
 (define *multi-sync-tps* 20)
 
 (defconstant MP_EVENT_ORB (the-as uint 1))
@@ -29,6 +30,8 @@
 (defconstant MP_EVENT_ATTACK_PED (the-as uint 14))
 (defconstant MP_EVENT_PED_DEATH (the-as uint 15))
 (defconstant MP_EVENT_MISSION_EVENT (the-as uint 16))
+(defconstant MP_EVENT_CHANGE_MODE_DARKJAK (the-as uint 17))
+(defconstant MP_EVENT_END_MODE_DARKJAK (the-as uint 18))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
@@ -717,6 +720,8 @@
 (define-extern mp-event-handler-authority-ack (function uint none))
 (define-extern mp-event-handler-attack-ped (function uint none))
 (define-extern mp-event-handler-ped-death (function uint none))
+(define-extern mp-event-handler-change-mode-darkjak (function uint none))
+(define-extern mp-event-handler-end-mode-darkjak (function uint none))
 
 ;; --- Traffic Ghost System Externs ---
 (define-extern mp-get-traffic-ghost (function uint mp-traffic-ghost-record))

@@ -123,6 +123,22 @@
       (if (and *target* (nonzero? *target*) (-> *target* state))
           (set! local-state (the int (mp-target-get-id-from-state (-> *target* state name))))
           )
+
+      ;; --- Dark Jak Mode Change Detection (Host -> Client) ---
+      (when (and (mp-is-jak?) (!= (the uint local-state) *mp-last-local-state-id*))
+        (cond
+          ((= local-state (the uint (mp-target-state-id darkjak-get-on)))
+           (format 0 "[MP] Host entering Dark Jak! Broadcasting event...~%")
+           (mp-send-world-event MP_EVENT_CHANGE_MODE_DARKJAK (the uint 0))
+           )
+          ((= local-state (the uint (mp-target-state-id darkjak-get-off)))
+           (format 0 "[MP] Host exiting Dark Jak! Broadcasting event...~%")
+           (mp-send-world-event MP_EVENT_END_MODE_DARKJAK (the uint 0))
+           )
+          )
+        )
+      (set! *mp-last-local-state-id* (the uint local-state))
+
       (set! (-> *local-info* state-id) (the uint local-state))
       (+! (-> *local-info* packet-id) 1))
 

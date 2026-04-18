@@ -53,6 +53,8 @@
       ((MP_EVENT_ATTACK_PED)              (mp-event-handler-attack-ped aid))
       ((MP_EVENT_PED_DEATH)               (mp-event-handler-ped-death aid))
       ((MP_EVENT_MISSION_EVENT)           (mp-receive-mission-event (the-as mp-mission-event evt)))
+      ((MP_EVENT_CHANGE_MODE_DARKJAK)     (mp-event-handler-change-mode-darkjak aid))
+      ((MP_EVENT_END_MODE_DARKJAK)        (mp-event-handler-end-mode-darkjak aid))
       )
     )
   (set! *mp-processing-remote-event* #f)
