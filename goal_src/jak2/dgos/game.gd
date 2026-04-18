@@ -516,6 +516,7 @@
   "mp-sync-state.o" ;; added
   "mp-event-handlers.o" ;; added
   "mp-events.o" ;; added
+  "mp-mission-events.o" ;; added
   "mp-data.o" ;; added
   "mp-remote.o" ;; added
   "mp-role.o" ;; added

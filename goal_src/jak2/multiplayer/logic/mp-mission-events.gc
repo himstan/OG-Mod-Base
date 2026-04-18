@@ -1,0 +1,62 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; --- Generic Mission Event Synchronization ---
+;; Intercepts core engine events like 'leave and 'play-scene
+;; targeted at named actors and broadcasts them to all clients.
+
+(define *original-send-event-function* send-event-function)
+
+(defun mp-send-mission-event ((proc-name string) (m-evt-id uint))
+  "Internal: Allocate and queue a mission event for broadcast."
+  (let ((q-idx *mp-event-queue-write-ptr*))
+    (let ((evt (the-as mp-mission-event (-> *mp-event-queue* q-idx))))
+      (set! (-> evt etype) MP_EVENT_MISSION_EVENT)
+      (set! (-> evt mission-evt) m-evt-id)
+      ;; Copy string data
+      (dotimes (i 32) (set! (-> evt target-name i) (the uint 0)))
+      (let ((len (min 31 (length proc-name))))
+        (dotimes (i len)
+          (set! (-> evt target-name i) (-> proc-name data i))
+          )
+        )
+      )
+    (set! *mp-event-queue-write-ptr* (logand (+ q-idx 1) 31))
+    )
+  (none)
+  )
+
+(defun mp-send-event-function-hijack ((proc process-tree) (msg event-message-block))
+  "Global hijack for send-event-function to sync mission critical events."
+  (with-pp
+    (when (and *multi-sync-enabled?*
+               (mp-is-jak?) ;; Only the Host broadcasts mission events
+               (not *mp-processing-remote-event*)
+               (valid? proc process (the-as string #f) #f 0)
+               )
+      (let ((evt-msg (-> msg message))
+            (p-name (-> proc name)))
+        (case evt-msg
+          (('leave)
+           (when (and p-name (!= p-name ""))
+             (format 0 "[MP-MissionEvent] Host triggered 'leave for actor ~S. Syncing...~%" p-name)
+             (mp-send-mission-event p-name (the uint 1))
+             )
+           )
+          (('play-scene)
+           (when (and p-name (!= p-name ""))
+             (format 0 "[MP-MissionEvent] Host triggered 'play-scene for actor ~S. Syncing...~%" p-name)
+             (mp-send-mission-event p-name (the uint 2))
+             )
+           )
+          )
+        )
+      )
+    )
+
+  ;; Always call original
+  (*original-send-event-function* proc msg)
+  )
+
+;; Install Hijack
+(set! send-event-function mp-send-event-function-hijack)
