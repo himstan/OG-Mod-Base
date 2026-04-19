@@ -9,6 +9,7 @@
          (target-indax-exit))
 
   :code (behavior ()
+         (sound-play "spin-kick")
          (let ((gp-0 daxter-indax-attack-spin-ja))
            (quaternion-rotate-y! (-> self control quat-for-control) (-> self control quat-for-control) -1365.3334)
            (ja-channel-push! 1 (seconds 0.05))
@@ -41,6 +42,7 @@
          (target-indax-exit))
 
   :code (behavior ((arg0 symbol))
+         (sound-play "spin-kick")
          (let ((gp-0 daxter-indax-attack-spin-air-ja))
            (ja-channel-push! 1 (seconds 0.05))
            (ja-no-eval :group! gp-0 :num! (seek! max (-> self control current-surface align-speed)) :frame-num 0.0))

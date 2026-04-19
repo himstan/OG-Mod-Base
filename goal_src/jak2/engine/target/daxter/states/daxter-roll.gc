@@ -29,6 +29,7 @@
     (target-collide-set! 'normal 0.0))
 
   :code (behavior ()
+    (sound-play "spin")
     (let ((gp-0 0)
           (s5-0 0)
           (f30-0 1.0)
@@ -135,6 +136,7 @@
     )
 
   :code (behavior ((arg0 float) (arg1 float))
+    (sound-play "spin")
     (local-vars (v1-37 symbol))
     (ja-channel-push! 1 (seconds 0.04))
     (ja :group! daxter-roll-flip-ja :num! min)
