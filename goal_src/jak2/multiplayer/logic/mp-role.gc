@@ -116,32 +116,40 @@
 
 (defun mp-update-traffic-authority ()
   "Determine who owns the open-world traffic and suppress local spawning if needed"
-  (when (and *target* (-> *target* control) *traffic-manager*)
-    (let ((dist (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*))
-          (is-active? (nonzero? (pc-multi-get-status))))
-      
-      (if (and is-active? (mp-is-daxter?)) ;; Client Side
-          (begin
-            (set! *mp-traffic-suppressed* (< dist (meters 200.0)))
-            (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
-            (when (and *mp-traffic-suppressed* (nonzero? (-> *traffic-manager* child)))
-              (send-event *traffic-manager* 'deactivate-all)
+  (let ((is-active? (nonzero? (pc-multi-get-status))))
+    (if (not is-active?)
+        (begin ;; Offline or fallback
+          (set! *mp-traffic-suppressed* #f)
+          (set! *mp-traffic-sync-active* #f)
+          (set! *mp-traffic-host-spawning-active* #f)
+          )
+        (begin
+          ;; GLOBAL HOST RESET: Ensure Host never has suppressed traffic
+          (if (mp-is-jak?) ;; Host Side
+              (set! *mp-traffic-suppressed* #f)
+              )
+          (if (mp-is-daxter?) ;; Client Side
+              (set! *mp-traffic-suppressed* #t)
+              )
+          (when (and *target* (-> *target* control))
+            (let ((dist (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*)))
+
+              (if (mp-is-daxter?) ;; Client Side
+                  (begin
+                    (set! *mp-traffic-suppressed* (< dist (meters 200.0)))
+                    (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
+                    (when (and *mp-traffic-suppressed* *traffic-manager* (nonzero? (-> *traffic-manager* child)))
+                      (send-event *traffic-manager* 'deactivate-all)
+                      )
+                    )
+                  (begin ;; Host Side (mp-is-jak? was handled above for suppression)
+                    (set! *mp-traffic-host-spawning-active* (> dist (meters 200.0)))
+                    (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
+                    )
+                  )
               )
             )
-          (begin
-            (if (and is-active? (mp-is-jak?)) ;; Host Side
-                (begin
-                  (set! *mp-traffic-host-spawning-active* (< dist (meters 200.0)))
-                  (set! *mp-traffic-sync-active* (< dist (meters 175.0)))
-                  )
-                (begin ;; Offline or fallback
-                  (set! *mp-traffic-suppressed* #f)
-                  (set! *mp-traffic-sync-active* #f)
-                  (set! *mp-traffic-host-spawning-active* #f)
-                  )
-                )
-            )
           )
-      )
+        )
     )
   (none))

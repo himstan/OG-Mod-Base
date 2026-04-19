@@ -31,11 +31,11 @@
                     (not (logtest? (-> v-proc focus-status) (focus-status dead)))
                     (logtest? (-> v-proc flags) (rigid-body-object-flag traffic-managed))
                     (< (-> *mp-traffic-buffer* veh-count) (the uint MP_MAX_SYNC_VEHICLES))
+                    )
 
-             (let ((slot (-> *mp-traffic-buffer* veh-enemies (-> *mp-traffic-buffer* veh-count))))
-               (mp-vehicle-pack v-proc slot)
-               (+! (-> *mp-traffic-buffer* veh-count) 1)
-               )
+           (let ((slot (-> *mp-traffic-buffer* veh-enemies (-> *mp-traffic-buffer* veh-count))))
+             (mp-vehicle-pack v-proc slot)
+             (+! (-> *mp-traffic-buffer* veh-count) 1)
              )
            )
          )
@@ -66,21 +66,7 @@
             ;; ALWAYS apply piggybacked vehicle data from remote players
             (mp-vehicle-apply-piggyback)
             
-            (if (not (mp-is-traffic-authoritative?))
-                ;; Puppet Logic: Receive and Apply
-                (begin
-                  (pc-multi-receive-traffic (the-as uint *mp-traffic-buffer*))
-                  (when (time-elapsed? (-> *mp-traffic-buffer* last-sync-time) (seconds 2))
-                    (format 0 "[MP-Traffic] Puppet Active: ~D peds, ~D vehs~%" (-> *mp-traffic-buffer* ped-count) (-> *mp-traffic-buffer* veh-count))
-                    (set! (-> *mp-traffic-buffer* last-sync-time) (the-as uint (current-time)))
-                    )
-                  (when (or (nonzero? (-> *mp-traffic-buffer* ped-count)) (nonzero? (-> *mp-traffic-buffer* veh-count)))
-                    (mp-pedestrian-apply-remote)
-                    (mp-vehicle-apply-remote)
-                    )
-                  ;; Periodically clear stale ghost records for despawned traffic
-                  (mp-cleanup-traffic-ghosts)
-                  )
+            (if (or (mp-is-jak?) (mp-is-traffic-authoritative?))
                 ;; Authoritative Logic: Gather and Pack
                 (begin
                   (set! (-> *mp-traffic-buffer* ped-count) (the uint 0))
@@ -100,6 +86,20 @@
                     (format 0 "[MP-Traffic] Authoritative Active: ~D peds, ~D vehs~%" (-> *mp-traffic-buffer* ped-count) (-> *mp-traffic-buffer* veh-count))
                     (set! (-> *mp-traffic-buffer* last-sync-time) (the-as uint (current-time)))
                     )
+                  )
+                ;; Puppet Logic: Receive and Apply (Client Side ONLY)
+                (begin
+                  (pc-multi-receive-traffic (the-as uint *mp-traffic-buffer*))
+                  (when (time-elapsed? (-> *mp-traffic-buffer* last-sync-time) (seconds 2))
+                    (format 0 "[MP-Traffic] Puppet Active: ~D peds, ~D vehs~%" (-> *mp-traffic-buffer* ped-count) (-> *mp-traffic-buffer* veh-count))
+                    (set! (-> *mp-traffic-buffer* last-sync-time) (the-as uint (current-time)))
+                    )
+                  (when (or (nonzero? (-> *mp-traffic-buffer* ped-count)) (nonzero? (-> *mp-traffic-buffer* veh-count)))
+                    (mp-pedestrian-apply-remote)
+                    (mp-vehicle-apply-remote)
+                    )
+                  ;; Periodically clear stale ghost records for despawned traffic
+                  (mp-cleanup-traffic-ghosts)
                   )
                 )
             )

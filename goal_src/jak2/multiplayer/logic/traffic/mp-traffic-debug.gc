@@ -151,7 +151,16 @@
             (-> *mp-traffic-buffer* veh-count))
     (format *stdcon* "AUTHORITATIVE: ~S~%" (if (mp-is-traffic-authoritative?) "YES" "NO"))
     (format *stdcon* "-------------------------~%")
+
+    (let ((dist (if (and *target* (nonzero? *target*) (-> *target* control)) (vector-vector-distance (-> *target* control trans) *multi-remote-render-pos*) 0.0)))
+    (format *stdcon* "~0k--- MP TRAFFIC STATUS ---~%")
+    (format *stdcon* "SUPPRESSED: ~S  SPAWNING: ~S~%" 
+            (if *mp-traffic-suppressed* "YES" "NO") 
+            (if *mp-traffic-host-spawning-active* "YES" "NO"))
+    (format *stdcon* "REMOTE DIST: ~m~%" dist)
+    (format *stdcon* "-------------------------~%")
     )
+  )
 
   ;; World overlays (independent toggles)
   (when (or *mp-traffic-ped-debug?* *mp-traffic-veh-debug?*)

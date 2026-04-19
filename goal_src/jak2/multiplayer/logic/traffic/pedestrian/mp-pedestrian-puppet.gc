@@ -130,7 +130,7 @@
       )
     )
 
-  (when *traffic-manager*
+  (when (and *traffic-manager* (not (mp-is-traffic-authoritative?)))
     (let ((curr (-> *traffic-manager* child)))
       (while (and curr (nonzero? curr))
         (let ((proc (ppointer->process curr)))
