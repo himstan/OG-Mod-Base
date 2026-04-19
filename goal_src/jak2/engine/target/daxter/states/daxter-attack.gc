@@ -217,9 +217,10 @@
   :event target-indax-dangerous-event-handler
   :enter (-> target-running-attack enter)
   :exit (behavior ()
-         ((-> target-running-attack enter))
+         ((-> target-running-attack exit))
          (target-indax-exit))
   :code (behavior ()
+         (sound-play "punch")
          (if (logtest? (water-flags touch-water) (-> self water flags))
              (sound-play "swim-stroke"))
          (set! (-> self control dynam gravity-max) 368640.0)
