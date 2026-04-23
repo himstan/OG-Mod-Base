@@ -421,6 +421,15 @@
                (send-event proc 'mp-hit)
                (set! *mp-puppet-state-mismatch-count* 0)
                )
+              ((= ghost-state 'target-ride-along)
+               (format 0 "[MP-Puppet] Authoritative Ride Along! Bumping ~A -> ~A~%" cur-state ghost-state)
+               ;; Safety: Ensure puppet has a valid pad before entering a state that checks inputs
+               (when (not (-> proc control cpad))
+                 (set! (-> proc control cpad) (-> *cpad-list* cpads 1))
+                 )
+               (go-process proc target-ride-along)
+               (set! *mp-puppet-state-mismatch-count* 0)
+               )
               ((or (= cur-state 'target-edge-grab) (= cur-state 'target-indax-edge-grab) (= cur-state 'target-pilot-edge-grab))
                ;; Puppet is hanging, but ghost is NOT.
                (when (not (or (= ghost-state 'target-edge-grab) (= ghost-state 'target-indax-edge-grab) (= ghost-state 'target-pilot-edge-grab)))
