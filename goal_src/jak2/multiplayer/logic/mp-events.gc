@@ -36,6 +36,194 @@
   (set! *mp-processing-remote-event* #f)
   (none))
 
+(defun mp-pack-edge-grab-info ((dst mp-edge-grab-event-data) (src edge-grab-info))
+  "Serialize edge-grab-info into a network-safe structure (no memory pointers)."
+  (dotimes (i 8)
+    (vector-copy! (-> dst world-vertex i) (-> src world-vertex i))
+    (vector-copy! (-> dst local-vertex i) (-> src local-vertex i))
+    )
+  (set! (-> dst status) (-> src status))
+  (set! (-> dst actor-cshape-prim-offset) (-> src actor-cshape-prim-offset))
+  
+  ;; Resolve actor-handle to NetID or AID
+  (set! (-> dst actor-id) (the-as uint 0))
+  (set! (-> dst actor-kind) (the-as uint 0))
+  (let ((proc (handle->process (-> src actor-handle))))
+    (when proc
+      (cond
+        ((type-type? (-> proc type) vehicle)
+         (set! (-> dst actor-id) (-> (the-as vehicle proc) net-id))
+         (set! (-> dst actor-kind) (the-as uint 2)) ;; VehicleNetID
+         )
+        ((type-type? (-> proc type) citizen)
+         (set! (-> dst actor-id) (-> (the-as citizen proc) net-id))
+         (set! (-> dst actor-kind) (the-as uint 3)) ;; PedestrianNetID
+         )
+        (else
+         (let ((ent (-> (the-as process-drawable proc) entity)))
+            (if ent (begin
+               (set! (-> dst actor-id) (-> ent aid))
+               (set! (-> dst actor-kind) (the-as uint 1)) ;; AID
+               )
+            )
+          )
+         )
+        )
+      )
+    )
+    
+  (mem-copy! (the-as pointer (-> dst hanging-matrix)) (the-as pointer (-> src hanging-matrix)) 64)
+  (vector-copy! (-> dst left-hand-hold) (-> src left-hand-hold))
+  (vector-copy! (-> dst right-hand-hold) (-> src right-hand-hold))
+  (vector-copy! (-> dst center-hold-old) (-> src center-hold-old))
+  (set! (-> dst edge-tri-pat) (-> src edge-tri-pat))
+  
+  (set! (-> dst found-edge-bool) (if (-> src found-edge?) (the uint 1) (the uint 0)))
+  (let ((pilot-id (the uint 0)))
+    (case (-> src pilot-edge-grab?)
+      (('target-jump) (set! pilot-id (the uint 1)))
+      (('target-double-jump) (set! pilot-id (the uint 2)))
+      ((#t) (set! pilot-id (the uint 3)))
+      )
+    (set! (-> dst pilot-edge-grab-bool) pilot-id)
+    )
+  
+  (set! (-> dst pilot-actor-id) (the-as uint 0))
+  (set! (-> dst pilot-actor-kind) (the-as uint 0))
+  
+  (when (-> src pilot-edge-grab?)
+    (vector-copy! (-> dst pilot-local-pos) (-> src pilot-edge-grab local-pos))
+    (vector-copy! (-> dst pilot-local-dir) (-> src pilot-edge-grab local-dir))
+    
+    (let ((proc (handle->process (-> src pilot-edge-grab handle))))
+      (when proc
+        (cond
+          ((type-type? (-> proc type) vehicle)
+           (set! (-> dst pilot-actor-id) (-> (the-as vehicle proc) net-id))
+           (set! (-> dst pilot-actor-kind) (the-as uint 2))
+           )
+          (else
+           (let ((ent (-> (the-as process-drawable proc) entity)))
+              (if ent (begin
+                 (set! (-> dst pilot-actor-id) (-> ent aid))
+                 (set! (-> dst pilot-actor-kind) (the-as uint 1))
+                 )
+              )
+            )
+           )
+          )
+        )
+      )
+    )
+    
+  (vector-copy! (-> dst pilot-start-grab-pos) (-> src pilot-start-grab-pos))
+  (set! (-> dst pilot-grab-interp) (-> src pilot-grab-interp))
+  (none)
+  )
+
+(defun mp-unpack-edge-grab-info ((dst edge-grab-info) (src mp-edge-grab-event-data))
+  "Deserialize a network-safe structure back into local edge-grab-info with valid pointers."
+  (dotimes (i 8)
+    (vector-copy! (-> dst world-vertex i) (-> src world-vertex i))
+    (vector-copy! (-> dst local-vertex i) (-> src local-vertex i))
+    )
+  (set! (-> dst status) (-> src status))
+  (set! (-> dst actor-cshape-prim-offset) (-> src actor-cshape-prim-offset))
+  
+  ;; Reconstruct actor-handle from NetID or AID
+  (set! (-> dst actor-handle) (the-as handle #f))
+  (case (-> src actor-kind)
+    ((1) ;; AID
+     (let ((ent (entity-by-aid (-> src actor-id))))
+       (if ent (set! (-> dst actor-handle) (process->handle (-> ent extra process))))
+       )
+     )
+    ((2) ;; VehicleNetID
+     (let ((veh (mp-vehicle-find-by-net-id (-> src actor-id))))
+       (if veh (set! (-> dst actor-handle) (process->handle veh)))
+       )
+     )
+    ((3) ;; PedestrianNetID
+     (let ((ped (mp-pedestrian-find-by-net-id (-> src actor-id))))
+       (if ped (set! (-> dst actor-handle) (process->handle ped)))
+       )
+     )
+    )
+      
+  (mem-copy! (the-as pointer (-> dst hanging-matrix)) (the-as pointer (-> src hanging-matrix)) 64)
+  (vector-copy! (-> dst left-hand-hold) (-> src left-hand-hold))
+  (vector-copy! (-> dst right-hand-hold) (-> src right-hand-hold))
+  (vector-copy! (-> dst center-hold-old) (-> src center-hold-old))
+  (set! (-> dst edge-tri-pat) (-> src edge-tri-pat))
+  
+  ;; Restore Local Symbol Pointers
+  (set! (-> dst found-edge?) (if (> (-> src found-edge-bool) 0) #t #f))
+  
+  (let ((pilot-id (-> src pilot-edge-grab-bool)))
+    (set! (-> dst pilot-edge-grab?)
+          (cond
+            ((= pilot-id 1) 'target-jump)
+            ((= pilot-id 2) 'target-double-jump)
+            ((= pilot-id 3) #t)
+            (else #f)
+            )
+          )
+    )
+  
+  (vector-copy! (-> dst pilot-edge-grab local-pos) (-> src pilot-local-pos))
+  (vector-copy! (-> dst pilot-edge-grab local-dir) (-> src pilot-local-dir))
+  
+  ;; Reconstruct pilot actor handle
+  (set! (-> dst pilot-edge-grab handle) (the-as handle #f))
+  (case (-> src pilot-actor-kind)
+    ((1) ;; AID
+     (let ((ent (entity-by-aid (-> src pilot-actor-id))))
+       (if ent (set! (-> dst pilot-edge-grab handle) (process->handle (-> ent extra process))))
+       )
+     )
+    ((2) ;; VehicleNetID
+     (let ((veh (mp-vehicle-find-by-net-id (-> src pilot-actor-id))))
+       (if veh (set! (-> dst pilot-edge-grab handle) (process->handle veh)))
+       )
+     )
+    )
+      
+  (vector-copy! (-> dst pilot-start-grab-pos) (-> src pilot-start-grab-pos))
+  (set! (-> dst pilot-grab-interp) (-> src pilot-grab-interp))
+  
+  ;; Derive secondary pointers just in case
+  (vector-copy! (-> dst edge-vertex 0) (-> dst world-vertex 0))
+  (vector-copy! (-> dst edge-vertex 1) (-> dst world-vertex 1))
+  (vector+! (-> dst center-hold) (the-as vector (-> dst world-vertex)) (-> dst world-vertex 1))
+  (vector-float*! (-> dst center-hold) (-> dst center-hold) 0.5)
+  (none)
+  )
+
+(defun mp-receive-edge-grab-event ((evt mp-world-event) (pilot? symbol))
+  "Receiver: Apply authoritative edge grab data to the puppet and trigger immediate snapping."
+  (let ((puppet (mp-puppet-get-proc)))
+    (when puppet
+      (format 0 "[MP] Authoritative Edge Grab received! (Pilot: ~A)~%" pilot?)
+
+      ;; Safe Unpack: De-serialize into the local puppet's remote-edge-grab-info
+      (let ((gp-0 *remote-edge-grab-info*)
+            (src (the-as mp-edge-grab-event-data (-> evt data))))
+        (mp-unpack-edge-grab-info gp-0 src)
+
+        ;; CRITICAL: Timestamps: prevent engine from immediately exiting due to 'stale' grab
+        (let ((now (current-time)))
+          (set! (-> (the-as target puppet) control last-successful-compute-edge-time) now)
+          )
+        )
+
+      (let ((msg (if pilot? 'mp-pilot-edge-grab-synced 'mp-edge-grab-synced)))
+        (send-event puppet msg)
+        )
+      )
+    )
+  (none)
+  )
+
 (defun mp-receive-world-event ((evt mp-world-event))
   (set! *mp-processing-remote-event* #t)
   (let ((evt-type (-> evt etype))
@@ -55,10 +243,34 @@
       ((MP_EVENT_MISSION_EVENT)           (mp-receive-mission-event (the-as mp-mission-event evt)))
       ((MP_EVENT_CHANGE_MODE_DARKJAK)     (mp-event-handler-change-mode-darkjak aid))
       ((MP_EVENT_END_MODE_DARKJAK)        (mp-event-handler-end-mode-darkjak aid))
+      ((MP_EVENT_EDGE_GRAB)               (mp-receive-edge-grab-event evt #f))
+      ((MP_EVENT_PILOT_EDGE_GRAB)         (mp-receive-edge-grab-event evt #t))
       )
     )
   (set! *mp-processing-remote-event* #f)
   (none))
+
+(defun mp-send-edge-grab-event ((pilot? symbol))
+  "Sender: Broadcast local edge grab info to other players."
+  (if (or (not *multi-sync-enabled?*) (!= (pc-multi-get-status) 6))
+      (return #f))
+
+  (format 0 "[MP] Authoritative Edge Grab broadcast! (Pilot: ~A)~%" pilot?)
+  (let ((q-idx *mp-event-queue-write-ptr*))
+    (let ((evt (-> *mp-event-queue* q-idx)))
+      (set! (-> evt etype) (if pilot? MP_EVENT_PILOT_EDGE_GRAB MP_EVENT_EDGE_GRAB))
+
+      ;; Safe Pack: Serialize local edge-grab-info into the network struct
+      (let ((data (the-as mp-edge-grab-event-data (-> evt data)))
+            (src *edge-grab-info*))
+        
+        (mp-pack-edge-grab-info data src)
+        )
+      )
+    (set! *mp-event-queue-write-ptr* (logand (+ q-idx 1) 31))
+    )
+  (none)
+  )
 
 (defun mp-receive-scene-event ((evt mp-scene-event))
   (set! *mp-processing-remote-event* #t)
@@ -127,10 +339,10 @@
   (let ((out-idx 0))
     (while (and (!= *mp-event-queue-read-ptr* *mp-event-queue-write-ptr*) (< out-idx 16))
       (let ((q-idx *mp-event-queue-read-ptr*))
-        ;; Copy raw 48 bytes
+        ;; Copy raw 496 bytes (expanded mp-event size)
         (let ((src (-> *mp-event-queue* q-idx))
               (dst (-> *mp-event-buffer* out-events out-idx)))
-          (dotimes (i 12) ;; 12 * 4 bytes = 48 bytes
+          (dotimes (i 124) ;; 124 * 4 bytes = 496 bytes
             (set! (-> (the-as (pointer uint32) dst) i) (-> (the-as (pointer uint32) src) i))
             )
           )
@@ -141,15 +353,39 @@
   (none))
 
 (defun mp-process-inbound-events ()
-  "Process Inbound Events (Batch)"
-  (dotimes (i (the-as int (-> *mp-event-buffer* in-count)))
-    (let ((evt (-> *mp-event-buffer* in-events i)))
-      (format 0 "[MP] Event received! Type: ~D~%" (-> evt etype))
-      (if (= (-> evt etype) 8) ;; Magic number for scene event
-          (mp-receive-scene-event (the-as mp-scene-event evt))
-          (mp-receive-world-event (the-as mp-world-event evt))
+  "Process Inbound Events (Thread-safe-ish Batch)"
+  (let ((total-to-process (-> *mp-event-buffer* in-count)))
+    (when (> total-to-process 0)
+      (format 0 "[MP] Processing ~D inbound events... (Current in-count: ~D)~%" total-to-process (-> *mp-event-buffer* in-count))
+      (dotimes (i (the-as int total-to-process))
+        (let ((evt (-> *mp-event-buffer* in-events i)))
+          (format 0 "[MP] Event received! Index: ~D, Type: ~D~%" i (-> evt etype))
+          (if (= (-> evt etype) 8) ;; Magic number for scene event
+              (mp-receive-scene-event (the-as mp-scene-event evt))
+              (mp-receive-world-event (the-as mp-world-event evt))
+              )
           )
+        )
+      
+      ;; Safety: Subtract what we processed. 
+      ;; If more events arrived in the background during our loop, we shift them.
+      (let ((remaining (- (-> *mp-event-buffer* in-count) total-to-process)))
+        (if (> remaining 0)
+            (begin
+              (format 0 "[MP] ~D new events arrived during processing, shifting buffer...~%" remaining)
+              (dotimes (i (the-as int remaining))
+                ;; Copy raw 496 bytes (expanded mp-event size)
+                (let ((src (-> *mp-event-buffer* in-events (+ total-to-process i)))
+                      (dst (-> *mp-event-buffer* in-events i)))
+                  (dotimes (j 124) ;; 124 * 4 bytes = 496 bytes
+                    (set! (-> (the-as (pointer uint32) dst) j) (-> (the-as (pointer uint32) src) j))
+                    )
+                  )
+                )
+              )
+            )
+        (set! (-> *mp-event-buffer* in-count) remaining)
+        )
       )
     )
-  (set! (-> *mp-event-buffer* in-count) (the-as uint 0))
   (none))

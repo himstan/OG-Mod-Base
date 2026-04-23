@@ -1963,7 +1963,10 @@
   )
 
 (defbehavior target-compute-edge target ()
-  (let ((s5-0 *edge-grab-info*))
+  (let ((s5-0 (if (= (-> self tobot?) 'mp-puppet) *remote-edge-grab-info* *edge-grab-info*)))
+    (when (not s5-0)
+      (return #f)
+      )
     (cond
       ((-> s5-0 pilot-edge-grab?)
        (set! (-> self control ground-pat) (new 'static 'pat-surface :material (pat-material metal)))
@@ -1997,9 +2000,14 @@
          )
        )
       (else
+        (if (= (-> self tobot?) 'mp-puppet)
+          (set! (-> *collide-edge-work* cshape) (-> self control))
+        )
         (if (not (edge-grab-info-method-9 s5-0))
+          (begin
             (send-event self 'end-mode)
-            )
+          )
+        )
         (if *display-edge-collision-marks*
             (debug-draw s5-0)
             )
@@ -2026,7 +2034,7 @@
         (cond
           ((and (< 819.2 (-> self control hand-to-edge-dist))
                 (time-elapsed? (-> self control last-successful-compute-edge-time) (seconds 0.2))
-                )
+           )
            (cond
              ((-> s5-0 pilot-edge-grab?)
               (case (-> s5-0 pilot-edge-grab?)
@@ -2117,7 +2125,7 @@
   )
 
 (defbehavior target-compute-edge-rider target ()
-  (let ((gp-0 *edge-grab-info*))
+  (let ((gp-0 (if (= (-> self tobot?) 'mp-puppet) *remote-edge-grab-info* *edge-grab-info*)))
     (cond
       ((-> gp-0 pilot-edge-grab?)
        (set! (-> self control ground-pat) (new 'static 'pat-surface :material (pat-material metal)))
@@ -2151,7 +2159,7 @@
          )
        )
       (else
-        (if (not (edge-grab-info-method-9 gp-0))
+        (if (not (or (= (-> self tobot?) 'mp-puppet) (edge-grab-info-method-9 gp-0)))
             (send-event self 'end-mode)
             )
         (if *display-edge-collision-marks*
@@ -2175,9 +2183,13 @@
     (let ((a1-15 (vector-! (new-stack-vector0) (-> gp-0 center-hold) (-> gp-0 center-hold-old))))
       (vector-float*! (-> self control rider-last-move) a1-15 (-> self clock frames-per-second))
       (set-time! (-> self control rider-time))
-      (move-by-vector! (-> self control) a1-15)
+      ;; CRITICAL: Use direct position set for puppets.
+      (if (= (-> self tobot?) 'mp-puppet)
+        (vector+! (-> self control trans) (-> self control trans) a1-15)
+        (move-by-vector! (-> self control) a1-15)
       )
     )
+  )
   (set! (-> self control hand-to-edge-dist) 0.0)
   (update-anim-data (-> self skel))
   (do-joint-math (-> self draw) (-> self node-list) (-> self skel))
@@ -2583,14 +2595,15 @@
           (set! (-> a2-3 action-mask) (collide-action solid))
           (fill-cache-integrate-and-collide (-> self control) (-> self control transv) a2-3 (meters 1))
           )
-        (if (and (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
-                 (>= (vector-dot
-                       (-> self control dynam gravity-normal)
-                       (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
-                       )
-                     (-> *TARGET-bank* edge-grab-height-off-ground)
+          (if (and (!= (-> self tobot?) 'mp-puppet)
+               (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
+               (>= (vector-dot
+                     (-> self control dynam gravity-normal)
+                     (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
                      )
-                 )
+                   (-> *TARGET-bank* edge-grab-height-off-ground)
+                )
+              )
             (do-edge-grabs self *collide-cache* *collide-edge-spec*)
             )
         (when *debug-segment*
@@ -2719,16 +2732,17 @@
           (set! (-> a2-0 action-mask) (collide-action solid))
           (fill-cache-integrate-and-collide (-> self control) (-> self control transv) a2-0 (meters 1))
           )
-        (if (and (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
-                 (>= (vector-dot
-                       (-> self control dynam gravity-normal)
-                       (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
-                       )
-                     (-> *TARGET-bank* edge-grab-height-off-ground)
+          (if (and (!= (-> self tobot?) 'mp-puppet)
+               (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
+               (>= (vector-dot
+                     (-> self control dynam gravity-normal)
+                     (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
                      )
-                 )
-            (do-edge-grabs self *collide-cache* *collide-edge-spec*)
-            )
+                   (-> *TARGET-bank* edge-grab-height-off-ground)
+                   )
+               )
+          (do-edge-grabs self *collide-cache* *collide-edge-spec*)
+          )
         (when *debug-segment*
           (let ((s5-2 (-> *display* frames (-> *display* on-screen) profile-array data 0)))
             (when (and *dproc* *debug-segment*)
@@ -2846,16 +2860,17 @@
           (set! (-> a2-0 action-mask) (collide-action solid))
           (fill-cache-integrate-and-collide (-> self control) (-> self control transv) a2-0 (meters 1))
           )
-        (if (and (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
-                 (>= (vector-dot
-                       (-> self control dynam gravity-normal)
-                       (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
-                       )
-                     (-> *TARGET-bank* edge-grab-height-off-ground)
+          (if (and (!= (-> self tobot?) 'mp-puppet)
+               (logtest? (-> self control root-prim prim-core action) (collide-action check-edge))
+               (>= (vector-dot
+                     (-> self control dynam gravity-normal)
+                     (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
                      )
-                 )
-            (do-edge-grabs self *collide-cache* *collide-edge-spec*)
-            )
+                   (-> *TARGET-bank* edge-grab-height-off-ground)
+                   )
+               )
+          (do-edge-grabs self *collide-cache* *collide-edge-spec*)
+          )
         (when *debug-segment*
           (let ((s5-2 (-> *display* frames (-> *display* on-screen) profile-array data 0)))
             (when (and *dproc* *debug-segment*)

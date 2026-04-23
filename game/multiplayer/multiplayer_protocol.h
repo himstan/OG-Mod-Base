@@ -75,7 +75,8 @@ struct PacketPlayerState {
 
 struct PacketGameEvent {
   PacketHeader header;
-  uint8_t raw_data[48];
+  uint8_t pad[3]; // Align to 8 bytes for GOAL mapping
+  uint8_t raw_data[496];
 };
 
 struct WorldEventData {

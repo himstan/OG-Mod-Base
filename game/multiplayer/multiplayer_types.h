@@ -27,7 +27,7 @@ struct RemoteEntityState {
 struct MPEvent {
   uint32_t etype;
   uint32_t pad;
-  uint8_t data[40];
+  uint8_t data[488];
 };
 
 struct MPEventBufferGOAL {

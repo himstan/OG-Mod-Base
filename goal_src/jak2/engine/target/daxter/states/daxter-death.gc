@@ -91,6 +91,28 @@
                (suspend)
                (ja :num! (seek!)))))
          (set! (-> self control transv quad) (the-as uint128 0))
+
+         ;; --- MP PUPPET HIJACK ---
+         ;; Prevent puppets from triggering engine-level reloads/game-over logic
+         (when (= (-> self tobot?) 'mp-puppet)
+           (format 0 "[MP-Puppet] Indax Death Sequence Complete. Waiting for remote respawn...~%")
+           (loop
+             (let ((ghost-state (mp-target-get-state-from-id (-> *mp-puppet-ghost* state-id))))
+               ;; If the remote ghost is no longer in a death state, we are done!
+               (when (not (or (= ghost-state 'target-death) 
+                              (= ghost-state 'target-indax-death)
+                              (= ghost-state 'target-tube-death)
+                              (= ghost-state 'target-pilot-death)
+                              (= ghost-state 'target-mech-death)))
+                 (format 0 "[MP-Puppet] Ghost respawned (State: ~A). Exiting indax death reset.~%" ghost-state)
+                 (go target-indax-start (the handle #f))
+                 )
+               )
+             (suspend)
+             )
+           )
+         ;; --- END MP PUPPET HIJACK ---
+
          (initialize! (-> self game) 'life (the-as game-save #f) (the-as string #f))
          (set-time! (-> self state-time))
          (sleep-code))

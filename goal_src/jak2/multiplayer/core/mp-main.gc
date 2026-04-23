@@ -64,9 +64,12 @@
 
     ;; 1. Poll and Receive (Always 60fps/144fps for lowest latency)
     (let ((status (pc-multi-get-status)))
-      ;; Host Auto-Enable Sync
-      (when (and (= status 6) (mp-is-jak?) (not *multi-sync-enabled?*))
-        (format 0 "[MP-Host] Auto-enabling sync as Host in game...~%")
+      ;; Auto-Enable Sync in game
+      (when (and (= status 6) (not *multi-sync-enabled?*))
+        (if (mp-is-jak?)
+            (format 0 "[MP-Host] Auto-enabling sync as Host in game...~%")
+            (format 0 "[MP-Client] Auto-enabling sync as Client in game...~%")
+            )
         (set! *multi-sync-enabled?* #t)
         )
 

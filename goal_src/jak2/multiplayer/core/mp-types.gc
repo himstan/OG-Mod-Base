@@ -32,6 +32,8 @@
 (defconstant MP_EVENT_MISSION_EVENT (the-as uint 16))
 (defconstant MP_EVENT_CHANGE_MODE_DARKJAK (the-as uint 17))
 (defconstant MP_EVENT_END_MODE_DARKJAK (the-as uint 18))
+(defconstant MP_EVENT_EDGE_GRAB (the-as uint 19))
+(defconstant MP_EVENT_PILOT_EDGE_GRAB (the-as uint 20))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
@@ -88,14 +90,41 @@
 
 (deftype mp-event (structure)
   ((etype uint32)
-   (pad   uint32)
-   (data  uint8 40)
+   (pad   uint8 12)
+   (data  uint8 480) ;; Expansion to 496 total (16-byte aligned array)
    )
-  :size-assert 48)
+  :size-assert 496)
+
+(deftype mp-edge-grab-event-data (structure)
+  ((world-vertex               vector 8 :inline)   ;; 128
+   (local-vertex               vector 8 :inline)   ;; 128
+   (status                     uint64)             ;; 8
+   (actor-cshape-prim-offset   int32)              ;; 4
+   (actor-id                   uint32)             ;; 4 (AID or NetID)
+   (actor-kind                 uint32)             ;; 4 (1=AID, 2=VehicleNetID, 3=PedestrianNetID)
+   (hanging-matrix             matrix :inline)     ;; 64
+   (left-hand-hold             vector :inline)     ;; 16
+   (right-hand-hold            vector :inline)     ;; 16
+   (center-hold-old            vector :inline)     ;; 16
+   (edge-tri-pat               uint32)             ;; 4
+   (found-edge-bool            uint32)             ;; 4
+   (pilot-edge-grab-bool       uint32)             ;; 4
+   (pilot-local-pos            vector :inline)     ;; 16
+   (pilot-local-dir            vector :inline)     ;; 16
+   (pilot-actor-id             uint32)             ;; 4 (AID or NetID)
+   (pilot-actor-kind           uint32)             ;; 4 (1=AID, 2=VehicleNetID, 3=PedestrianNetID)
+   (pilot-start-grab-pos       vector :inline)     ;; 16
+   (pilot-grab-interp          float)              ;; 4
+   ) ;; Total: 460 bytes (Fits in 488)
+  )
+
+(define-extern mp-vehicle-find-by-net-id (function uint vehicle))
+(define-extern mp-pedestrian-find-by-net-id (function uint citizen))
+(define-extern entity-by-aid (function uint entity))
 
 (deftype mp-world-event (mp-event)
   ((aid uint32 :overlay-at (-> data 0))
-   )
+    )
   )
 
 (deftype mp-enemy-attack-event (mp-event)
@@ -379,14 +408,16 @@
    (veh-state   mp-vehicle-state :inline)
    )
   :size-assert 880)
-
 (deftype mp-event-buffer (structure)
   ((out-count uint32)
-   (out-events mp-event 16 :inline :offset 16)  ;; 16 * 48 = 768. Ends at 16 + 768 = 784
-   (in-count  uint32 :offset 784)
-   (in-events  mp-event 16 :inline :offset 800) ;; 16 * 48 = 768. Ends at 800 + 768 = 1568
+   (pad1      uint8 12)
+   (out-events mp-event 16 :inline)
+   (in-count  uint32)
+   (pad2      uint8 12)
+   (in-events  mp-event 16 :inline)
    )
-  :size-assert 1568)
+  :size-assert 15904) ;; (16 + 16*496) * 2 = 15904
+
 (defconstant MP_MAX_SYNC_ENEMIES 128)
 (deftype mp-enemy-sync-buffer (structure)
   ((local-count     uint32)
@@ -572,6 +603,7 @@
 (define-perm *local-info* local-player-info (new 'static 'local-player-info))
 (define-perm *remote-info* remote-player-info (new 'static 'remote-player-info))
 (define-extern *mp-puppet* target)
+(define-extern *mp-puppet-ghost* mp-target-ghost-record)
 (define-perm *mp-event-buffer* mp-event-buffer (new 'static 'mp-event-buffer))
 (define-perm *mp-enemy-buffer* mp-enemy-sync-buffer (new 'static 'mp-enemy-sync-buffer))
 (define-perm *mp-traffic-buffer* mp-traffic-sync-buffer (new 'static 'mp-traffic-sync-buffer))
@@ -734,3 +766,6 @@
 (define-extern mp-ped-predictive-move (function citizen none))
 (define-extern mp-vehicle-apply-ghost-correction (function vehicle none))
 (define-extern mp-cleanup-traffic-ghosts (function none))
+
+;; --- Authoritative Sync Functions ---
+(define-extern mp-send-edge-grab-event (function symbol none))

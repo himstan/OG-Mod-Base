@@ -29,31 +29,40 @@
 (defun mp-send-event-function-hijack ((proc process-tree) (msg event-message-block))
   "Global hijack for send-event-function to sync mission critical events."
   (with-pp
-    (when (and *multi-sync-enabled?*
-               (mp-is-jak?) ;; Only the Host broadcasts mission events
-               (not *mp-processing-remote-event*)
-               (valid? proc process (the-as string #f) #t 0)
-               )
-      (let ((evt-msg (-> msg message))
-            (raw-name (the-as basic (-> proc name)))
-            (p-name (the-as string #f)))
-        (cond
-          ((type? raw-name string) (set! p-name (the-as string raw-name)))
-          ((type? raw-name symbol) (set! p-name (symbol->string (the-as symbol raw-name))))
-          )
-        (case evt-msg
-          (('leave)
-           (when (and p-name (!= p-name ""))
-             (format 0 "[MP-MissionEvent] Host triggered 'leave for actor ~S. Syncing...~%" p-name)
-             (mp-send-mission-event p-name (the uint 1))
-             )
-           )
-          (('play-scene)
-           (when (and p-name (!= p-name ""))
-             (format 0 "[MP-MissionEvent] Host triggered 'play-scene for actor ~S. Syncing...~%" p-name)
-             (mp-send-mission-event p-name (the uint 2))
-             )
-           )
+    (let ((evt-msg (-> msg message)))
+      ;; OPTIMIZATION: Only proceed if this is an event we actually care about syncing.
+      ;; This prevents unnecessary and potentially dangerous pointer operations on every single engine event.
+      (when (and (or (= evt-msg 'leave) (= evt-msg 'play-scene))
+                 *multi-sync-enabled?*
+                 (mp-is-jak?) ;; Only the Host broadcasts mission events
+                 (not *mp-processing-remote-event*)
+                 (valid? proc process (the-as string #f) #t 0)
+                 )
+        ;; Extra safety: check if the name pointer itself is valid before accessing it
+        (let ((name-ptr (-> proc name)))
+          (when (nonzero? name-ptr)
+            (let ((raw-name (the-as basic name-ptr))
+                  (p-name (the-as string #f)))
+              (cond
+                ((type? raw-name string) (set! p-name (the-as string raw-name)))
+                ((type? raw-name symbol) (set! p-name (symbol->string (the-as symbol raw-name))))
+                )
+              (case evt-msg
+                (('leave)
+                 (when (and p-name (!= p-name ""))
+                   (format 0 "[MP-MissionEvent] Host triggered 'leave' for actor ~S. Syncing...~%" p-name)
+                   (mp-send-mission-event p-name (the uint 1))
+                   )
+                 )
+                (('play-scene)
+                 (when (and p-name (!= p-name ""))
+                   (format 0 "[MP-MissionEvent] Host triggered 'play-scene' for actor ~S. Syncing...~%" p-name)
+                   (mp-send-mission-event p-name (the uint 2))
+                   )
+                 )
+                )
+              )
+            )
           )
         )
       )

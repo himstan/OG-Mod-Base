@@ -565,9 +565,13 @@
   (when (time-elapsed? (-> self control time-of-last-surface-change) (seconds 0.2))
     (logclear! (-> *collide-edge-board-spec* flags) (collide-edge-spec-flags one send-event))
     (set! (-> *collide-edge-board-spec* touching-segment) #f)
-    (do-edge-grabs self *collide-cache* *collide-edge-board-spec*)    (logior! (-> *collide-edge-board-spec* flags) (collide-edge-spec-flags send-event))
-    (let ((gp-0 *edge-grab-info*))
-      (when (-> gp-0 found-edge?)
+    (do-edge-grabs self *collide-cache* *collide-edge-board-spec*)
+    (logior! (-> *collide-edge-board-spec* flags) (collide-edge-spec-flags send-event))
+    (let ((gp-0 (if (= (-> self tobot?) 'mp-puppet) *remote-edge-grab-info* *edge-grab-info*)))
+      (if (= (-> self tobot?) 'mp-puppet)
+          (set! (-> *collide-edge-work* cshape) (-> self control))
+          )
+      (when (edge-grab-info-method-9 gp-0)
         (vector-normalize!
           (vector-!
             (-> self control edge-grab-edge-dir)

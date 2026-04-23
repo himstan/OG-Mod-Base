@@ -10,6 +10,7 @@
 ;; Global pointer to the remote player's process (Robust Singleton)
 (define *mp-puppet* (the-as target #f))
 (define *mp-puppet-ghost* (new 'static 'mp-target-ghost-record))
+(define-perm *mp-puppet-state-mismatch-count* int 0)
 
 ;; --- Puppet Sync Logic ---
 
@@ -351,6 +352,25 @@
   (none)
   )
 
+(defun mp-target-state-attacking? ((state symbol))
+  "Check if a target state is an attacking state where rotation tracking should be disabled."
+  (case state
+    (('target-attack
+      'target-running-attack
+      'target-attack-air
+      'target-attack-uppercut
+      'target-attack-uppercut-jump
+      'target-darkjak-running-attack
+      'target-indax-attack
+      'target-indax-attack-air
+      'target-indax-running-attack
+      )
+     #t
+     )
+    (else #f)
+    )
+  )
+
 (defun mp-puppet-apply-ghost-correction! ((proc target))
   "Smoothly nudge the puppet target's root towards the ghost position and inject inputs."
   (let ((ghost *mp-puppet-ghost*))
@@ -358,45 +378,83 @@
       ;; CRITICAL: Ensure the process is never culled by distance/kernel optimizations
       (logclear! (-> proc mask) (process-mask pause sleep actor-pause))
 
-      ;; 1. Position/Rotation Sync (P-Controller)
-      ;; SKIP if in a state that handles its own anchoring (pilot, board, etc.)
-      (when (not (focus-test? proc pilot board tube flut mech))
-        (let ((dist (vector-vector-distance (-> proc control trans) (-> ghost trans))))
-          (cond
-            ((> dist (meters 15.0))
-             ;; Hard snap if too far
-             (vector-copy! (-> proc control trans) (-> ghost trans))
-             (vector-reset! (-> proc control transv))
-             )
-            (else
-             ;; Smoothly nudge towards ghost to correct drift
-             (let ((lerp-factor 0.15))
-               (vector-lerp! (-> proc control trans) (-> proc control trans) (-> ghost trans) lerp-factor)
+      (let ((cur-state (if (-> proc state) (-> proc state name) #f)))
+        ;; 1. Position/Rotation Sync (P-Controller)
+        ;; SKIP if in a state that handles its own anchoring (pilot, board, etc.)
+        (when (not (focus-test? proc pilot board tube flut mech))
+          (let ((dist (vector-vector-distance (-> proc control trans) (-> ghost trans))))
+            (cond
+              ((> dist (meters 15.0))
+               ;; Hard snap if too far
+               (vector-copy! (-> proc control trans) (-> ghost trans))
+               (vector-reset! (-> proc control transv))
                )
-             )
+              (else
+               ;; Smoothly nudge towards ghost to correct drift
+               (let ((lerp-factor 0.2))
+                 (vector-lerp! (-> proc control trans) (-> proc control trans) (-> ghost trans) lerp-factor)
+                 )
+               )
+              )
+            )
+          
+          ;; 2. Rotation Sync (Slerp for smoothness)
+          (when (not (mp-target-state-attacking? cur-state))
+            (let ((slerp-factor 0.25)) ;; Tweak for "smooth but responsive" feel
+              (quaternion-slerp! (-> proc control quat) (-> proc control quat) (-> ghost quat) slerp-factor)
+              (quaternion-slerp! (-> proc control quat-for-control) (-> proc control quat-for-control) (-> ghost quat) slerp-factor)
+              (quaternion-slerp! (-> proc control dir-targ) (-> proc control dir-targ) (-> ghost quat) slerp-factor)
+              )
             )
           )
-        ;; 2. Rotation sync
-        (quaternion-slerp! (-> proc control quat) (-> proc control quat) (-> ghost quat) 0.2)
-        )
 
-      ;; 3. Input Sync (Injected into puppet's dedicated pad)
-      (when (-> proc control cpad)
-        (mp-puppet-update-pad (-> proc control cpad) 
-                              (the-as uint16 (-> ghost buttons)) 
-                              (-> ghost leftx) (-> ghost lefty) 
-                              (-> ghost rightx) (-> ghost righty))
-        )
+        ;; 3. State Bumping (Reconciliation Fallback)
+        (let ((ghost-state (mp-target-get-state-from-id (-> ghost state-id))))
+          (when (and ghost-state (!= cur-state ghost-state))
+            (cond
+              ((or (= ghost-state 'target-death) (= ghost-state 'target-indax-death))
+               (format 0 "[MP-Puppet] Authoritative Death! Bumping ~A -> ~A~%" cur-state ghost-state)
+               (send-event proc 'mp-die)
+               (set! *mp-puppet-state-mismatch-count* 0)
+               )
+              ((or (= ghost-state 'target-hit) (= ghost-state 'target-indax-hit))
+               (send-event proc 'mp-hit)
+               (set! *mp-puppet-state-mismatch-count* 0)
+               )
+              ((or (= cur-state 'target-edge-grab) (= cur-state 'target-indax-edge-grab) (= cur-state 'target-pilot-edge-grab))
+               ;; Puppet is hanging, but ghost is NOT.
+               (when (not (or (= ghost-state 'target-edge-grab) (= ghost-state 'target-indax-edge-grab) (= ghost-state 'target-pilot-edge-grab)))
+                 (+! *mp-puppet-state-mismatch-count* 1)
+                 (when (>= *mp-puppet-state-mismatch-count* 10)
+                   (format 0 "[MP-Puppet] Stuck in hang! Forcing exit via 'end-mode...~%")
+                   (send-event proc 'end-mode 'edge-grab)
+                   (set! *mp-puppet-state-mismatch-count* 0)
+                   )
+                 )
+               )
+              )
+            )
+          (when (= cur-state ghost-state)
+            (set! *mp-puppet-state-mismatch-count* 0)
+            )
+          )
 
-      ;; 4. Camera Orientation Sync
+        ;; 4. Input Sync (Injected into puppet's dedicated pad)
+        (when (-> proc control cpad)
+          (mp-puppet-update-pad (-> proc control cpad) 
+                                (the-as uint16 (-> ghost buttons)) 
+                                (-> ghost leftx) (-> ghost lefty) 
+                                (-> ghost rightx) (-> ghost righty))
+        )
+      )
+
+      ;; 5. Camera Orientation Sync
       ;; Construct a camera-relative input matrix from the remote player's camera angle.
-      ;; This ensures the stick inputs are evaluated in the correct world-space direction.
       (matrix-rotate-y! (-> proc control cam-R-w) (-> ghost cam-angle-y))
       ;; Prevent the target state machine from overwriting this with the local camera.
       (set! (-> proc control update-cam-R-w-start-time) (the-as int64 #x7fffffffffffffff))
 
-      ;; 5. Permanent Jak Hiding (Daxter Puppets)
-      ;; Force Jak model to be hidden if we are the Host (puppet is Daxter)
+      ;; 6. Permanent Jak Hiding (Daxter Puppets)
       (if (mp-is-jak?)
           (logior! (-> proc draw status) (draw-control-status no-draw-bounds2))
           )
@@ -404,7 +462,6 @@
     )
   (none)
 )
-;; --- Puppet Initialization ---
 
 (defbehavior mp-puppet-init target ((arg0 continue-point))
   "Initialize a target process as a remote player puppet. Bypasses continue/title states."

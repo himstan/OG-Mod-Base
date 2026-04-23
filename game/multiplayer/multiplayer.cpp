@@ -327,7 +327,7 @@ void pc_multi_send_events(u32 event_ptr) {
       for (uint32_t i = 0; i < events->out_count && i < 16; ++i) {
         PacketGameEvent out_event; out_event.header.type = PacketType::EVENT_GAME;
         out_event.header.sequenceNum = ++gMultiplayerData.last_out_event_seq;
-        memcpy(out_event.raw_data, &events->out_events[i], 48);
+        memcpy(out_event.raw_data, &events->out_events[i], sizeof(MPEvent));
         MultiplayerManager::broadcast(gMultiplayerData, gMultiplayerData.local_role, out_event, ENET_PACKET_FLAG_RELIABLE);
       }
       events->out_count = 0;
@@ -341,8 +341,12 @@ void pc_multi_receive_events(u32 event_ptr) {
     if (!gMultiplayerData.initialized || event_ptr < 0x1000) return;
     MPEventBufferGOAL* events = (MPEventBufferGOAL*)Ptr<u8>(event_ptr).c();
     if (events) {
+      if (!gMultiplayerData.inbound_events.empty()) {
+        lg::info("[Multiplayer] Moving {} events to GOAL. Current in_count: {}", 
+                 gMultiplayerData.inbound_events.size(), events->in_count);
+      }
       while (!gMultiplayerData.inbound_events.empty() && events->in_count < 16) {
-        memcpy(&events->in_events[events->in_count++], gMultiplayerData.inbound_events.front().raw_data, 48);
+        memcpy(&events->in_events[events->in_count++], gMultiplayerData.inbound_events.front().raw_data, sizeof(MPEvent));
         gMultiplayerData.inbound_events.erase(gMultiplayerData.inbound_events.begin());
       }
     }
