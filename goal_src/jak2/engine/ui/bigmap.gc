@@ -906,6 +906,7 @@
       )
     )
   (set! (-> this drawing-flag) #t)
+  (set! (-> *blit-displays-work* count-down) (the-as uint 1))
   (none)
   )
 
