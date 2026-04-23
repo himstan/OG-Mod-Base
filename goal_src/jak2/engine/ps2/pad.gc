@@ -216,7 +216,9 @@ The cpad-set-buzz! function can be used for vibration.
   (let ((s5-0 (object-new allocation type-to-make (the-as int (-> type-to-make size)))))
     (set! (-> s5-0 number) arg0)
     (set! (-> s5-0 buzz) #f)
-    (cpad-open s5-0 arg0)
+    (if (< arg0 2)
+        (cpad-open s5-0 arg0)
+        )
     (cpad-invalid! s5-0)
     )
   )
@@ -224,7 +226,7 @@ The cpad-set-buzz! function can be used for vibration.
 ;; List of controllers. It always has 2 controllers.
 (deftype cpad-list (basic)
   ((num-cpads  int32)
-   (cpads      cpad-info  2)
+   (cpads      cpad-info  3)
    )
   (:methods
     (new (symbol type) _type_)
@@ -238,6 +240,7 @@ The cpad-set-buzz! function can be used for vibration.
     (set! (-> gp-0 num-cpads) 2)
     (set! (-> gp-0 cpads 0) (new 'global 'cpad-info 0))
     (set! (-> gp-0 cpads 1) (new 'global 'cpad-info 1))
+    (set! (-> gp-0 cpads 2) (new 'global 'cpad-info 2))
     gp-0
     )
   )

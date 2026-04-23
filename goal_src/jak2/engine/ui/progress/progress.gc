@@ -344,7 +344,7 @@
   (hide-hud #f)
   (disable-level-text-file-loading)
   (logclear! (-> self mask) (process-mask menu progress actor-pause))
-  (add-setting! 'process-mask 'set 0.0 (process-mask progress))
+  ;; (add-setting! 'process-mask 'set 0.0 (process-mask progress))
   (set! (-> self clock) (-> *display* real-clock))
   (apply-settings *setting-control*)
   (set-blackout-frames 0)
@@ -440,7 +440,7 @@
       (cond
         (*progress-process*
           (deactivate (-> *progress-process* 0))
-          (set! (-> *blit-displays-work* menu-mode) #t)
+          (set! (-> *blit-displays-work* menu-mode) #f)
           (set! *progress-process* (process-spawn progress arg1 :to arg0 :stack (&-> *progress-stack* DPROCESS_STACK_SIZE)))
           (set-master-mode 'progress)
           )
@@ -463,6 +463,9 @@
   (enable-level-text-file-loading)
   (persist-with-delay *setting-control* 'allow-progress (seconds 0.1) 'allow-progress #f 0.0 0)
   (persist-with-delay *setting-control* 'allow-pause (seconds 0.1) 'allow-pause #f 0.0 0)
+  (when *target*
+    (set! (-> *target* control cpad) (-> *cpad-list* cpads 0))
+    )
   (call-parent-method this)
   (none)
   )
@@ -1417,7 +1420,7 @@
           (speed-mod (if (-> *pc-settings* fast-progress?) (-> *pc-cheat-state* progress-speed) 1.0))
           )
       (when (hud-hidden?)
-        (set! (-> *blit-displays-work* menu-mode) #t)
+        (set! (-> *blit-displays-work* menu-mode) #f)
         (set! (-> self pos-transition) (seek-ease
                                          (-> self pos-transition)
                                          f30-0
@@ -1719,7 +1722,6 @@
     (while (or (-> *blit-displays-work* screen-copied) (nonzero? (-> *blit-displays-work* count-down)))
       (suspend)
       )
-    (remove-setting! 'process-mask)
     (set-master-mode *last-master-mode*)
     (logior! (-> self mask) (process-mask sleep))
     (suspend)

@@ -144,11 +144,22 @@
 
     ;; --- Input Extraction ---
     (let ((pad (-> *cpad-list* cpads 0)))
-      (set! (-> *local-info* buttons) (the-as uint (-> pad button0)))
-      (set! (-> *local-info* leftx) (-> pad leftx))
-      (set! (-> *local-info* lefty) (-> pad lefty))
-      (set! (-> *local-info* rightx) (-> pad rightx))
-      (set! (-> *local-info* righty) (-> pad righty))
+      (if (or (= *master-mode* 'menu) (= *master-mode* 'progress) (= *master-mode* 'pause) (= *master-mode* 'freeze))
+          (begin
+            (set! (-> *local-info* buttons) (the-as uint 0))
+            (set! (-> *local-info* leftx) (the-as uint 128))
+            (set! (-> *local-info* lefty) (the-as uint 128))
+            (set! (-> *local-info* rightx) (the-as uint 128))
+            (set! (-> *local-info* righty) (the-as uint 128))
+            )
+          (begin
+            (set! (-> *local-info* buttons) (the-as uint (-> pad button0)))
+            (set! (-> *local-info* leftx) (-> pad leftx))
+            (set! (-> *local-info* lefty) (-> pad lefty))
+            (set! (-> *local-info* rightx) (-> pad rightx))
+            (set! (-> *local-info* righty) (-> pad righty))
+            )
+          )
       )
     (let ((cam-mat (-> *math-camera* inv-camera-rot)))
       (set! (-> *local-info* cam-angle-y) (atan (-> cam-mat vector 2 x) (-> cam-mat vector 2 z)))
