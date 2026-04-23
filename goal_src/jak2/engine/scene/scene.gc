@@ -898,9 +898,6 @@
   :code (behavior ((arg0 symbol))
     (local-vars (v1-18 symbol) (v1-118 symbol))
     (when (and (-> self scene) (zero? (-> self scene wait-max-time)))
-      (while *progress-process*
-        (suspend)
-        )
       (set-setting! 'allow-progress #f 0.0 0)
       (set-setting! 'bg-a-force 'abs 1.0 0)
       (apply-settings *setting-control*)
@@ -963,7 +960,6 @@
                      (or (and (-> *setting-control* user-current movie)
                               (!= (-> *setting-control* user-current movie) (process->ppointer self))
                               )
-                         *progress-process*
                          (!= (get-status *gui-control* (-> self gui-id)) 3)
                          )
                      )

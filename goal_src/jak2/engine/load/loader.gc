@@ -811,7 +811,6 @@
                        )
                    )
               (logtest? (-> *art-control* frame-mask) 28)
-              (!= *master-mode* 'game)
               )
       (cond
         ((-> gp-0 idle)
@@ -830,7 +829,6 @@
                           )
                       )
                  (logtest? (-> *art-control* frame-mask) 28)
-                 (!= *master-mode* 'game)
                  )
         (format #t "WARNING: ---------------------> loader stall on lock~%")
         (if ((-> gp-0 break-func) self)

@@ -101,7 +101,7 @@
 
 (defun paused? ()
   "Are we paused, or in some menu that should make us pause?"
-  (or (= *master-mode* 'pause) (= *master-mode* 'freeze))
+  #f
   )
 
 (defun movie? ()
@@ -133,18 +133,18 @@
     (case *master-mode*
       (('pause)
        ;; entering pause, set pause bit in masks
-       (if (not *debug-pause*)
-           (logior! (-> *setting-control* user-default process-mask) (process-mask pause))
-           )
-       (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze menu))
+       (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze pause menu))
+       (when *target*
+         (set! (-> *target* control cpad) (-> *cpad-list* cpads 2))
+         )
        (set! *pause-lock* #f)
-       (sound-group-pause (sound-group sfx music dialog sog3 ambient dialog2 sog6 sog7))
        (set! (-> *game-info* pause-start-time) (-> *display* real-clock frame-counter))
        )
       (('freeze)
-       (logior! (-> *setting-control* user-default process-mask) (process-mask freeze))
-       (logclear! (-> *setting-control* user-default process-mask) (process-mask pause menu))
-       (sound-group-pause (sound-group sfx ambient))
+       (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze pause menu))
+       (when *target*
+         (set! (-> *target* control cpad) (-> *cpad-list* cpads 2))
+         )
        (set! (-> *game-info* pause-start-time) (-> *display* real-clock frame-counter))
        )
       (('menu)
@@ -211,43 +211,11 @@
     (('game)
      (set-master-mode
        (cond
-         ((and (logtest? (-> *cpad-list* cpads 0 valid) 128)
-               *target*
-               (>= (-> *display* base-clock frame-counter) (-> *game-info* blackout-time))
-               (= (-> *setting-control* user-current bg-a) 0.0)
-               (and (= (-> *setting-control* user-current bg-a-force) 0.0)
-                    (< (seconds 1003) (-> *display* real-clock frame-counter))
-                    )
-               )
-          ;; in 'game, controller fell out, target is spawned, can pause if it's allowed, and not in progress.
-          (if (or *progress-process* (not (-> *setting-control* user-current allow-pause)))
-              *master-mode*
-              'pause
-              )
-          )
          ;; game -> debug menu when pressing select/start with L3.
          ((and (cpad-pressed? 0 select start) (cpad-hold? 0 l3) *debug-segment*)
           'menu
           )
-         ;; select in debug pauses (also check R2 here for the frame-advance feature)
-         ((and (or (cpad-hold? 0 select) (cpad-hold? 0 r2)) *debug-segment*)
-          'pause
-          )
-         ;; not debugging, not pressing start, should pause if possible
-         ((and (not *debug-segment*) (not (logtest? (-> *cpad-list* cpads 0 button0-abs 0) (pad-buttons start))))
-          (if (pause-allowed?)
-              'pause
-              *master-mode* ;; and if we can't, reject
-              )
-          )
-         ;; if we can't open progress, fall back to pause
-         ((not (progress-allowed?))
-          (if (pause-allowed?)
-              'pause
-              *master-mode* ;; otherwise reject
-              )
-          )
-         ((cpad-hold? 0 start) ;; finally, if we're pressing start and pausing is impossible, open progress
+         ((cpad-hold? 0 start) ;; open progress
           'progress
           )
          (else
@@ -263,12 +231,6 @@
                         ((and *debug-segment* (cpad-hold? 0 l3) (cpad-pressed? 0 select start))
                          'menu
                          )
-                        ((cpad-hold? 0 select r2)
-                         (if *debug-segment*
-                             'pause
-                             *master-mode*
-                             )
-                         )
                         ((cpad-hold? 0 r3 r2 triangle circle)
                          'game
                          )
@@ -283,24 +245,7 @@
      (set! *pause-lock* #f)
      )
     (('pause)
-     (set-master-mode (cond
-                        ((and (cpad-pressed? 0 select start) (cpad-hold? 0 l3) *debug-segment*)
-                         'menu
-                         )
-                        ((and (not *debug-segment*) (cpad-hold? 0 select))
-                         'game
-                         )
-                        ((and *cheat-mode* (cpad-hold? 0 select r2))
-                         'game
-                         )
-                        ((cpad-hold? 0 start)
-                         'game
-                         )
-                        (else
-                          *master-mode*
-                          )
-                        )
-                      )
+     (set-master-mode 'game)
      (set! *pause-lock* (and *cheat-mode* (cpad-hold? 0 r2)))
      )
     (('freeze)
