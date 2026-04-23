@@ -263,7 +263,7 @@
     )
   )
 
-(define *minimap-class-list* (new 'static 'inline-array minimap-class-node 71
+(define *minimap-class-list* (new 'static 'inline-array minimap-class-node 72
                                (new 'static 'minimap-class-node
                                  :default-position (new 'static 'vector :w 1.0)
                                  :flags (minimap-flag trail bigmap)
@@ -823,6 +823,14 @@
                                  :icon-xy (new 'static 'vector2ub :data (new 'static 'array uint8 2 #x0 #x1))
                                  :scale 1.0
                                  :color (new 'static 'rgba :r #x7f :b #x7f :a #x80)
+                                 )
+                               (new 'static 'minimap-class-node
+                                 :default-position (new 'static 'vector :w 1.0)
+                                 :flags (minimap-flag trail bigmap)
+                                 :name "remote-player"
+                                 :icon-xy (new 'static 'vector2ub :data (new 'static 'array uint8 2 #x0 #x1))
+                                 :scale 1.0
+                                 :color (new 'static 'rgba :r #x00 :g #xa0 :b #xff :a #x80)
                                  )
                                )
         )

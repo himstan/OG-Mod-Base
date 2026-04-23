@@ -475,6 +475,10 @@
 (defbehavior mp-puppet-init target ((arg0 continue-point))
   "Initialize a target process as a remote player puppet. Bypasses continue/title states."
   (init-target self arg0 'mp-puppet)
+
+  ;; Add minimap icon
+  (add-icon! *minimap* self (the-as uint (minimap-class remote-player)) (the-as int #f) (the-as vector #t) 0)
+
   ;; Directly go to the correct state based on role to avoid resets/overrides
   (if (mp-is-jak?)
       (go target-indax-start (the handle #f))

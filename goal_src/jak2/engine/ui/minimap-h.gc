@@ -100,6 +100,7 @@
   (ruins-hut 68)
   (forest-samos 69)
   (metalhead 70)
+  (remote-player 71)
   )
 
 (declare-type process-drawable process)
