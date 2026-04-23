@@ -475,6 +475,8 @@
 (defbehavior mp-puppet-init target ((arg0 continue-point))
   "Initialize a target process as a remote player puppet. Bypasses continue/title states."
   (init-target self arg0 'mp-puppet)
+  (remove-setting! 'allow-pause)
+  (remove-setting! 'allow-progress)
 
   ;; Add minimap icon
   (add-icon! *minimap* self (the-as uint (minimap-class remote-player)) (the-as int #f) (the-as vector #t) 0)
