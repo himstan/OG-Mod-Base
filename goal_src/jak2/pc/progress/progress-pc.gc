@@ -152,6 +152,9 @@
 
 (defmethod set-menu-options ((obj progress) (arg0 symbol))
   "Set the menu options for the menu state specified by arg0."
+  (if (and (!= arg0 'bigmap) (!= arg0 'go-away))
+      (disable-drawing *bigmap*)
+  )
   (set! (-> obj current-options) #f)
   (case arg0
     (('go-away)
@@ -333,6 +336,7 @@
      (set! (-> obj current-options) *select-scene-options*)
      )
     (('bigmap)
+     (enable-drawing *bigmap*)
      (set! (-> obj current-options) *bigmap-options*)
      )
     (('missions)

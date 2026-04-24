@@ -45,8 +45,8 @@
         :scale #t
         :next-state 'sound-options
         )
-      (new 'static 'menu-main-menu-option :name (text-id progress-load-game) :scale #t :next-state 'select-load)
-      (new 'static 'menu-main-menu-option :name (text-id progress-save-game) :scale #t :next-state 'select-save)
+      (new 'static 'menu-main-menu-option :name (text-id null) :scale #t :next-state 'none)
+      (new 'static 'menu-main-menu-option :name (text-id null) :scale #t :next-state 'none)
       (new 'static 'menu-main-menu-option :name (text-id progress-root-secrets) :scale #t :next-state 'secret)
       (new 'static 'menu-main-menu-option :name (text-id progress-restart-quit) :scale #t :next-state 'quit-restart)
       )
@@ -85,8 +85,8 @@
         :scale #t
         :next-state 'select-scene
         )
-      (new 'static 'menu-main-menu-option :name (text-id progress-load-game) :scale #t :next-state 'select-load)
-      (new 'static 'menu-main-menu-option :name (text-id progress-save-game) :scale #t :next-state 'select-save)
+      (new 'static 'menu-main-menu-option :name (text-id null) :scale #t :next-state 'none)
+      (new 'static 'menu-main-menu-option :name (text-id null) :scale #t :next-state 'none)
       (new 'static 'menu-main-menu-option
         :name (text-id progress-root-secrets)
         :scale #t
@@ -137,7 +137,7 @@
         :scale #t
         :next-state 'select-save-title
         )
-      (new 'static 'menu-sub-menu-option :name (text-id progress-load-game) :scale #t :next-state 'select-load)
+      (new 'static 'menu-sub-menu-option :name (text-id null) :scale #t :next-state 'none)
       (new 'static 'menu-sub-menu-option
         :name (text-id progress-title-options)
         :scale #t
@@ -844,7 +844,7 @@
         )
 
 (define *hud-ring-graphic-remap*
-  (new 'static 'boxed-array :type uint64 #x80 #x40 #x10 #x4 #x8 #x400 #x20 #x100 #x200 #x2)
+  (new 'static 'boxed-array :type uint64 #x80 #x40 #x10 #x4 #x8 #x400 #x0 #x0 #x200 #x2)
   )
 
 (define *hud-ring-kiosk-graphic-remap*
