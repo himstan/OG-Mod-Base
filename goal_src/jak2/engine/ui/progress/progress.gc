@@ -344,7 +344,9 @@
   (hide-hud #f)
   (disable-level-text-file-loading)
   (logclear! (-> self mask) (process-mask menu progress actor-pause))
-  ;; (add-setting! 'process-mask 'set 0.0 (process-mask progress))
+  (when (or (= arg0 'reconnect) (= arg0 'host-left))
+    (add-setting! 'process-mask 'set 0.0 (process-mask progress))
+    )
   (set! (-> self clock) (-> *display* real-clock))
   (apply-settings *setting-control*)
   (set-blackout-frames 0)
@@ -396,7 +398,9 @@
     (process-spawn hud-ring-cell 12 (* -2.0 f30-0) 8 :to self)
     (process-spawn hud-ring-cell 11 (* -1.0 f30-0) 9 :to self)
     )
-  (enable-drawing *bigmap*)
+  (when (not (or (= arg0 'reconnect) (= arg0 'host-left) (= arg0 'icon-info)))
+    (enable-drawing *bigmap*)
+    )
   (go-virtual come-in)
   )
 
@@ -440,11 +444,12 @@
       (cond
         (*progress-process*
           (deactivate (-> *progress-process* 0))
-          (set! (-> *blit-displays-work* menu-mode) #f)
+          (set! (-> *blit-displays-work* menu-mode) (or (= arg1 'reconnect) (= arg1 'host-left)))
           (set! *progress-process* (process-spawn progress arg1 :to arg0 :stack (&-> *progress-stack* DPROCESS_STACK_SIZE)))
           (set-master-mode 'progress)
           )
         (else
+          (set! (-> *blit-displays-work* menu-mode) (or (= arg1 'reconnect) (= arg1 'host-left)))
           (set! *progress-process* (process-spawn progress arg1 :to arg0 :stack (&-> *progress-stack* DPROCESS_STACK_SIZE)))
           (set-master-mode 'progress)
           )

@@ -573,7 +573,9 @@
   (cond
     ((-> this drawing-flag)
      (cond
-       ((= (-> *blit-displays-work* count-down) 1)
+       ((or (= (-> *blit-displays-work* count-down) 1)
+            (and (not (-> *blit-displays-work* menu-mode)) (not (-> this loading-flag)))
+            )
         (set-pending-file
           (-> this bigmap-image)
           "world-map"
@@ -906,7 +908,6 @@
       )
     )
   (set! (-> this drawing-flag) #t)
-  (set! (-> *blit-displays-work* count-down) (the-as uint 1))
   (none)
   )
 

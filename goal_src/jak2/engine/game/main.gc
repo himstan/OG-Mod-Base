@@ -101,7 +101,14 @@
 
 (defun paused? ()
   "Are we paused, or in some menu that should make us pause?"
-  #f
+  (the symbol (or (= *master-mode* 'pause) (= *master-mode* 'freeze)
+                  (and (= *master-mode* 'progress) *progress-process*
+                       (or (= (-> *progress-process* 0 current) 'reconnect)
+                           (= (-> *progress-process* 0 current) 'host-left)
+                           )
+                       )
+                  )
+       )
   )
 
 (defun movie? ()
@@ -161,8 +168,15 @@
          (activate-progress *dproc* 'main)
          (if (not *progress-process*) ;; process didn't start, back to game.
              (set-master-mode 'game)
-             (when *target*
-               (set! (-> *target* control cpad) (-> *cpad-list* cpads 2))
+             (begin
+               (when (or (= (-> *progress-process* 0 current) 'reconnect)
+                         (= (-> *progress-process* 0 current) 'host-left)
+                         )
+                 (sound-group-pause (sound-group sfx music dialog sog3 ambient dialog2 sog6 sog7))
+                 )
+               (when *target*
+                 (set! (-> *target* control cpad) (-> *cpad-list* cpads 2))
+                 )
                )
              )
          )
