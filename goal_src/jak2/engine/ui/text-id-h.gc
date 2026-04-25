@@ -885,6 +885,11 @@
   (progress-reconnect-disconnect #x100042)
   (progress-multi-host-left-msg    #x100050)
   (progress-multi-host-left-disc   #x100051)
+  (progress-find-game #x100060)
+  (progress-direct-connect #x100061)
+  (progress-ip-address #x100062)
+  (progress-port #x100063)
+  (progress-connect #x100064)
   )
 
 ;; ---text-id

@@ -423,7 +423,7 @@ void pc_multi_receive_traffic(u32 buffer_ptr) {
 u64 pc_multi_get_enemy_sync_time() { return gMultiplayerData.last_enemy_sync_time; }
 void pc_multi_disconnect() { MultiplayerManager::disconnect(gMultiplayerData); }
 void pc_multi_setup_host() { MultiplayerManager::setup_host(gMultiplayerData); }
-void pc_multi_setup_client(u32 ip_ptr) { using namespace jak2; MultiplayerManager::setup_client(gMultiplayerData, Ptr<String>(ip_ptr).c()->data()); }
+void pc_multi_setup_client(u32 ip_ptr, u32 port) { using namespace jak2; MultiplayerManager::setup_client(gMultiplayerData, Ptr<String>(ip_ptr).c()->data(), (int)port); }
 int pc_multi_get_status() { return MultiplayerScanner::get_status(gMultiplayerData); }
 void pc_multi_set_status(int status) {
   int old_status = gMultiplayerData.join_status; gMultiplayerData.join_status = status;

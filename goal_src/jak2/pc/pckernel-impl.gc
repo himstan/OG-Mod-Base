@@ -113,6 +113,7 @@
    (mp-is-new-game? symbol)
    (mp-selected-save-slot int32)
    (mp-join-ip string)
+   (mp-join-port int32)
    (mp-join-status int32) ;; 0: idle, 1: searching, 2: found, 3: connecting, 4: connected, -1: failed
 	 )
 
@@ -182,6 +183,12 @@
   (set! (-> obj memcard-vibration?) #t)
   (set! (-> obj memcard-subtitles?) #f)
   (set! (-> obj hinttitles?) #t)
+
+  (when (or (zero? (the-as uint (-> obj mp-join-ip))) (= (length (-> obj mp-join-ip)) 0))
+    (set! (-> obj mp-join-ip) (new 'global 'string 32 (the-as string #f)))
+    (copy-string<-string (-> obj mp-join-ip) "127.0.0.1")
+    )
+  (set! (-> obj mp-join-port) 3000)
   0)
 
 (defmethod reset-extra ((obj pc-settings-jak2) (call-handlers symbol))

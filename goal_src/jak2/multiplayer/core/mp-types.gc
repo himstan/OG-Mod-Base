@@ -715,7 +715,7 @@
 (define-extern pc-multi-send-events (function uint none))
 (define-extern pc-multi-receive-events (function uint none))
 (define-extern pc-multi-setup-host (function none))
-(define-extern pc-multi-setup-client (function string none))
+(define-extern pc-multi-setup-client (function string int none))
 (define-extern pc-multi-get-status (function int))
 (define-extern pc-multi-set-status (function int none))
 (define-extern pc-multi-get-found-ip (function string))

@@ -32,7 +32,7 @@ void MultiplayerManager::setup_host(MultiplayerData& data) {
   }
 }
 
-void MultiplayerManager::setup_client(MultiplayerData& data, const char* ip) {
+void MultiplayerManager::setup_client(MultiplayerData& data, const char* ip, int port) {
   if (data.host)
     disconnect(data);
 
@@ -46,11 +46,11 @@ void MultiplayerManager::setup_client(MultiplayerData& data, const char* ip) {
   if (data.host) {
     ENetAddress server_address;
     enet_address_set_host(&server_address, ip);
-    server_address.port = 3000;
+    server_address.port = port;
 
     data.server_peer = enet_host_connect(data.host, &server_address, 2, 0);
     if (data.server_peer) {
-      lg::info("[Multiplayer] Client connecting to {}:3000...", ip);
+      lg::info("[Multiplayer] Client connecting to {}:{}...", ip, port);
       data.local_role = 1;
       data.local_net_id = 1;
       data.join_status = (int)MultiplayerStatus::CONNECTING;
