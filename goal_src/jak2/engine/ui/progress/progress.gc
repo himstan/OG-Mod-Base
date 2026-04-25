@@ -344,7 +344,7 @@
   (hide-hud #f)
   (disable-level-text-file-loading)
   (logclear! (-> self mask) (process-mask menu progress actor-pause))
-  (when (or (= arg0 'reconnect) (= arg0 'host-left))
+  (when (or (= arg0 'reconnect) (= arg0 'host-left) (= arg0 'title))
     (add-setting! 'process-mask 'set 0.0 (process-mask progress))
     )
   (set! (-> self clock) (-> *display* real-clock))
@@ -398,6 +398,9 @@
     (process-spawn hud-ring-cell 12 (* -2.0 f30-0) 8 :to self)
     (process-spawn hud-ring-cell 11 (* -1.0 f30-0) 9 :to self)
     )
+  (when (= arg0 'title)
+    (enable-drawing *bigmap*)
+  )
   (go-virtual come-in)
   )
 
@@ -441,12 +444,11 @@
       (cond
         (*progress-process*
           (deactivate (-> *progress-process* 0))
-          (set! (-> *blit-displays-work* menu-mode) (or (= arg1 'reconnect) (= arg1 'host-left)))
+          (set! (-> *blit-displays-work* menu-mode) (or (= arg1 'reconnect) (= arg1 'host-left) (= arg1 'title)))
           (set! *progress-process* (process-spawn progress arg1 :to arg0 :stack (&-> *progress-stack* DPROCESS_STACK_SIZE)))
           (set-master-mode 'progress)
           )
         (else
-          (set! (-> *blit-displays-work* menu-mode) (or (= arg1 'reconnect) (= arg1 'host-left)))
           (set! *progress-process* (process-spawn progress arg1 :to arg0 :stack (&-> *progress-stack* DPROCESS_STACK_SIZE)))
           (set-master-mode 'progress)
           )
@@ -774,9 +776,6 @@
 
 (defmethod set-menu-options ((this progress) (arg0 symbol))
   "Set the menu options for the menu state specified by arg0."
-  (if (and (!= arg0 'bigmap) (!= arg0 'go-away))
-      (disable-drawing *bigmap*)
-  )
   (set! (-> this current-options) #f)
   (case arg0
     (('go-away)
@@ -1200,7 +1199,7 @@
              (if (>= itercount 100) (format 0 "[PROGRESS-DEBUG] Stuck in option loop (back)!~%"))
              )
            )
-         )       
+         )
        (set! (-> self graphic-index) (-> self option-index))
        (+! (-> self want-option-index) 1)
        )
@@ -1444,7 +1443,7 @@
           (speed-mod (if (-> *pc-settings* fast-progress?) (-> *pc-cheat-state* progress-speed) 1.0))
           )
       (when (hud-hidden?)
-        (set! (-> *blit-displays-work* menu-mode) #f)
+        (set! (-> *blit-displays-work* menu-mode) (= (-> *progress-state* starting-state) 'title))
         (set! (-> self pos-transition) (seek-ease
                                          (-> self pos-transition)
                                          f30-0

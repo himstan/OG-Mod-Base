@@ -105,6 +105,7 @@
                   (and (= *master-mode* 'progress) *progress-process*
                        (or (= (-> *progress-process* 0 current) 'reconnect)
                            (= (-> *progress-process* 0 current) 'host-left)
+                           (= (-> *progress-process* 0 current) 'title)
                            )
                        )
                   )
@@ -163,7 +164,18 @@
        )
       (('progress)
        ;; entering progress, start the process
-       (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze pause menu))
+       (cond
+         ((and *progress-process* (-> *progress-process* 0 main-menu))
+          (if (not *debug-pause*)
+              (logior! (-> *setting-control* user-default process-mask) (process-mask pause))
+              )
+          (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze menu))
+          (sound-group-pause (sound-group sfx music dialog sog3 ambient dialog2 sog6 sog7))
+          )
+         (else
+           (logclear! (-> *setting-control* user-default process-mask) (process-mask freeze pause menu))
+           )
+         )
        (when (not *progress-process*)
          (activate-progress *dproc* 'main)
          (if (not *progress-process*) ;; process didn't start, back to game.
@@ -171,6 +183,7 @@
              (begin
                (when (or (= (-> *progress-process* 0 current) 'reconnect)
                          (= (-> *progress-process* 0 current) 'host-left)
+                         (-> *progress-process* 0 main-menu)
                          )
                  (sound-group-pause (sound-group sfx music dialog sog3 ambient dialog2 sog6 sog7))
                  )
