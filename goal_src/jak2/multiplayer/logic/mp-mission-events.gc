@@ -36,7 +36,7 @@
                  *multi-sync-enabled?*
                  (mp-is-jak?) ;; Only the Host broadcasts mission events
                  (not *mp-processing-remote-event*)
-                 (valid? proc process (the-as string #f) #t 0)
+                 (valid? proc process (the-as string #f) #f 0)
                  )
         ;; Extra safety: check if the name pointer itself is valid before accessing it
         (let ((name-ptr (-> proc name)))

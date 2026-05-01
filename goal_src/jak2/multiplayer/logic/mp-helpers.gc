@@ -122,6 +122,7 @@
              (mp-is-jak?) ;; CRITICAL: Only the Host (Jak) should broadcast world-status changes (BREAK events)
              (-> arg0 entity)
              (not (type? arg0 enemy)) ;; EXCLUDE enemies from BREAK events (handled by ENEMY_DEATH)
+             (not (type? arg0 com-airlock)) ;; EXCLUDE airlocks from BREAK events
              )
     (mp-send-world-event MP_EVENT_BREAK (-> arg0 entity aid)))
 
