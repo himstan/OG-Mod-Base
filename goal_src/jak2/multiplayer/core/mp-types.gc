@@ -316,6 +316,12 @@
   (turret-stance 108)
   (turret-get-on 109)
   (turret-get-off 110)
+  ;; Pole States
+  (pole-cycle 111)
+  (pole-flip-up 112)
+  (pole-flip-up-jump 113)
+  (pole-flip-forward 114)
+  (pole-flip-forward-jump 115)
   )
 
 (deftype mp-target-ghost-record (structure)
