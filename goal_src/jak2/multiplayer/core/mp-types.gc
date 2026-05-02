@@ -17,6 +17,7 @@
 
 (define-perm *remote-player-is-dying* symbol #f)
 (define-perm *remote-player-is-dead* symbol #f)
+(define-perm *mp-local-player-is-respawning* symbol #f)
 
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))

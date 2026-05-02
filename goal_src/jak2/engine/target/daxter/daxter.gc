@@ -313,7 +313,12 @@
   (logior! (-> self focus-status) (focus-status indax))
   (set! (-> self control bend-target) 0.0)
   (target-collide-set! 'indax 0.0)
-  (set! (-> self fact health) (-> self fact health-max))
+  (if (not (and *multi-sync-enabled?*
+                *mp-local-player-is-respawning*
+                (> (-> self fact health) 0.0)))
+      (set! (-> self fact health) (-> self fact health-max))
+      )
+  (set! *mp-local-player-is-respawning* #f)
   (set-time! (-> self indax indax-start-time))
   (set! (-> self indax art-group-backup) (-> self draw art-group))
   ;; 1. Sidekick draws Daxter
@@ -351,6 +356,7 @@
                                              (= v1-3 'target-indax-trip)
                                              (= v1-3 'target-indax-hit)
                                              (= v1-3 'target-indax-death)
+                                             (= v1-3 'target-indax-start)
                                              (= v1-3 'target-indax-high-jump)
                                              (= v1-3 'target-indax-high-jump-jump)
                                              (= v1-3 'target-indax-duck-stance)
