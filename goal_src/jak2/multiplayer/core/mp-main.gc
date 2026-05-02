@@ -129,7 +129,26 @@
     (mp-handle-full-sync-state)
     (mp-handle-scene-transition)
 
-    ;; 3. Basic Handshake Updates (Must run before guard to avoid frozen puppets during load)
+    ;; 3. Check for Continue Point Changes
+    (when *multi-sync-enabled?*
+      (let ((cont (-> *game-info* current-continue)))
+        (when cont
+          (let ((cont-name (-> cont name)))
+            (when (not (string= cont-name *mp-last-local-continue-name*))
+              (format 0 "[MP-Client] Local continue point changed to ~S. Broadcasting...~%" cont-name)
+              (let ((len (min 31 (length cont-name))))
+                (dotimes (i len) (set! (-> *mp-last-local-continue-name* data i) (-> cont-name data i)))
+                (set! (-> *mp-last-local-continue-name* data len) (the uint 0))
+                (set! (-> *mp-last-local-continue-name* data -4) (the-as uint len))
+                )
+              (mp-send-continue-event cont-name)
+              )
+            )
+          )
+        )
+      )
+
+    ;; 4. Basic Handshake Updates (Must run before guard to avoid frozen puppets during load)
     (mp-sync-clock-host)
     (mp-sync-clock-client)
 

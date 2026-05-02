@@ -1494,8 +1494,8 @@
                    )
                  )
 
-               ;; Check if we should respawn (20 seconds)
-               (when (and (>= elapsed (seconds 20)) (not (or *remote-player-is-dead* *remote-player-is-dying*)))
+               ;; Check if we should respawn (20 seconds) or scene started
+               (when (and (or (>= elapsed (seconds 20)) *scene-player*) (not (or *remote-player-is-dead* *remote-player-is-dying*)))
                  (let ((remote (mp-get-remote-target-process)))
                    (when (and remote (nonzero? remote))
                      (mp-send-world-event MP_EVENT_PLAYER_RESPAWNED (the-as uint 0))
