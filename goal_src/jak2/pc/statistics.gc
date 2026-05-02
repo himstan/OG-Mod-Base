@@ -105,13 +105,13 @@
   "adds a kill to the statistics tracker"
 
   ;; (format #t "enemy ~A killed (incoming ~e sec ago)~%" (-> enemy name) (- (-> PP clock old-frame-counter) (-> attack attack-time)))
-  ;; (format #t "~Tattacker: ~A~%" (handle->process (-> attack attacker-handle)))
+  ;; (format #t "~Tattacker: ~A~%" (handle->process-safe (-> attack attacker-handle)))
   ;; (format #t "~Tpu: ")
   ;; (pu->string #t (-> attack penetrate-using))
   ;; (format #t "~%")
 
   (let ((enemy-name (remap-enemy-type-name (-> enemy type)))
-        (source (pu&attacker->kill-source (-> attack penetrate-using) (handle->process (-> attack attacker-handle)))))
+        (source (pu&attacker->kill-source (-> attack penetrate-using) (handle->process-safe (-> attack attacker-handle)))))
 
     (when *debug-segment*
         (format #t "STATS : enemy ~S(~S) killed by ~S~%" enemy-name (-> enemy type symbol) (kill-source->string source)))

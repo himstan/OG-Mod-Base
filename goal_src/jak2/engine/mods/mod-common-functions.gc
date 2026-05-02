@@ -335,17 +335,6 @@ if the result of rand-vu-int-range is 1, then DANCE! if it is not 1, then Don't 
   (draw-xyz jak 0.0 3.0 3.0)
 )
 
-;; Helper functions for handle resolution
-
-(defun handle->process-safe ((h handle))
-  (if (and (nonzero? (the-as int h))
-           (!= h (the-as handle #f))
-           (zero? (logand (the-as int h) 3))) ;; Pointers must be 4-byte aligned
-      (handle->process h)
-      (the-as process #f)
-      )
-  )
-
 ;; Helper functions for spawning orbs (used by orb placer in debug mode)
 
 (defun spawn-skill ((vec vector) (amount float) (bob? symbol))

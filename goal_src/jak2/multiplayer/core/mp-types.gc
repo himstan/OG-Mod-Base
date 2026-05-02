@@ -40,6 +40,17 @@
 (defconstant MP_EVENT_PLAYER_RESPAWNED (the-as uint 21))
 (defconstant MP_EVENT_PLAYER_DIED (the-as uint 22))
 
+;; --- Helper functions for handle resolution ---
+
+(defun handle->process-safe ((h handle))
+  (if (and (nonzero? (the-as int h))
+           (!= h (the-as handle #f))
+           (zero? (logand (the-as int h) 3))) ;; Pointers must be 4-byte aligned
+      (handle->process h)
+      (the-as process #f)
+      )
+  )
+
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))
   "Simple hash function for level name verification (MEMORY BOUNDED)"

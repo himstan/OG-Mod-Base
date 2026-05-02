@@ -1650,7 +1650,7 @@
         )
     (cond
       ((not (logtest? s4-0 (attack-mask vector)))
-       (let* ((s2-0 (handle->process (-> this attacker)))
+       (let* ((s2-0 (handle->process-safe (-> this attacker)))
               (v1-65 (if (type? s2-0 process-drawable)
                          s2-0
                          )
@@ -1664,7 +1664,7 @@
          )
        )
       (else
-        (let* ((s3-1 (handle->process (-> this attacker)))
+        (let* ((s3-1 (handle->process-safe (-> this attacker)))
                (v1-72 (if (type? s3-1 process-drawable)
                           s3-1
                           )

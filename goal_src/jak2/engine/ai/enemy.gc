@@ -272,7 +272,7 @@
     )
   (when (nonzero? (-> self neck))
     (when (logtest? (-> self enemy-flags) (enemy-flag look-at-focus))
-      (let ((a0-9 (handle->process (-> self focus handle))))
+      (let ((a0-9 (handle->process-safe (-> self focus handle))))
         (if a0-9
             (target-set! (-> self neck) (get-trans (the-as process-focusable a0-9) 2))
             )
@@ -307,8 +307,8 @@
 
 (defmethod enemy-method-136 ((this enemy))
   (when (or (time-elapsed? (-> this hit-focus-time) (seconds 2))
-            (and (handle->process (-> this focus handle))
-                 (not (logtest? (-> (the-as process-focusable (handle->process (-> this focus handle))) focus-status)
+            (and (handle->process-safe (-> this focus handle))
+                 (not (logtest? (-> (the-as process-focusable (handle->process-safe (-> this focus handle))) focus-status)
                                 (focus-status disable dead ignore grabbed)
                                 )
                       )
@@ -343,7 +343,7 @@
 ;; WARN: Return type mismatch process vs process-focusable.
 (defmethod get-enemy-target ((this enemy))
   "@returns the [[process-focusable]] that the enemy is currently focusing on, or [[#f]] otherwise"
-  (let ((v0-0 (handle->process (-> this focus handle))))
+  (let ((v0-0 (handle->process-safe (-> this focus handle))))
     (if (and v0-0
              (not (and v0-0
                        (not (logtest? (-> (the-as process-focusable v0-0) focus-status) (focus-status disable dead ignore grabbed)))
@@ -365,7 +365,7 @@
 
 (defmethod enemy-method-62 ((this enemy))
   (when (not (logtest? (enemy-flag lock-focus) (-> this enemy-flags)))
-    (let ((s5-0 (the-as process (as-type (handle->process (-> this incoming attacker-handle)) process-focusable))))
+    (let ((s5-0 (the-as process (as-type (handle->process-safe (-> this incoming attacker-handle)) process-focusable))))
       (when (enemy-method-53 this (the-as process-focusable s5-0))
         (enemy-method-63 this (the-as process-focusable s5-0) (the-as enemy-aware #f))
         (logior! (-> this focus flags) (enemy-flag look-at-focus))
@@ -537,7 +537,7 @@
   )
 
 (defmethod enemy-method-96 ((this enemy) (arg0 float) (arg1 symbol))
-  (let ((a0-2 (handle->process (-> this focus handle))))
+  (let ((a0-2 (handle->process-safe (-> this focus handle))))
     (cond
       (a0-2
         (let ((s4-1
@@ -581,7 +581,7 @@
     )
   (let ((s5-0 (the-as process (as-type arg0 process-focusable))))
     (when (enemy-method-53 this (the-as process-focusable s5-0))
-      (let ((v1-10 (handle->process (-> this focus handle))))
+      (let ((v1-10 (handle->process-safe (-> this focus handle))))
         (when (or (= s5-0 v1-10) (and (not (logtest? (enemy-flag lock-focus) (-> this enemy-flags)))
                                       (or (not v1-10) (not (logtest? (-> this focus flags) (enemy-flag look-at-focus))))
                                       )
@@ -1242,7 +1242,7 @@
 ;; WARN: Function (method 129 enemy) has a return type of none, but the expression builder found a return statement.
 (defmethod enemy-method-129 ((this enemy))
   (let ((gp-0 (-> this focus)))
-    (let ((a1-0 (handle->process (-> gp-0 handle))))
+    (let ((a1-0 (handle->process-safe (-> gp-0 handle))))
       (when a1-0
         (let ((v1-4 (-> this enemy-flags)))
           (cond
@@ -2990,7 +2990,7 @@
   (let ((f30-0 (quaternion-y-angle (-> this root quat))))
     (case (-> this incoming knocked-type)
       (((knocked-type knocked-type-4) (knocked-type knocked-type-6))
-       (let ((a0-5 (handle->process (-> this focus handle))))
+       (let ((a0-5 (handle->process-safe (-> this focus handle))))
          (when a0-5
            (let ((v1-9 (get-trans (the-as process-focusable a0-5) 0)))
              (set! f30-0 (atan (- (-> v1-9 x) (-> this root trans x)) (- (-> v1-9 z) (-> this root trans z))))
