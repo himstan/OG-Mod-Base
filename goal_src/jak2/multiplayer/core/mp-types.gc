@@ -15,6 +15,9 @@
 (define-perm *mp-last-local-state-id* uint (the uint 0))
 (define *multi-sync-tps* 20)
 
+(define-perm *remote-player-is-dying* symbol #f)
+(define-perm *remote-player-is-dead* symbol #f)
+
 (defconstant MP_EVENT_ORB (the-as uint 1))
 (defconstant MP_EVENT_GEM (the-as uint 2))
 (defconstant MP_EVENT_BREAK (the-as uint 3))
@@ -34,6 +37,8 @@
 (defconstant MP_EVENT_END_MODE_DARKJAK (the-as uint 18))
 (defconstant MP_EVENT_EDGE_GRAB (the-as uint 19))
 (defconstant MP_EVENT_PILOT_EDGE_GRAB (the-as uint 20))
+(defconstant MP_EVENT_PLAYER_RESPAWNED (the-as uint 21))
+(defconstant MP_EVENT_PLAYER_DIED (the-as uint 22))
 
 ;; --- String Hashing Helper ---
 (defun string-crc32 ((str string))

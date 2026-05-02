@@ -212,3 +212,24 @@
                   (set! min-dist dist)
                   (set! closest-proc (the-as process-focusable remote))))))))
     closest-proc))
+
+(defun mp-is-mission-active? ()
+  "Is there an active task-manager in the active pool?"
+  (the symbol (nonzero? (process-by-type task-manager *active-pool*)))
+  )
+
+(defun mp-is-open-world? ()
+  "Are we in the city and not in a mission?"
+  (the symbol (and *target*
+                   (-> *target* current-level)
+                   (let ((name (-> *target* current-level name)))
+                     (and (or (= name 'ctysluma) (= name 'ctysumb) (= name 'ctysluma)
+                              (= name 'ctywide) (= name 'ctyport) (= name 'ctygenda)
+                              (= name 'ctygendb) (= name 'ctyinda) (= name 'ctyindb)
+                              (= name 'ctypal) (= name 'stadium))
+                          (not (mp-is-mission-active?))
+                          )
+                     )
+                   )
+               )
+  )

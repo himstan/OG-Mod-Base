@@ -245,6 +245,8 @@
       ((MP_EVENT_END_MODE_DARKJAK)        (mp-event-handler-end-mode-darkjak aid))
       ((MP_EVENT_EDGE_GRAB)               (mp-receive-edge-grab-event evt #f))
       ((MP_EVENT_PILOT_EDGE_GRAB)         (mp-receive-edge-grab-event evt #t))
+      ((MP_EVENT_PLAYER_RESPAWNED)        (mp-event-remote-player-respawned aid))
+      ((MP_EVENT_PLAYER_DIED)             (mp-event-remote-player-died aid))
       )
     )
   (set! *mp-processing-remote-event* #f)

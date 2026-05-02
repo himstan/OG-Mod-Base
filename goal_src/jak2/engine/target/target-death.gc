@@ -10,6 +10,13 @@
 (define-extern warp-gate type)
 (define-extern runs-on-jak-spawn (function none))
 
+;; --- MULTIPLAYER EXTERNALS ---
+(define-extern mp-is-mission-active? (function symbol))
+(define-extern mp-is-open-world? (function symbol))
+(define-extern mp-get-remote-target-process (function process-focusable))
+(define-extern mp-target-get-state-from-id (function uint symbol))
+(define-extern *mp-puppet-ghost* mp-target-ghost-record)
+
 ;; DECOMP BEGINS
 
 (define *auto-continue* #f)
@@ -1307,7 +1314,10 @@
           (-> *death-spool-array* (death-movie-remap (-> *game-info* death-movie-tick) (-> *death-spool-array* length)))
           )
         )
-    (if (or (rand-vu-percent? 0.5) (nonzero? (-> *task-manager-engine* length)))
+    (if (or (rand-vu-percent? 0.5)
+            (nonzero? (-> *task-manager-engine* length))
+            (and *multi-sync-enabled?* (= (pc-multi-get-status) 6))
+            )
         (set! gp-2 (the-as spool-anim #f))
         )
     (set-setting! 'allow-progress #f 0.0 0)
@@ -1395,30 +1405,133 @@
     )
   (set! (-> self control transv quad) (the-as uint128 0))
 
-  ;; --- MP PUPPET HIJACK ---
-  ;; Prevent puppets from triggering engine-level reloads/game-over logic
-  (when (= (-> self tobot?) 'mp-puppet)
-    (format 0 "[MP-Puppet] Death Sequence Complete. Waiting for remote respawn...~%")
-    (loop
-      (let ((ghost-state (mp-target-get-state-from-id (-> *mp-puppet-ghost* state-id))))
-        ;; If the remote ghost is no longer in a death state, we are done!
-        (when (not (or (= ghost-state 'target-death) 
-                       (= ghost-state 'target-indax-death)
-                       (= ghost-state 'target-tube-death)
-                       (= ghost-state 'target-pilot-death)
-                       (= ghost-state 'target-mech-death)))
-          (format 0 "[MP-Puppet] Ghost respawned (State: ~A). Exiting death reset.~%" ghost-state)
-          (if (mp-is-jak?)
-              (go target-indax-start (the handle #f))
-              (go target-stance)
-              )
+  ;; --- MP MULTIPLAYER DEATH HIJACK ---
+  (when (and *multi-sync-enabled?* (= (pc-multi-get-status) 6))
+    ;; 1. Handle Remote Puppets
+    (when (= (-> self tobot?) 'mp-puppet)
+      (format 0 "[MP-Puppet] Death Sequence Complete. Waiting for remote respawn...~%")
+      (loop
+        (let ((ghost-state (mp-target-get-state-from-id (-> *mp-puppet-ghost* state-id))))
+          ;; If the remote ghost is no longer in a death state, we are done!
+          (when (not (or (= ghost-state 'target-death)
+                         (= ghost-state 'target-indax-death)
+                         (= ghost-state 'target-tube-death)
+                         (= ghost-state 'target-pilot-death)
+                         (= ghost-state 'target-mech-death)))
+            (format 0 "[MP-Puppet] Ghost respawned (State: ~A). Exiting death reset.~%" ghost-state)
+            (if (mp-is-jak?)
+                (go target-indax-start (the handle #f))
+                (go target-stance)
+                )
+            )
           )
+        (suspend)
         )
-      (suspend)
+      )
+
+    ;; 2. Handle Local Player
+    (when (and (= self *target*) (not (= (-> self tobot?) 'mp-puppet)))
+      (mp-send-world-event MP_EVENT_PLAYER_DIED (the-as uint 0))
+      (cond
+        ((mp-is-open-world?)
+         ;; OPEN WORLD DEATH
+         (format 0 "[MP-Death] Open World Death. Respawning at continue point...~%")
+         (let ((cp (-> *game-info* current-continue)))
+           (when cp
+             (set! (-> self control trans quad) (-> cp trans quad))
+             (quaternion-copy! (-> self control quat-for-control) (the-as quaternion (-> cp quat)))
+             (send-event *camera* 'teleport-to-vector-start-string (-> cp trans))
+             )
+           )
+         (set! (-> *game-info* life) (-> *game-info* life-max))
+         (send-event *traffic-manager* 'set-alert-level 0)
+         (send-event *camera* 'change-target self)
+         (go target-stance)
+         )
+        (else
+         ;; MISSION / LEVEL DEATH
+         (format 0 "[MP-Death] Mission Death. Spectating and waiting 20s...~%")
+         ;; Unfreeze enemies
+         (remove-setting! 'process-mask)
+         (remove-setting! 'mode-name)
+         (set-setting! 'mode-name 'cam-string 0.0 0)
+         (apply-settings *setting-control*)
+
+         (let ((start-time (-> *display* game-clock frame-counter)))
+           (loop
+             (let ((elapsed (- (-> *display* game-clock frame-counter) start-time)))
+
+               ;; Spectate Teammate
+               (let ((remote (mp-get-remote-target-process)))
+                 (let ((current-target (handle->process (-> *camera* focus handle))))
+                   (if (and remote (nonzero? remote))
+                       (when (!= remote current-target)
+                         (send-event *camera* 'change-target remote)
+                         )
+                       (when (!= self current-target)
+                         (send-event *camera* 'change-target self)
+                         )
+                       )
+                   )
+                 )
+
+               ;; Draw Countdown UI
+               (let ((remaining (/ (- (seconds 20) elapsed) (seconds 1))))
+                 (when (and (>= remaining 0) (not (or *remote-player-is-dead* *remote-player-is-dying*)))
+                   (let ((str (clear *temp-string*)))
+                     (format str "RESPAWNING IN ~D..." remaining)
+                     (let ((gp-context
+                             (new 'stack 'font-context *font-default-matrix* 20 160 0.0 (font-color default) (font-flags shadow kerning))
+                             )
+                           )
+                       (set! (-> gp-context width) (the float 472))
+                       (set! (-> gp-context height) (the float 40))
+                       (set! (-> gp-context scale) 0.8)
+                       (set! (-> gp-context flags) (font-flags shadow kerning middle large))
+                       (print-game-text str gp-context #f 44 (bucket-id subtitle))
+                       )
+                     )
+                   )
+                 )
+
+               ;; Check if we should respawn (20 seconds)
+               (when (and (>= elapsed (seconds 20)) (not (or *remote-player-is-dead* *remote-player-is-dying*)))
+                 (let ((remote (mp-get-remote-target-process)))
+                   (when (and remote (nonzero? remote))
+                     (mp-send-world-event MP_EVENT_PLAYER_RESPAWNED (the-as uint 0))
+                     (set! (-> self control trans quad) (-> (the-as process-drawable remote) root trans quad))
+                     (set! (-> self fact health) (/ (-> self fact health-max) 2.0))
+                     (remove-setting! 'mode-name)
+                     (send-event *camera* 'change-target self)
+                     (go target-stance)
+                     )
+                   )
+                 )
+
+               ;; Check if remote player also died (Double Death)
+               (let ((remote (mp-get-remote-target-process)))
+                 (when *remote-player-is-dead*
+                     (begin
+                       (format 0 "[MP-Death] Double Death or remote disconnected. Triggering full reset.~%")
+                       (set! *remote-player-is-dying* #f)
+                       (set! *remote-player-is-dead* #f)
+                       (remove-setting! 'mode-name)
+                       (send-event *camera* 'change-target self)
+                       (goto cfg-reset-init)
+                       )
+                     )
+                 )
+               )
+             (suspend)
+             )
+           )
+         )
+        )
       )
     )
-  ;; --- END MP PUPPET HIJACK ---
+  ;; --- END MP MULTIPLAYER DEATH HIJACK ---
 
+  (label cfg-reset-init)
   (initialize!
     (-> self game)
     (if (= arg0 'bot)
@@ -1513,13 +1626,19 @@
     (target-timed-invulnerable-off self 0)
     (case arg0
       (('bot 'centipede)
-       (set-setting! 'process-mask 'set 0.0 (process-mask platform projectile death))
+       (if (not (and *multi-sync-enabled?* (= (pc-multi-get-status) 6)))
+           (set-setting! 'process-mask 'set 0.0 (process-mask platform projectile death))
+           )
        )
       (('endlessfall)
-       (set-setting! 'process-mask 'set 0.0 (process-mask enemy projectile death))
+       (if (not (and *multi-sync-enabled?* (= (pc-multi-get-status) 6)))
+           (set-setting! 'process-mask 'set 0.0 (process-mask enemy projectile death))
+           )
        )
       (('instant-death 'lava 'dark-eco-pool 'melt 'explode 'grenade 'big-explosion 'turret)
-       (set-setting! 'process-mask 'set 0.0 (process-mask enemy platform projectile death))
+       (if (not (and *multi-sync-enabled?* (= (pc-multi-get-status) 6)))
+           (set-setting! 'process-mask 'set 0.0 (process-mask enemy platform projectile death))
+           )
        )
       (else
         (let ((v1-21 (-> self water flags)))
@@ -1532,7 +1651,9 @@
               (set! arg0 'drown)
               )
           )
-        (set-setting! 'process-mask 'set 0.0 (process-mask enemy platform projectile death))
+        (if (not (and *multi-sync-enabled?* (= (pc-multi-get-status) 6)))
+            (set-setting! 'process-mask 'set 0.0 (process-mask enemy platform projectile death))
+            )
         (when (using-gun? self)
           (send-event (ppointer->process (-> self gun gun)) 'die)
           (target-gun-end-mode #f)

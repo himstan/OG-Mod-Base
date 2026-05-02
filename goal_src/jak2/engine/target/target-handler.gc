@@ -1046,7 +1046,10 @@
       (('mp-die)
        ;; Trigger death sequence safely using idiomatic engine state.
        ;; We skip the level reload inside target-death-reset.
-       (go target-death 'life)
+       (if (focus-test? self indax)
+           (go target-indax-death 'life)
+           (go target-death 'life)
+           )
        (return #t)
        )
       (('mp-edge-grab-synced)

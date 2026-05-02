@@ -1794,8 +1794,8 @@
     )
   )
 
-(defun target-cam-pos ()
-  (let ((gp-0 *target*))
+(defun target-cam-pos-of-target ((arg0 target))
+  (let ((gp-0 arg0))
     (cond
       ((not gp-0)
        (camera-pos)
@@ -1848,6 +1848,10 @@
     )
   )
 
+(defun target-cam-pos ()
+  (target-cam-pos-of-target *target*)
+  )
+
 (defun target-rot ()
   (let ((v1-0 *target*))
     (if v1-0
@@ -1892,7 +1896,7 @@
        v0-0
        )
       ((= arg0 4)
-       (target-cam-pos)
+       (target-cam-pos-of-target this)
        )
       ((= arg0 5)
        (if (= (-> this draw origin w) 0.0)

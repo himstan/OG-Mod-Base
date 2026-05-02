@@ -414,6 +414,7 @@
             (cond
               ((or (= ghost-state 'target-death) (= ghost-state 'target-indax-death))
                (format 0 "[MP-Puppet] Authoritative Death! Bumping ~A -> ~A~%" cur-state ghost-state)
+               (set! *remote-player-is-dying* #t)
                (send-event proc 'mp-die)
                (set! *mp-puppet-state-mismatch-count* 0)
                )
