@@ -13,9 +13,12 @@
     (if (and (mp-is-daxter?)
              (zero? (-> *local-info* sync-flag))
              *target*)
-        (let ((host-clock (-> *local-info* clock)))
+        (let* ((host-clock (-> *remote-info* clock))
+               (diff (- host-clock (current-time))))
           ;; Only sync if Host clock is AHEAD of local clock to avoid jittering/stalling
-          (when (and (nonzero? host-clock) (> host-clock (current-time)))
+          ;; Also sync if we are vastly ahead (e.g. host started game after us)
+          (when (and (nonzero? host-clock)
+                     (or (> diff 0) (< diff -60)))
             ;; Synchronize display clocks
             (set! (-> *display* base-clock frame-counter) host-clock)
             (set! (-> *display* base-clock old-frame-counter) (+ host-clock -1))
