@@ -1029,7 +1029,7 @@ This gives us more freedom to write code how we want.
       (set! (-> obj last-status) status)
       (cond
         ((= status 2) ;; Found
-         (pc-multi-setup-client (pc-multi-get-found-ip) 3000)
+         (pc-multi-setup-client (pc-multi-get-found-ip) 26210)
          )
         ((= status 4) ;; Connected
          (sound-play "generic-beep")

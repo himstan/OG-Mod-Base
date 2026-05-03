@@ -329,7 +329,7 @@
     (copy-string<-string (-> obj mp-join-ip) "127.0.0.1")
     )
   (when (zero? (-> obj mp-join-port))
-    (set! (-> obj mp-join-port) 3000)
+    (set! (-> obj mp-join-port) 26210)
     )
   ;; any post-operations that need to be done after loading
   (set! (-> *setting-control* user-default sfx-volume) (-> obj memcard-volume-sfx))

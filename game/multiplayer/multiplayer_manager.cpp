@@ -16,11 +16,11 @@ void MultiplayerManager::setup_host(MultiplayerData& data) {
 
   ENetAddress address;
   address.host = ENET_HOST_ANY;
-  address.port = 3000;
+  address.port = 26210;
 
   data.host = enet_host_create(&address, 32, 2, 0, 0);
   if (data.host) {
-    lg::info("[Multiplayer] Listen server started on port 3000.");
+    lg::info("[Multiplayer] Listen server started on port {}.", address.port);
     data.local_role = 0;
     data.local_net_id = 0;
     data.join_status = (int)MultiplayerStatus::CONNECTING; // Waiting for peer
