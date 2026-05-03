@@ -79,6 +79,7 @@
           (when (zero? *mp-task-debug-course-count*)
             (format *stdcon* "  none~%")
             )
+          (format *stdcon* "PENDING WAYPOINTS: ~D~%" *mp-waypoint-pending-count*)
           
           ;; 4. List Local Active Nodes (Wrapped: 2 per line)
           (let ((active-count 0))

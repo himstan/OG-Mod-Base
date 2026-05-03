@@ -42,6 +42,9 @@
 (defconstant MP_EVENT_PLAYER_RESPAWNED (the-as uint 21))
 (defconstant MP_EVENT_PLAYER_DIED (the-as uint 22))
 (defconstant MP_EVENT_CONTINUE_POINT (the-as uint 23))
+(defconstant MP_EVENT_WAYPOINT_BUMP (the-as uint 24))
+(defconstant MP_EVENT_WAYPOINT_SNAPSHOT (the-as uint 25))
+(defconstant MP_EVENT_WAYPOINT_REQUEST (the-as uint 26))
 
 ;; --- Helper functions for handle resolution ---
 
@@ -167,6 +170,16 @@
 
 (deftype mp-continue-event (mp-event)
   ((continue-name uint8 32 :overlay-at (-> data 0))
+   )
+  )
+
+(deftype mp-waypoint-event (mp-event)
+  ((course-id        uint32 :overlay-at (-> data 0))
+   (waypoint-id      int32  :overlay-at (-> data 4))
+   (skipped          uint32 :overlay-at (-> data 8))
+   (waypoint-request int32  :overlay-at (-> data 12))
+   (process-name     uint8 32 :overlay-at (-> data 16))
+   (host-in-scene    uint32 :overlay-at (-> data 48))
    )
   )
 
@@ -679,6 +692,7 @@
 (define-perm *mp-debug-simulate-loss?* symbol #f)
 (define-perm *mp-debug-simulate-loss-time* time-frame 0)
 (define-perm *mp-hijacks-applied?* symbol #f)
+(define-extern *mp-waypoint-pending-count* int)
 
 (define-extern mp-draw-puppet-debug (function none))
 (define *mp-daxter-veh-offsets* (new 'static 'inline-array vector 32))
@@ -799,3 +813,5 @@
 
 ;; --- Authoritative Sync Functions ---
 (define-extern mp-send-edge-grab-event (function symbol none))
+(define-extern mp-receive-waypoint-event (function mp-waypoint-event symbol none))
+(define-extern mp-waypoint-sync-tick (function none))

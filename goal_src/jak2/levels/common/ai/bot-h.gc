@@ -705,3 +705,6 @@
 
 
 (define *bot-course-table* (new 'static 'bot-course-table))
+
+(define-extern mp-on-local-waypoint-bump (function bot int symbol none))
+(define-extern mp-on-local-waypoint-request (function bot int none))

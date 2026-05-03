@@ -519,6 +519,7 @@
   "mp-clock.o" ;; added
   "mp-sync-state.o" ;; added
   "mp-event-handlers.o" ;; added
+  "mp-waypoint-sync.o" ;; added
   "mp-events.o" ;; added
   "mp-mission-events.o" ;; added
   "mp-data.o" ;; added
