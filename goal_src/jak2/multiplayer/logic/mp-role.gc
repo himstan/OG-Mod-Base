@@ -44,11 +44,28 @@
 (defun mp-handle-scene-transition ()
   "Handle state changes when entering/exiting scenes"
   (let ((in-scene? (not (not *scene-player*))))
+    ;; 1. Handle Entering Scene
+    (when (and (mp-is-daxter?)
+               (not *mp-last-scene-player*)
+               in-scene?)
+      (format 0 "[MP] Scene started. Tracking ride-along state: ~A~%" *local-riding?*)
+      (set! *mp-was-riding-before-scene* *local-riding?*))
+
+    ;; 2. Handle Exiting Scene
     (when (and (mp-is-daxter?)
                *mp-last-scene-player*
                (not in-scene?))
-      (format 0 "[MP] Scene ended. Re-entering ride-along...~%")
-      (set! *has-ridden-before?* #f))
+      (if *mp-was-riding-before-scene*
+          (begin
+            (format 0 "[MP] Scene ended. Daxter was riding, re-entering ride-along...~%")
+            (set! *has-ridden-before?* #f)
+            )
+          (begin
+            (format 0 "[MP] Scene ended. Daxter was independent, staying independent.~%")
+            (set! *has-ridden-before?* #t)
+            )
+          )
+      )
     
     (when (not in-scene?)
       (set! *mp-remote-wants-skip* #f)
