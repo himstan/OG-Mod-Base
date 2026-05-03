@@ -472,8 +472,11 @@
   "elevator.o"
   "rigid-body.o"
   "rigid-body-queue.o"
-      "rigid-body-plat.o"
-      "simple-focus.o"  "simple-nav-sphere.o"
+  "rigid-body-plat.o"
+  "simple-focus.o"
+  "ai-task-h.o" ;; added
+  "bot-h.o" ;; added
+  "simple-nav-sphere.o"
   "process-taskable.o"
   "scene-actor.o"
   "scene-looper.o"
@@ -509,6 +512,7 @@
   "mp-enemy-debug.o" ;; added  
   "mp-enemy-hijacks.o" ;; added
   "mp-debug.o" ;; added
+  "mp-task-debug.o" ;; added
   "mp-puppet.o" ;; added
   "mp-puppet-debug.o" ;; added
 
