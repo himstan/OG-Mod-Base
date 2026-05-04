@@ -133,35 +133,34 @@
   )
   (none))
 
-(defun mp-event-handler-attack-ped ((net-id uint))
+(defun mp-event-handler-attack-ped ((evt mp-ped-attack-event))
   "Host receives hit request from Client for a pedestrian."
   (when (mp-is-traffic-authoritative?)
-    (let ((proc (mp-pedestrian-find-by-net-id net-id)))
+    (let ((net-id (-> evt net-id)))
+      (let ((proc (mp-pedestrian-find-by-net-id net-id)))
       (if (and proc (nonzero? proc))
-          (let ((attacker (mp-get-remote-target-process)))
-            (format 0 "[MP-WorldEvent] Applying Authoritative hit to Pedestrian ~A from remote attacker ~A (NetID ~D).~%" proc attacker net-id)
-            (set! *mp-processing-remote-event* #t)
-            (send-event proc 'attack attacker (static-attack-info ((id (new-attack-id)) (mode 'mp-hit-remote) (damage *mp-daxter-damage-mult*) (shove-back (meters 2)) (shove-up (meters 0.5)))))
-            (set! *mp-processing-remote-event* #f)
+          (begin
+            (format 0 "[MP-WorldEvent] Applying authoritative pedestrian hit from client context (NetID ~D, AttackID ~D).~%" net-id (-> evt attack-id))
+            (mp-pedestrian-apply-remote-attack! evt)
             )
           (format 0 "[MP-WorldEvent] ERROR: Could not find pedestrian for hit! NetID ~D~%" net-id)
           )
       )
     )
+    )
   (none))
 
-(defun mp-event-handler-ped-death ((net-id uint))
-  "Mark a pedestrian as dead locally (non-authoritative side)."
-  (let ((proc (mp-pedestrian-find-by-net-id net-id)))
+(defun mp-event-handler-ped-death ((evt mp-ped-death-event))
+  "Start a pedestrian death effect locally (non-authoritative side)."
+  (let ((net-id (-> evt net-id)))
+    (let ((proc (mp-pedestrian-find-by-net-id net-id)))
     (if (and proc (nonzero? proc))
         (begin
           (format 0 "[MP-WorldEvent] Authoritative death received for pedestrian ~A (NetID ~D).~%" proc net-id)
-          (set! (-> proc hit-points) 0)
-          (set! *mp-processing-remote-event* #t)
-          (send-event proc 'die)
-          (set! *mp-processing-remote-event* #f)
+          (mp-pedestrian-start-remote-death! proc evt)
           )
         )
+    )
     )
   (none))
 

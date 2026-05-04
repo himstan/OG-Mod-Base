@@ -95,7 +95,7 @@
     (logior! (-> proc flags) (citizen-flag persistent))
 
     ;; Force visibility (clearing flags potentially set by inactive/spawn states)
-    (when (and (-> proc draw) (nonzero? (-> proc draw)))
+    (when (and (-> proc draw) (nonzero? (-> proc draw)) (not (focus-test? proc inactive)))
       (logclear! (-> proc draw status) (draw-control-status no-draw force-fade))
       )
 

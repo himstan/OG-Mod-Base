@@ -8,10 +8,9 @@
     (cond
       ((type? proc citizen)
        (let ((e-proc (the-as citizen proc)))
-         ;; Only sync if it has a NetID, is NOT in the inactive/pooled state, and is NOT dead
+         ;; Only sync if it has a NetID and is NOT in the inactive/pooled state
          (when (and (nonzero? (-> e-proc net-id)) 
-                    (not (focus-test? e-proc inactive))
-                    (not (logtest? (-> e-proc focus-status) (focus-status dead))))
+                    (not (focus-test? e-proc inactive)))
              (when (< (-> *mp-traffic-buffer* ped-count) (the uint MP_MAX_SYNC_PEDESTRIANS))
                (let ((slot (-> *mp-traffic-buffer* ped-enemies (-> *mp-traffic-buffer* ped-count))))
                  (mp-pedestrian-pack e-proc slot)
