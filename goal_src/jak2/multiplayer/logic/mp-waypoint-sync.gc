@@ -28,12 +28,16 @@
 
 (define-perm *mp-pending-waypoints* (inline-array mp-pending-waypoint) (new 'static 'inline-array mp-pending-waypoint 32))
 (define-perm *mp-recent-waypoint-commands* (inline-array mp-recent-waypoint-command) (new 'static 'inline-array mp-recent-waypoint-command 32))
+(define-perm *mp-recent-inbound-waypoints* (inline-array mp-recent-waypoint-command) (new 'static 'inline-array mp-recent-waypoint-command 32))
 (define-perm *mp-waypoint-last-snapshot-time* time-frame 0)
 (define-perm *mp-waypoint-applying-remote?* symbol #f)
 (define-perm *mp-waypoint-pending-count* int 0)
 (define-perm *mp-waypoint-recent-write-idx* int 0)
+(define-perm *mp-waypoint-inbound-write-idx* int 0)
 (define-perm *mp-waypoint-scratch-event* mp-waypoint-event (new 'static 'mp-waypoint-event))
 (define-perm *mp-waypoint-debug?* symbol #f)
+(define-perm *mp-waypoint-sync-local-level-hash* uint (the uint 0))
+(define-perm *mp-waypoint-sync-remote-level-hash* uint (the uint 0))
 
 (define *mp-waypoint-find-course-id* (the uint 0))
 (define *mp-waypoint-find-name* (the-as string #f))
@@ -181,6 +185,27 @@
   (none)
   )
 
+(defun mp-waypoint-event-name-matches-recent? ((evt mp-waypoint-event) (recent mp-recent-waypoint-command))
+  (dotimes (i 32)
+    (when (!= (-> evt process-name i) (-> recent process-name i))
+      (return #f)
+      )
+    )
+  #t
+  )
+
+(defun mp-waypoint-event-same-target? ((a mp-waypoint-event) (b mp-waypoint-event))
+  (when (!= (-> a course-id) (-> b course-id))
+    (return #f)
+    )
+  (dotimes (i 32)
+    (when (!= (-> a process-name i) (-> b process-name i))
+      (return #f)
+      )
+    )
+  #t
+  )
+
 (defun mp-waypoint-find-bot-callback ((p process-tree))
   (let ((proc (the-as process p)))
     (when (and proc (type? proc bot))
@@ -221,8 +246,11 @@
        (nonzero? *target*)
        (-> *target* control)
        *level*
+       (nonzero? *level*)
        (= (-> *level* loading-level) (-> *level* default-level))
        (not (focus-test? *target* teleporting))
+       (not (and (-> *target* state) (= (-> *target* state name) 'target-load-wait)))
+       (not (and (-> *target* next-state) (= (-> *target* next-state name) 'target-load-wait)))
        )
   )
 
@@ -271,8 +299,45 @@
       )
   )
 
-(defun mp-waypoint-can-apply-event? ((evt mp-waypoint-event))
+(defun mp-waypoint-clear-transition-buffers! ()
+  "Drop pending/replay waypoint commands from the previous level context."
+  (dotimes (i 32)
+    (set! (-> *mp-pending-waypoints* i active?) #f)
+    (set! (-> *mp-recent-waypoint-commands* i active?) #f)
+    (set! (-> *mp-recent-inbound-waypoints* i active?) #f)
+    )
+  (set! *mp-waypoint-pending-count* 0)
+  (set! *mp-waypoint-recent-write-idx* 0)
+  (set! *mp-waypoint-inbound-write-idx* 0)
+  (none)
+  )
+
+(defun mp-waypoint-update-level-context! ()
+  "Track waypoint-only level context and drop stale command buffers on changes."
+  (let ((local-hash (mp-current-active-level-hash))
+        (remote-hash (if *remote-info* (-> *remote-info* level) (the uint 0))))
+    (when (or (!= local-hash *mp-waypoint-sync-local-level-hash*)
+              (!= remote-hash *mp-waypoint-sync-remote-level-hash*))
+      (set! *mp-waypoint-sync-local-level-hash* local-hash)
+      (set! *mp-waypoint-sync-remote-level-hash* remote-hash)
+      (mp-waypoint-clear-transition-buffers!)
+      )
+    )
+  (none)
+  )
+
+(defun mp-waypoint-sync-ready? ()
+  "Waypoint replay/apply is safe only when both peers are on the same loaded level."
+  (mp-waypoint-update-level-context!)
   (and (mp-waypoint-target-ready?)
+       (nonzero? *mp-waypoint-sync-local-level-hash*)
+       (nonzero? *mp-waypoint-sync-remote-level-hash*)
+       (= *mp-waypoint-sync-local-level-hash* *mp-waypoint-sync-remote-level-hash*)
+       )
+  )
+
+(defun mp-waypoint-can-apply-event? ((evt mp-waypoint-event))
+  (and (mp-waypoint-sync-ready?)
        (not (mp-waypoint-event-blocked-by-scene? evt))
        )
   )
@@ -325,6 +390,13 @@
       )
   )
 
+(defun mp-waypoint-bump-at-current-waypoint? ((course-bot bot) (evt mp-waypoint-event))
+  (and (= (-> evt etype) MP_EVENT_WAYPOINT_BUMP)
+       (-> course-bot waypoint)
+       (= (-> course-bot waypoint waypoint-id) (-> evt waypoint-id))
+       )
+  )
+
 (defun mp-waypoint-apply-request-to-bot! ((course-bot bot) (waypoint-request int))
   (set! *mp-waypoint-applying-remote?* #t)
   (set! *mp-processing-remote-event* #t)
@@ -361,6 +433,11 @@
        (mp-waypoint-debug-log! 'apply-already-matched evt course-bot name)
        #t
        )
+      ((mp-waypoint-bump-at-current-waypoint? course-bot evt)
+       (mp-waypoint-debug-log! 'apply-bump-current-waypoint-request evt course-bot name)
+       (mp-waypoint-apply-request-to-bot! course-bot (-> evt waypoint-request))
+       #t
+       )
       ((not (mp-waypoint-can-apply-event? evt))
        (mp-waypoint-debug-log! 'apply-blocked-readiness evt course-bot name)
        #f
@@ -379,11 +456,80 @@
     )
   )
 
+(defun mp-waypoint-recent-inbound-match? ((evt mp-waypoint-event) (recent mp-recent-waypoint-command) (now time-frame))
+  (and (-> recent active?)
+       (< (- now (-> recent send-time)) (seconds 2))
+       (= (-> recent etype) (-> evt etype))
+       (= (-> recent course-id) (-> evt course-id))
+       (= (-> recent waypoint-id) (-> evt waypoint-id))
+       (= (if (-> recent skipped?) (the uint 1) (the uint 0)) (-> evt skipped))
+       (= (-> recent waypoint-request) (-> evt waypoint-request))
+       (= (if (-> recent host-in-scene?) (the uint 1) (the uint 0)) (-> evt host-in-scene))
+       (mp-waypoint-event-name-matches-recent? evt recent)
+       )
+  )
+
+(defun mp-waypoint-recent-inbound-duplicate? ((evt mp-waypoint-event))
+  (let ((now (current-time)))
+    (dotimes (i 32)
+      (let ((recent (-> *mp-recent-inbound-waypoints* i)))
+        (when (mp-waypoint-recent-inbound-match? evt recent now)
+          (return #t)
+          )
+        )
+      )
+    )
+  #f
+  )
+
+(defun mp-waypoint-record-inbound! ((evt mp-waypoint-event))
+  (let ((recent (-> *mp-recent-inbound-waypoints* *mp-waypoint-inbound-write-idx*)))
+    (set! (-> recent active?) #t)
+    (set! (-> recent etype) (-> evt etype))
+    (set! (-> recent send-time) (current-time))
+    (set! (-> recent course-id) (-> evt course-id))
+    (set! (-> recent waypoint-id) (-> evt waypoint-id))
+    (set! (-> recent skipped?) (nonzero? (-> evt skipped)))
+    (set! (-> recent waypoint-request) (-> evt waypoint-request))
+    (set! (-> recent host-in-scene?) (nonzero? (-> evt host-in-scene)))
+    (mp-waypoint-copy-event-name-to-recent! recent evt)
+    (set! *mp-waypoint-inbound-write-idx* (logand (+ *mp-waypoint-inbound-write-idx* 1) 31))
+    )
+  (none)
+  )
+
+(defun mp-waypoint-host-should-drop-inbound? ((evt mp-waypoint-event) (snapshot? symbol))
+  (when (or (not (mp-is-jak?)) snapshot?)
+    (return #f)
+    )
+  (if (mp-waypoint-recent-inbound-duplicate? evt)
+      (begin
+        (mp-waypoint-debug-log! 'remote-drop-duplicate evt (the-as bot #f) *mp-waypoint-name-scratch*)
+        #t
+        )
+      (begin
+        (mp-waypoint-record-inbound! evt)
+        #f
+        )
+      )
+  )
+
 (defun mp-receive-waypoint-event ((evt mp-waypoint-event) (snapshot? symbol))
+  (if (not (mp-waypoint-sync-ready?))
+      (begin
+        (mp-waypoint-copy-event-name-to-scratch! evt)
+        (mp-waypoint-debug-log! 'remote-drop-not-ready evt (the-as bot #f) *mp-waypoint-name-scratch*)
+        (return #f)
+        )
+      )
   (mp-waypoint-copy-event-name-to-scratch! evt)
+  (when (mp-waypoint-host-should-drop-inbound? evt snapshot?)
+    (return #f)
+    )
   (mp-waypoint-debug-log! 'remote-receive evt (the-as bot #f) *mp-waypoint-name-scratch*)
   (let ((applied? (mp-waypoint-try-apply-event! evt *mp-waypoint-name-scratch*)))
-    (when (not applied?)
+    (when (and (not applied?)
+               (or snapshot? (not (mp-is-jak?))))
       (mp-waypoint-store-pending! evt)
       )
     )
@@ -391,7 +537,7 @@
   )
 
 (defun mp-waypoint-retry-pending! ()
-  (when (> *mp-waypoint-pending-count* 0)
+  (when (and (mp-waypoint-sync-ready?) (> *mp-waypoint-pending-count* 0))
     (dotimes (i 32)
       (let ((pending (-> *mp-pending-waypoints* i)))
         (when (-> pending active?)
@@ -439,6 +585,8 @@
   )
 
 (defun mp-send-waypoint-event ((etype uint) (course-bot bot) (waypoint-id int) (skipped? symbol) (waypoint-request int) (cache? symbol))
+  (if (not (mp-waypoint-sync-ready?))
+      (return #f))
   (let ((q-idx *mp-event-queue-write-ptr*))
     (let ((evt (the-as mp-waypoint-event (-> *mp-event-queue* q-idx))))
       (mp-waypoint-fill-event! evt etype course-bot waypoint-id skipped? waypoint-request)
@@ -455,6 +603,7 @@
 (defun mp-waypoint-local-command-can-send? ((course-bot bot))
   (and *multi-sync-enabled?*
        (= (pc-multi-get-status) 6)
+       (mp-waypoint-sync-ready?)
        (not *mp-processing-remote-event*)
        (not *mp-waypoint-applying-remote?*)
        course-bot
@@ -471,7 +620,7 @@
       waypoint-id
       skipped?
       (the-as int (-> course-bot waypoint-request))
-      #t)
+      #f)
     )
   (none)
   )
@@ -484,7 +633,7 @@
       (if (-> course-bot waypoint) (-> course-bot waypoint waypoint-id) -1)
       #f
       waypoint-request
-      #t)
+      #f)
     )
   (none)
   )
@@ -547,6 +696,7 @@
 (defun mp-waypoint-send-command-replays! ()
   (when (and *multi-sync-enabled?*
              (= (pc-multi-get-status) 6)
+             (mp-waypoint-sync-ready?)
              (>= (- (current-time) *mp-waypoint-last-snapshot-time*) (seconds 1)))
     (set! *mp-waypoint-last-snapshot-time* (current-time))
     (mp-waypoint-send-recent-commands!)
@@ -558,21 +708,26 @@
   (when (and *multi-sync-enabled?*
              (= (pc-multi-get-status) 6)
              (mp-is-jak?)
+             (mp-waypoint-sync-ready?)
              (>= (- (current-time) *mp-waypoint-last-snapshot-time*) (seconds 1)))
     (set! *mp-waypoint-last-snapshot-time* (current-time))
     (iterate-process-tree *active-pool* mp-waypoint-snapshot-callback *kernel-context*)
-    (mp-waypoint-send-recent-commands!)
     )
   (none)
   )
 
 (defun mp-waypoint-sync-tick ()
   (when *multi-sync-enabled?*
-    (if (mp-is-jak?)
-        (mp-waypoint-send-host-snapshot!)
-        (mp-waypoint-send-command-replays!)
+    (if (not (mp-waypoint-sync-ready?))
+        (none)
+        (begin
+          (if (mp-is-jak?)
+              (mp-waypoint-send-host-snapshot!)
+              (none)
+              )
+          (mp-waypoint-retry-pending!)
+          )
         )
-    (mp-waypoint-retry-pending!)
     )
   (none)
   )

@@ -2757,11 +2757,6 @@
       (let ((f0-3 (fill-and-probe-using-line-sphere *collide-cache* s3-0))
             (s2-1 (new 'stack-no-clear 'vector))
             )
-        (if (>= f0-3 0.0)
-            (let ((hit-proc (if (-> s3-0 best-other-tri collide-ptr) (-> (the-as collide-shape-prim (-> s3-0 best-other-tri collide-ptr)) cshape process) #f)))
-              (format 0 "MP-LOG: Guard probe hit! Dist: ~f, Proc: ~A~%" f0-3 hit-proc)
-              )
-            )
         (cond
           ((>= f0-3 0.0)
            (vector-float*! s1-0 (-> s3-0 move-dist) f0-3)

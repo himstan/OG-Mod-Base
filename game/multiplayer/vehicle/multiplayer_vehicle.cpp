@@ -15,13 +15,27 @@ inline int16_t pack_float_q(float v) {
 inline float unpack_float_q(int16_t v) {
   return (float)v / 32767.0f;
 }
+
+size_t vehicle_packet_size(uint32_t count) {
+  return sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) +
+         (sizeof(MPVehicleStatePacked) * count);
+}
 }
 
 void handle_vehicle_sync_packet(const _ENetEvent& event, MultiplayerData& data) {
+  if (!event.packet) {
+    return;
+  }
   uint32_t current_time = enet_time_get();
   PacketVehicleSync* sync = (PacketVehicleSync*)event.packet->data;
+  uint32_t veh_count = (sync->count < (uint32_t)MAX_VEHICLES_PER_PACKET) ?
+                       sync->count :
+                       (uint32_t)MAX_VEHICLES_PER_PACKET;
+  if (event.packet->dataLength < vehicle_packet_size(veh_count)) {
+    return;
+  }
   data.last_traffic_sync_time = current_time;
-  for (uint32_t i = 0; i < sync->count; i++) {
+  for (uint32_t i = 0; i < veh_count; i++) {
     auto* incoming = &sync->vehs[i];
     if (incoming->net_id == 0) continue;
     bool found = false;

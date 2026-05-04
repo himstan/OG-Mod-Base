@@ -6,6 +6,39 @@
 (define-extern num-func-seek! (function joint-control-channel float float float float :behavior process))
 (define-extern num-func-none (function joint-control-channel float float float float :behavior process))
 
+(defun mp-current-active-level-hash ()
+  "Return a stable hash for the currently active local level."
+  (let ((hash (the-as uint 0)))
+    (when (and *level* (nonzero? *level*))
+      (let ((lev (-> *level* level 0)))
+        (when (and lev (nonzero? lev) (= (-> lev status) 'active))
+          (let ((lev-name (-> lev name)))
+            (when (and lev-name (nonzero? lev-name))
+              (set! hash (string-crc32 (symbol->string lev-name)))
+              )
+            )
+          )
+        )
+      )
+    hash
+    )
+  )
+
+(defun mp-should-block-break-sync? ((proc process))
+  "BREAK events are for simple destructibles, not traffic, enemies, or actors."
+  (and proc
+       (nonzero? proc)
+       (not (type? proc crate))
+       (or (type? proc citizen)
+           (type? proc vehicle)
+           (type? proc enemy)
+           (type? proc bot)
+           (type? proc process-focusable)
+           (type? proc com-airlock)
+           )
+       )
+  )
+
 (defun mp-is-traffic-ready? ()
   "Is the traffic system fully initialized and ready for sync? (Client Side)"
   (and *traffic-manager*
@@ -121,8 +154,7 @@
              (not *mp-processing-remote-event*)
              (mp-is-jak?) ;; CRITICAL: Only the Host (Jak) should broadcast world-status changes (BREAK events)
              (-> arg0 entity)
-             (not (type? arg0 enemy)) ;; EXCLUDE enemies from BREAK events (handled by ENEMY_DEATH)
-             (not (type? arg0 com-airlock)) ;; EXCLUDE airlocks from BREAK events
+             (not (mp-should-block-break-sync? arg0))
              )
     (mp-send-world-event MP_EVENT_BREAK (-> arg0 entity aid)))
 
@@ -155,7 +187,6 @@
   ;; GUARD: Only send if synced and in-game
   (if (or (not *multi-sync-enabled?*) (!= (pc-multi-get-status) 6))
       (return #f))
-
   (let ((q-idx *mp-event-queue-write-ptr*))
     ;; (format 0 "[MP-Queue-Debug] Queueing event ~D for AID ~D at index ~D~%" etype aid q-idx)
     (let ((evt (the-as mp-world-event (-> *mp-event-queue* q-idx))))

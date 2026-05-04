@@ -48,10 +48,10 @@
                (begin
                  ;; CRITICAL SAFETY: Never 'break' an NPC or anything that shouldn't just die from a crate-break
                  ;; This prevents accidental mission failure if a client triggers an entity status change.
-                 (if (and (or (type? proc enemy) (type? proc bot) (type? proc process-focusable) (type? proc com-airlock))
-                          (not (type? proc crate)))
+                 (if (mp-should-block-break-sync? proc)
                       (format 0 "[MP-WorldEvent] Ignoring BREAK for important process ~A (AID ~D)~%" proc aid)
-                      (begin                        (logior! (-> perm status) (entity-perm-status dead subtask-complete))
+                      (begin
+                        (logior! (-> perm status) (entity-perm-status dead subtask-complete))
                         (send-event proc 'attack #f (static-attack-info ((id (new-attack-id))
                                                                          (mode 'mp-break)
                                                                          (penetrate-using (penetrate generic-attack lunge flop punch spin roll uppercut bonk explode))))))

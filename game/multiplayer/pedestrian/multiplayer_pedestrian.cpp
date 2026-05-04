@@ -15,13 +15,27 @@ inline int16_t pack_float_q(float v) {
 inline float unpack_float_q(int16_t v) {
   return (float)v / 32767.0f;
 }
+
+size_t pedestrian_packet_size(uint32_t count) {
+  return sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) +
+         (sizeof(MPPedestrianStatePacked) * count);
+}
 }
 
 void handle_pedestrian_sync_packet(const _ENetEvent& event, MultiplayerData& data) {
+  if (!event.packet) {
+    return;
+  }
   uint32_t current_time = enet_time_get();
   PacketPedestrianSync* sync = (PacketPedestrianSync*)event.packet->data;
+  uint32_t ped_count = (sync->count < (uint32_t)MAX_PEDESTRIANS_PER_PACKET) ?
+                       sync->count :
+                       (uint32_t)MAX_PEDESTRIANS_PER_PACKET;
+  if (event.packet->dataLength < pedestrian_packet_size(ped_count)) {
+    return;
+  }
   data.last_traffic_sync_time = current_time;
-  for (uint32_t i = 0; i < sync->count; i++) {
+  for (uint32_t i = 0; i < ped_count; i++) {
     auto* incoming = &sync->peds[i];
     if (incoming->net_id == 0) continue;
     bool found = false;

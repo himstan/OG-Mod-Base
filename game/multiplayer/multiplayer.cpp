@@ -26,6 +26,25 @@ inline float unpack_float_q(int16_t v) {
   return (float)v / 32767.0f;
 }
 
+size_t counted_packet_size(uint32_t count, size_t element_size) {
+  return sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t) + (element_size * count);
+}
+
+uint32_t clamp_packet_count(uint32_t count, uint32_t max_count) {
+  return (count < max_count) ? count : max_count;
+}
+
+bool packet_has_counted_payload(const ENetPacket* packet, uint32_t count, size_t element_size) {
+  return packet && packet->dataLength >= counted_packet_size(count, element_size);
+}
+
+void reset_remote_traffic_buffers() {
+  memset(&gMultiplayerData.traffic_buffer, 0, sizeof(gMultiplayerData.traffic_buffer));
+  memset(gMultiplayerData.ped_last_updated, 0, sizeof(gMultiplayerData.ped_last_updated));
+  memset(gMultiplayerData.veh_last_updated, 0, sizeof(gMultiplayerData.veh_last_updated));
+  gMultiplayerData.last_traffic_sync_time = 0;
+}
+
 void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* remote) {
   ENetEvent event;
   uint32_t current_time = enet_time_get();
@@ -55,6 +74,16 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
             PacketPlayerState* state = (PacketPlayerState*)event.packet->data;
             auto& entity = gMultiplayerData.remote_entities[state->netId];
             if (state->header.sequenceNum > entity.last_sequence_num) {
+              if (state->netId != gMultiplayerData.local_net_id &&
+                  state->level_hash != 0 &&
+                  gMultiplayerData.last_remote_traffic_level_hash != 0 &&
+                  state->level_hash != gMultiplayerData.last_remote_traffic_level_hash) {
+                reset_remote_traffic_buffers();
+                lg::info("[Multiplayer] Remote level changed. Cleared traffic sync buffers.");
+              }
+              if (state->netId != gMultiplayerData.local_net_id && state->level_hash != 0) {
+                gMultiplayerData.last_remote_traffic_level_hash = state->level_hash;
+              }
               entity.status = state->status;
               entity.x = state->x; entity.y = state->y; entity.z = state->z;
               entity.angle = state->angle;
@@ -86,33 +115,15 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
           } else if (header->type == PacketType::ENEMY_SYNC &&
                      event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
             PacketEnemySync* enemy_sync = (PacketEnemySync*)event.packet->data;
-            gMultiplayerData.last_enemy_sync_time = current_time;
-            for (uint32_t i = 0; i < enemy_sync->count; i++) {
-              MPEnemyStatePacked* incoming = &enemy_sync->enemies[i];
-              if (incoming->actor_id == 0) continue;
-              bool found = false;
-              for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
-                if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == incoming->actor_id) {
-                  auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
-                  state.actor_id = incoming->actor_id;
-                  state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
-                  state.quat_x = unpack_float_q(incoming->quat[0]);
-                  state.quat_y = unpack_float_q(incoming->quat[1]);
-                  state.quat_z = unpack_float_q(incoming->quat[2]);
-                  state.quat_w = unpack_float_q(incoming->quat[3]);
-                  state.hp = incoming->hp;
-                  state.state = incoming->state;
-                  state.focus_aid = incoming->focus_aid;
-                  state.attack_flag = (incoming->flags & 1) ? 1 : 0;
-                  state.owner = (incoming->flags & 2) ? 1 : 0;
-                  state.is_aggro = (incoming->flags & 4) ? 1 : 0;
-                  state.last_updated = current_time;
-                  found = true; break;
-                }
-              }
-              if (!found) {
+            uint32_t enemy_count = clamp_packet_count(enemy_sync->count, MAX_ENEMIES_PER_PACKET);
+            if (packet_has_counted_payload(event.packet, enemy_count, sizeof(MPEnemyStatePacked))) {
+              gMultiplayerData.last_enemy_sync_time = current_time;
+              for (uint32_t i = 0; i < enemy_count; i++) {
+                MPEnemyStatePacked* incoming = &enemy_sync->enemies[i];
+                if (incoming->actor_id == 0) continue;
+                bool found = false;
                 for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
-                  if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == 0) {
+                  if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == incoming->actor_id) {
                     auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
                     state.actor_id = incoming->actor_id;
                     state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
@@ -130,9 +141,30 @@ void handle_packet_receive(LocalPlayerInfoGOAL* local, RemotePlayerInfoGOAL* rem
                     found = true; break;
                   }
                 }
+                if (!found) {
+                  for (uint32_t j = 0; j < MAX_ENEMY_SYNC_COUNT; j++) {
+                    if (gMultiplayerData.remote_enemy_buffer.remote_enemies[j].actor_id == 0) {
+                      auto& state = gMultiplayerData.remote_enemy_buffer.remote_enemies[j];
+                      state.actor_id = incoming->actor_id;
+                      state.x = incoming->x; state.y = incoming->y; state.z = incoming->z;
+                      state.quat_x = unpack_float_q(incoming->quat[0]);
+                      state.quat_y = unpack_float_q(incoming->quat[1]);
+                      state.quat_z = unpack_float_q(incoming->quat[2]);
+                      state.quat_w = unpack_float_q(incoming->quat[3]);
+                      state.hp = incoming->hp;
+                      state.state = incoming->state;
+                      state.focus_aid = incoming->focus_aid;
+                      state.attack_flag = (incoming->flags & 1) ? 1 : 0;
+                      state.owner = (incoming->flags & 2) ? 1 : 0;
+                      state.is_aggro = (incoming->flags & 4) ? 1 : 0;
+                      state.last_updated = current_time;
+                      found = true; break;
+                    }
+                  }
+                }
               }
+              gMultiplayerData.remote_enemy_buffer.remote_count = MAX_ENEMY_SYNC_COUNT;
             }
-            gMultiplayerData.remote_enemy_buffer.remote_count = MAX_ENEMY_SYNC_COUNT;
           } else if (header->type == PacketType::PEDESTRIAN_SYNC &&
                      event.packet->dataLength >= (sizeof(PacketHeader) + sizeof(uint32_t) + sizeof(uint64_t))) {
             handle_pedestrian_sync_packet(event, gMultiplayerData);

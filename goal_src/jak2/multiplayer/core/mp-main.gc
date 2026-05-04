@@ -43,11 +43,14 @@
     ;; We always send the state packet because it contains our 'status' field
     (pc-multi-send-state (the-as uint *local-info*))
     (pc-multi-send-events (the-as uint *mp-event-buffer*))
-    (when (and *mp-enemy-buffer* (nonzero? (the-as uint *mp-enemy-buffer*)))
+    (when (and *mp-enemy-buffer*
+               (nonzero? (the-as uint *mp-enemy-buffer*)))
       (pc-multi-send-enemies (the-as uint *mp-enemy-buffer*))
       )
     ;; 4. NETWORK SEND (Throttled)
-    (when (and (mp-is-jak?) *mp-traffic-buffer* (nonzero? (the-as uint *mp-traffic-buffer*)))
+    (when (and (mp-is-jak?)
+               *mp-traffic-buffer*
+               (nonzero? (the-as uint *mp-traffic-buffer*)))
       (pc-multi-send-traffic (the-as uint *mp-traffic-buffer*))
       )
     )
@@ -83,11 +86,6 @@
             (pc-multi-poll (the-as uint *local-info*) (the-as uint *remote-info*))
             
             (pc-multi-receive-state (the-as uint *remote-info*))
-            (pc-multi-receive-events (the-as uint *mp-event-buffer*))
-            (pc-multi-receive-enemies (the-as uint *mp-enemy-buffer*))
-            (when (and *mp-enemy-buffer* (nonzero? (the-as uint *mp-enemy-buffer*)))
-              (set! (-> *mp-enemy-buffer* last-sync-time) (pc-multi-get-enemy-sync-time))
-              )
             (set! (-> *local-info* role) (pc-multi-get-role)))
           (begin
             (set! (-> *local-info* role) -1)
@@ -189,6 +187,12 @@
     ;; GLOBAL GUARD: Logic below only runs once we are actually synced and in-game
     (if (not *multi-sync-enabled?*)
         (return #f))
+
+    (pc-multi-receive-events (the-as uint *mp-event-buffer*))
+    (pc-multi-receive-enemies (the-as uint *mp-enemy-buffer*))
+    (when (and *mp-enemy-buffer* (nonzero? (the-as uint *mp-enemy-buffer*)))
+      (set! (-> *mp-enemy-buffer* last-sync-time) (pc-multi-get-enemy-sync-time))
+      )
 
     ;; 4. High-Frequency Local Updates
     (mp-manage-remote-puppet)

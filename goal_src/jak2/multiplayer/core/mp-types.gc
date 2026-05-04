@@ -815,4 +815,6 @@
 ;; --- Authoritative Sync Functions ---
 (define-extern mp-send-edge-grab-event (function symbol none))
 (define-extern mp-receive-waypoint-event (function mp-waypoint-event symbol none))
+(define-extern mp-waypoint-event-same-target? (function mp-waypoint-event mp-waypoint-event symbol))
 (define-extern mp-waypoint-sync-tick (function none))
+(define-extern mp-waypoint-clear-transition-buffers! (function none))

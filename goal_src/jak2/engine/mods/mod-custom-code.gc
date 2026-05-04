@@ -106,7 +106,7 @@ an orb |#
           ;; 2. Priority: CLI Client Flag
           ((and client-arg (nonzero? (-> client-arg allocated-length)))
            (format 0 "[MP-Auto] Connecting to ~S via CLI argument.~%" client-arg)
-           (pc-multi-setup-client client-arg 3000)
+           (pc-multi-setup-client client-arg 26210)
            )
 
           ;; 3. Priority: Saved Setting

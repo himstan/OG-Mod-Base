@@ -141,6 +141,7 @@ struct MultiplayerData {
 
   MPTrafficSyncBufferGOAL traffic_buffer;
   uint32_t last_traffic_sync_time = 0;
+  uint32_t last_remote_traffic_level_hash = 0;
   uint64_t ped_last_updated[MAX_PEDESTRIAN_SYNC_COUNT] = {0};
   uint64_t veh_last_updated[MAX_VEHICLE_SYNC_COUNT] = {0};
 
