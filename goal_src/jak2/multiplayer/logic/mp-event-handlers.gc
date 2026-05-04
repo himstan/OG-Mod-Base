@@ -87,14 +87,30 @@
     )
   (none))
 
-(defun mp-event-handler-enemy-death ((aid uint))
+(defun mp-enemy-death-mode-from-event ((evt mp-enemy-death-event))
+  "Choose the local forced-death mode from owner-supplied context."
+  (cond
+    ((= (-> evt death-hint) (the-as uint32 (mp-enemy-death-hint die-fast)))
+     'mp-death-fast
+     )
+    ((or (= (-> evt death-hint) (the-as uint32 (mp-enemy-death-hint die-falling)))
+         (= (-> evt state) (the-as uint32 (mp-enemy-state-id knocked))))
+     'mp-death-falling
+     )
+    (else
+     'mp-death
+     )
+    )
+  )
+
+(defun mp-event-handler-enemy-death ((evt mp-enemy-death-event))
+  (let ((aid (-> evt aid)))
   (format 0 "[MP-WorldEvent] Received MP_EVENT_ENEMY_DEATH for AID ~D.~%" aid)
   (let ((proc (find-enemy-by-aid aid))
         (ent (entity-by-aid aid)))
     
     (when (and ent (nonzero? ent))
-      (format 0 "[MP-WorldEvent] Marking entity as dead for AID ~D.~%" aid)
-      (logior! (-> ent extra perm status) (entity-perm-status dead))
+      (format 0 "[MP-WorldEvent] Death visual will own cleanup for AID ~D.~%" aid)
       )
 
     (if (and proc (nonzero? proc))
@@ -102,14 +118,19 @@
           (format 0 "[MP-WorldEvent] Authoritative death received for spawned enemy ~A (AID ~D).~%" proc aid)
           ;; Mark as already synced so we don't echo it back if we take ownership later
           (logior! (-> (the-as enemy proc) enemy-flags) (enemy-flag mp-synced-death))
+          (set! (-> (the-as enemy proc) hit-points) 0)
+          (when (nonzero? (-> evt knocked-type))
+            (set! (-> (the-as enemy proc) incoming knocked-type) (the-as knocked-type (-> evt knocked-type)))
+            )
           ;; Send a special attack event that our hijack will catch to force death transition
           (set! *mp-processing-remote-event* #t)
-          (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode 'mp-death))))
+          (send-event proc 'attack #f (static-attack-info ((id (new-attack-id)) (mode (mp-enemy-death-mode-from-event evt)))))
           (set! *mp-processing-remote-event* #f)
           )
         (format 0 "[MP-WorldEvent] ERROR: Could not find enemy process for death sync! AID ~D~%" aid)
         )
     )
+  )
   (none))
 
 (defun mp-event-handler-attack-ped ((net-id uint))

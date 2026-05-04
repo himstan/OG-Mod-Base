@@ -454,7 +454,7 @@
 
                       ;; Authoritative Death Detection
                       (when (and (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)) (not (logtest? (-> e-proc enemy-flags) (enemy-flag mp-synced-death))))
-                        (mp-send-world-event MP_EVENT_ENEMY_DEATH enemy-aid)
+                        (mp-send-enemy-death-event e-proc)
                         (logior! (-> e-proc enemy-flags) (enemy-flag mp-synced-death))
                         )
                       )

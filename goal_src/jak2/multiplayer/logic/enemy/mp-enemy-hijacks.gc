@@ -3,6 +3,56 @@
 
 ;; --- Damage & Death Broadcasting ---
 
+(defun mp-enemy-local-hit-predictable? ((e-proc enemy) (arg0 process) (arg3 event-message-block))
+  "Can a non-owner play a visual-only local hit reaction for this attack?"
+  (let ((aid (mp-get-enemy-aid e-proc)))
+    (if (zero? aid)
+        (return #f))
+    (let ((rec (mp-get-enemy-auth aid))
+          (info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+      (and rec
+           (mp-is-local-attacker? arg0)
+           (not (mp-enemy-authoritative? e-proc))
+           (not *mp-processing-remote-event*)
+           (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start)))
+           (or (not info)
+               (zero? (-> info id))
+               (and (!= (-> info id) (-> rec last-attack-id))
+                    (!= (-> info id) (-> rec last-local-attack-id))))
+           (time-elapsed? (-> rec last-local-attack-time) (seconds 0.2))
+           )
+      )
+    )
+  )
+
+(defun mp-enemy-send-hit-request! ((e-proc enemy) (arg3 event-message-block))
+  "Send a local hit request to the owner and update duplicate guards."
+  (let ((aid (mp-get-enemy-aid e-proc)))
+    (if (zero? aid)
+        (return #f))
+    (let ((rec (mp-get-enemy-auth aid))
+          (info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
+      (when rec
+        (if info (set! (-> rec last-attack-id) (-> info id)))
+        (if info (set! (-> rec last-local-attack-id) (-> info id)))
+        (set! (-> rec last-local-attack-time) (current-time))
+        (mp-send-enemy-attack-event aid (if info (-> info id) (the uint 0)))
+        (return #t)
+        )
+      )
+    )
+  #f
+  )
+
+(defun mp-enemy-play-local-hit-prediction! ((e-proc enemy) (arg0 process) (arg3 event-message-block))
+  "Request owner damage while letting the vanilla handler refresh flinch/knockback locally."
+  (when (mp-enemy-local-hit-predictable? e-proc arg0 arg3)
+    (mp-enemy-send-hit-request! e-proc arg3)
+    (return #t)
+    )
+  #f
+  )
+
 (defun mp-enemy-broadcast-attack ((e-proc enemy) (arg0 process) (arg3 event-message-block))
   "Handle attack sync logic for both Host and Client."
   ;; (format 0 "[MP-Hit-Debug] Entered mp-enemy-broadcast-attack for ~A from attacker ~A~%" e-proc arg0)
@@ -59,15 +109,9 @@
                 )
               (begin
                 ;; NON-OWNER: If we hit it locally, intercept and request hit from Owner
-                (when (and is-local-attacker? (not *mp-processing-remote-event*) (not (logtest? (-> e-proc enemy-flags) (enemy-flag death-start))))
-                  ;; Only request if it's a new attack ID to avoid spamming the owner
-                  (when (or (not info) (zero? (-> info id)) (!= (-> info id) (-> rec last-attack-id)))
-                    ;; (format 0 "[MP-Hit-Debug]   >> [NON-OWNER] REQUESTING hit for AID ~D~%" aid)
-                    (if info (set! (-> rec last-attack-id) (-> info id)))
-                    (if info (set! (-> rec last-local-attack-id) (-> info id)))
-                    (set! (-> rec last-local-attack-time) (current-time))
-                    (mp-send-enemy-attack-event aid (if info (-> info id) (the uint 0)))
-                    )
+                (when (mp-enemy-local-hit-predictable? e-proc arg0 arg3)
+                  ;; (format 0 "[MP-Hit-Debug]   >> [NON-OWNER] REQUESTING hit for AID ~D~%" aid)
+                  (mp-enemy-send-hit-request! e-proc arg3)
                   )
                 )
               )
@@ -82,7 +126,8 @@
   (let ((aid (mp-get-enemy-aid e-proc)))
     (when (and (nonzero? aid) (mp-enemy-authoritative? e-proc) (not *mp-processing-remote-event*))
       (format 0 "[MP-Hit-Debug]   >> [OWNER] Queueing MP_EVENT_ENEMY_DEATH for AID ~D~%" aid)
-      (mp-send-world-event MP_EVENT_ENEMY_DEATH aid))
+      (mp-send-enemy-death-event e-proc)
+      (logior! (-> e-proc enemy-flags) (enemy-flag mp-synced-death)))
     )
   (none))
 
@@ -119,6 +164,26 @@
   (if (or (mp-enemy-authoritative? this) *mp-processing-remote-event* (<= (-> this hit-points) 0))
       (if *old-enemy-kill-prefer-falling* (*old-enemy-kill-prefer-falling* this))
       )
+  )
+
+(defun mp-enemy-apply-remote-death! ((this enemy) (death-mode symbol))
+  "Start the locally replicated death animation without taking ownership of death logic."
+  (format 0 "[MP-Proxy] Authoritative death for ~A (AID ~D, mode ~A).~%" this (mp-get-enemy-aid this) death-mode)
+  (logior! (-> this enemy-flags) (enemy-flag mp-synced-death death-start))
+  (send-event this 'death-start)
+  (set! (-> this hit-points) 0)
+  (cond
+    ((= death-mode 'mp-death-fast)
+     (go (method-of-object this die-fast))
+     )
+    ((= death-mode 'mp-death-falling)
+     (go (method-of-object this die-falling))
+     )
+    (else
+     (kill-prefer-falling this)
+     )
+    )
+  (none)
   )
 
 (defun mp-enemy-predictive-move ((this enemy))
@@ -290,16 +355,20 @@
        )
 
      ;; PUPPET PROTECTION: If we are already reacting, don't react again to local hits.
-     ;; This prevents the "thousand hits" visual jitter and sound spam.
+     ;; Duplicate IDs and the short cooldown still prevent hitbox spam, but new local
+     ;; attack IDs are allowed to refresh visual flinch/knockback on non-owners.
      (let ((cur-state (if (-> this state) (-> this state name) #f)))
        (when (and (not (mp-enemy-authoritative? this))
                   (or (= cur-state 'hit) (= cur-state 'knocked) (= cur-state 'knocked-vicinity)))
          (let ((is-local? (mp-is-local-attacker? arg0)))
            (when is-local?
-             ;; Still broadcast if it's a new ID (maybe we hit it again?)
-             (mp-enemy-broadcast-attack this arg0 arg3)
-             ;; BLOCK the engine from restarting the 'hit' state
-             (return #t)
+             (if (mp-enemy-play-local-hit-prediction! this arg0 arg3)
+                 (begin
+                   (if *old-general-event-handler*
+                       (return (*old-general-event-handler* this arg0 arg1 arg2 arg3))
+                       (return #f))
+                   )
+                 (return #t))
              )
            )
          )
@@ -308,14 +377,15 @@
      (let ((info (if (and arg3 (nonzero? arg3) (nonzero? (-> arg3 param 1))) (the-as attack-info (-> arg3 param 1)) (the-as attack-info #f))))
        (cond
          ((and info (= (-> info mode) 'mp-death))
-          (format 0 "[MP-Proxy] Authoritative death for ~A (AID ~D).~%" this (mp-get-enemy-aid this))
-          ;; 1. Lock out further state syncs
-          (logior! (-> this enemy-flags) (enemy-flag death-start))
-          ;; 2. Signal engine to spawn pickups/trigger children
-          (send-event this 'death-start)
-          ;; 3. Final HP zeroing and state transition
-          (set! (-> this hit-points) 0)
-          (kill-prefer-falling this)
+          (mp-enemy-apply-remote-death! this 'mp-death)
+          (return #t)
+          )
+         ((and info (= (-> info mode) 'mp-death-falling))
+          (mp-enemy-apply-remote-death! this 'mp-death-falling)
+          (return #t)
+          )
+         ((and info (= (-> info mode) 'mp-death-fast))
+          (mp-enemy-apply-remote-death! this 'mp-death-fast)
           (return #t)
           )
          ((and info (= (-> info mode) 'mp-hp-sync))
@@ -347,8 +417,15 @@
   (let ((info (if (and arg1 (nonzero? arg1) (nonzero? (-> arg1 param 1))) (the-as attack-info (-> arg1 param 1)) (the-as attack-info #f))))
     (when (and info (= (-> info mode) 'mp-death))
       (format 0 "[MP-Lifecycle] Remote-forced death for ~A via 'mp-death mode.~%" this)
-      (set! (-> this hit-points) 0)
-      (kill-prefer-falling this)
+      (mp-enemy-apply-remote-death! this 'mp-death)
+      (return 0))
+    (when (and info (= (-> info mode) 'mp-death-falling))
+      (format 0 "[MP-Lifecycle] Remote-forced death for ~A via 'mp-death-falling mode.~%" this)
+      (mp-enemy-apply-remote-death! this 'mp-death-falling)
+      (return 0))
+    (when (and info (= (-> info mode) 'mp-death-fast))
+      (format 0 "[MP-Lifecycle] Remote-forced death for ~A via 'mp-death-fast mode.~%" this)
+      (mp-enemy-apply-remote-death! this 'mp-death-fast)
       (return 0)))
 
   (if (mp-enemy-should-process-damage? this)

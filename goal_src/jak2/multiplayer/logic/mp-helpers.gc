@@ -214,6 +214,48 @@
     )
   (none))
 
+(defun mp-enemy-get-death-hint ((e-proc enemy))
+  "Capture the visual death path the owner is starting."
+  (let ((cur-state (if (-> e-proc state) (-> e-proc state name) #f)))
+    (cond
+      ((= cur-state 'die-fast)
+       (mp-enemy-death-hint die-fast)
+       )
+      ((or (= cur-state 'die-falling)
+           (= cur-state 'knocked)
+           (= cur-state 'knocked-vicinity)
+           (!= (-> e-proc incoming knocked-type) (knocked-type knocked-type-0)))
+       (mp-enemy-death-hint die-falling)
+       )
+      (else
+       (mp-enemy-death-hint die)
+       )
+      )
+    )
+  )
+
+(defun mp-send-enemy-death-event ((e-proc enemy))
+  "Send enemy death with enough context for the receiver to choose the same visual path."
+  (if (or (not *multi-sync-enabled?*) (!= (pc-multi-get-status) 6))
+      (return #f))
+
+  (let ((aid (mp-get-enemy-aid e-proc)))
+    (when (nonzero? aid)
+      (let ((q-idx *mp-event-queue-write-ptr*))
+        (let ((evt (the-as mp-enemy-death-event (-> *mp-event-queue* q-idx))))
+          (set! (-> evt etype) MP_EVENT_ENEMY_DEATH)
+          (set! (-> evt aid) (the-as uint32 aid))
+          (set! (-> evt death-hint) (the-as uint32 (mp-enemy-get-death-hint e-proc)))
+          (set! (-> evt state) (the-as uint32 (mp-enemy-get-state-id e-proc)))
+          (set! (-> evt knocked-type) (the-as uint32 (-> e-proc incoming knocked-type)))
+          (set! (-> evt hit-face) (the-as uint32 -1))
+          )
+        (set! *mp-event-queue-write-ptr* (logand (+ q-idx 1) 31))
+        )
+      )
+    )
+  (none))
+
 (define-extern scene-lookup (function basic scene))
 
 (defun mp-airlock-remote-ready? ((airlock-pos vector))
