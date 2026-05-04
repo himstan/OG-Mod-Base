@@ -207,6 +207,7 @@
       )
     )
   :code (behavior ()
+    (sound-play "edge-grab")
     (target-indax-compute-edge)
     (let ((gp-0 (if (= (-> self tobot?) 'mp-puppet) *remote-edge-grab-info* *edge-grab-info*)))
       (set! (-> self control unknown-handle000) (-> gp-0 actor-handle))

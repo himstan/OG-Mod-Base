@@ -51,40 +51,6 @@
   (define *indax-edge-grab-mods* v1-34)
   )
 
-(define *collide-edge-indax-spec*
-  (new 'static 'collide-edge-spec
-    :split-dists (new 'static 'array float 2 256.0 358.4)
-    :outward-offset (new 'static 'vector :x 177.152 :y 3328.0 :w 1.0)
-    :flags (collide-edge-spec-flags send-event)
-    :ignore-pat (new 'static 'pat-surface :noentity #x1 :noedge #x1 :nojak #x1 :probe #x1 :noendlessfall #x1)
-    :max-dist-sqrd-to-outward-pt 37748736.0
-    :max-dir-cosa-delta 0.6
-    :touching-segment #f
-    :local-cache-fill-box (new 'static 'bounding-box
-      :min (new 'static 'vector :x -8192.0 :y -2764.8 :z -8192.0 :w 1.0)
-      :max (new 'static 'vector :x 8192.0 :y 8192.0 :z 8192.0 :w 1.0)
-      )
-    :local-within-reach-box (new 'static 'bounding-box
-      :min (new 'static 'vector :x -6144.0 :y 1331.2 :z -6144.0 :w 1.0)
-      :max (new 'static 'vector :x 6144.0 :y 4096.0 :z -6144.0 :w 1.0)
-      )
-    :local-player-spheres (new 'static 'inline-array sphere 12
-      (new 'static 'sphere :x 344.064 :y -163.84 :r 286.72)
-      (new 'static 'sphere :x 458.752 :y -655.36 :r 376.832)
-      (new 'static 'sphere :x 393.216 :y -1228.8 :r 311.296)
-      (new 'static 'sphere :x 393.216 :y -1720.32 :r 311.296)
-      (new 'static 'sphere :x 352.256 :y -2211.84 :r 270.336)
-      (new 'static 'sphere :x 335.872 :y -2662.4 :r 253.952)
-      (new 'static 'sphere :x -147.456 :y 1228.8 :r 819.2)
-      (new 'static 'sphere :x -147.456 :y 2048.0 :r 819.2)
-      (new 'static 'sphere :x -147.456 :y 3072.0 :r 819.2)
-      (new 'static 'sphere :x 344.064 :y 1024.0 :r 700.0)
-      (new 'static 'sphere :x 344.064 :y 1843.2 :r 700.0)
-      (new 'static 'sphere :x 344.064 :y 2867.2 :r 700.0)
-      )
-    )
-  )
-
 ;; Behaviors
 
 (defbehavior target-indax-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
@@ -484,10 +450,10 @@
                        (-> self control dynam gravity-normal)
                        (vector-! (new 'stack-no-clear 'vector) (-> self control trans) (-> self control gspot-pos))
                        )
-                     (-> *TARGET-bank* edge-grab-height-off-ground)
+                     (meters 1.5)
                      )
                  )
-            (do-edge-grabs self *collide-cache* *collide-edge-indax-spec*)
+            (do-edge-grabs self *collide-cache* *collide-edge-spec*)
             )
         (when *debug-segment*
           (let ((s5-2 (-> *display* frames (-> *display* on-screen) profile-array data 0)))

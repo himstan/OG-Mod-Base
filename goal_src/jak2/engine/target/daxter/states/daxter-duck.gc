@@ -197,6 +197,7 @@
   :exit (-> target-indax-high-jump exit)
   :trans (behavior ()
     ((-> target-indax-falling trans))
+    (mod-var-jump #t #t (cpad-hold? (-> self control cpad number) x) (-> self control transv))
     )
   :code (behavior ((arg0 float) (arg1 float) (arg2 symbol))
     (ja-no-eval :group! daxter-duck-high-jump-ja :num! (seek!) :frame-num (ja-aframe 16.0 0))
