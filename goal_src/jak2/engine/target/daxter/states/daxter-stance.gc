@@ -4,7 +4,7 @@
 (defstate target-indax-start (target)
   :event target-standard-event-handler
   :code (behavior ((arg0 handle))
-         (target-indax-init #f))
+         (target-indax-init #t))
 
   :post target-indax-post)
 
